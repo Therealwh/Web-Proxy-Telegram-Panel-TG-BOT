@@ -26,6 +26,7 @@ function errorHandler(err, req, res, _next) {
     // Ошибки валидации zod — показываем, что именно не так
     if (err.name === 'ZodError') {
         const fields = err.errors.map((e) => `${e.path.join('.')}: ${e.message}`);
+        logger.warn('Ошибка валидации запроса', { url: req.originalUrl, fields, body: req.body });
         return res.status(400).json({
             error: 'Ошибка валидации данных',
             details: fields,

@@ -95,6 +95,9 @@ chown -R telemt:telemt /var/lib/telemt
 # TELEMT_API_TOKEN задан в install.env через окружение installer'а
 : "${TELEMT_API_TOKEN:?Требуется TELEMT_API_TOKEN (генерируется в install.sh)}"
 
+# Секрет служебного пользователя welcome (стартовый WEB-профиль)
+WELCOME_SECRET="$(openssl rand -hex 16)"
+
 sed -e "s|{{DOMAIN}}|${DOMAIN}|g" \
     -e "s|{{SERVER_IP}}|${SERVER_IP}|g" \
     -e "s|{{MTPROTO_PORT}}|${MTPROTO_PORT}|g" \
@@ -102,6 +105,7 @@ sed -e "s|{{DOMAIN}}|${DOMAIN}|g" \
     -e "s|{{TELEMT_API_PORT}}|${TELEMT_API_PORT}|g" \
     -e "s|{{TELEMT_API_TOKEN}}|${TELEMT_API_TOKEN}|g" \
     -e "s|{{MASK_DOMAIN}}|${MASK_DOMAIN}|g" \
+    -e "s|{{WELCOME_SECRET}}|${WELCOME_SECRET}|g" \
     -e "s|{{WEBSITE_DIR}}|${DATA_DIR}/website|g" \
     -e "s|{{TLSFRONT_DIR}}|${TLSFRONT_DIR}|g" \
     "${INSTALL_DIR}/templates/telemt.toml.tmpl" > "${CONFIG_PATH}"

@@ -10,6 +10,7 @@ const { z } = require('zod');
 const db = require('../db');
 const telemt = require('../services/telemtApi');
 const { clientLinks } = require('../services/links');
+const { syncWebProfiles } = require('../services/webProfiles');
 const { httpError } = require('../middleware/errorHandler');
 const logger = require('../utils/logger');
 
@@ -23,14 +24,28 @@ function getMaskDomain() {
 
 // --- Схемы валидации ---
 
+// Дата принимается в любом парсящемся формате (ISO, YYYY-MM-DD и т.д.)
+// и нормализуется в ISO 8601 — защита от различий браузеров/локалей.
+const dateField = z.string()
+    .refine((v) => !Number.isNaN(Date.parse(v)), 'Некорректная дата')
+    .transform((v) => new Date(v).toISOString())
+    .nullable().optional();
+
+// Числа принимаем и как строки (форма может прислать строку)
+const numField = (min, max) => {
+    let s = z.coerce.number().int().min(min);
+    if (max) s = s.max(max);
+    return s.nullable().optional();
+};
+
 const clientSchema = z.object({
     username: z.string()
         .regex(/^[A-Za-z0-9_.-]{1,64}$/, 'Логин: латиница, цифры, _ . - (до 64 символов)'),
-    quota_bytes: z.number().int().positive().nullable().optional(),
-    expires_at: z.string().datetime({ offset: true }).nullable().optional(),
-    max_ips: z.number().int().min(1).max(100).nullable().optional(),
-    rate_down_bps: z.number().int().min(0).nullable().optional(),
-    rate_up_bps: z.number().int().min(0).nullable().optional(),
+    quota_bytes: z.coerce.number().int().positive().nullable().optional(),
+    expires_at: dateField,
+    max_ips: numField(1, 100),
+    rate_down_bps: numField(0),
+    rate_up_bps: numField(0),
     ad_tag: z.string().regex(/^[0-9a-f]{32}$/, 'Ad Tag — 32 hex-символа').nullable().optional(),
     web_enabled: z.boolean().optional(),
     mtproto_enabled: z.boolean().optional(),
@@ -138,6 +153,7 @@ router.post('/', async (req, res, next) => {
         );
 
         logger.info('Клиент создан', { username: data.username });
+        syncWebProfiles(); // добавляем WEB-профиль, если Web Proxy включён
         const row = db.prepare('SELECT * FROM clients WHERE id = ?').get(result.lastInsertRowid);
         res.status(201).json(enrichClient(row));
     } catch (err) {
@@ -179,6 +195,7 @@ router.post('/bulk', async (req, res, next) => {
             }
         }
         logger.info('Массовое создание клиентов', results);
+        syncWebProfiles();
         res.json(results);
     } catch (err) {
         next(err);
@@ -223,6 +240,7 @@ router.patch('/:id', async (req, res, next) => {
             db.prepare(`UPDATE clients SET ${fields.join(', ')} WHERE id = ?`).run(...params);
         }
 
+        syncWebProfiles(); // web_enabled мог измениться
         const updated = db.prepare('SELECT * FROM clients WHERE id = ?').get(row.id);
         res.json(enrichClient(updated));
     } catch (err) {
@@ -238,6 +256,7 @@ router.delete('/:id', async (req, res, next) => {
         await telemt.deleteUser(row.username);
         db.prepare('DELETE FROM clients WHERE id = ?').run(row.id);
         logger.info('Клиент удалён', { username: row.username });
+        syncWebProfiles(); // убираем WEB-профиль удалённого клиента
         res.json({ ok: true });
     } catch (err) {
         next(err);

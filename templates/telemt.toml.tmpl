@@ -49,6 +49,7 @@ ip = "127.0.0.1"
 port = {{TELEMT_WEB_PORT}}
 transport = "web"
 proxy_protocol = false
+reuse_allow = false
 web_client_ip_source = "x_forwarded_for"
 web_trusted_proxy_cidrs = ["127.0.0.1/32"]
 
@@ -78,6 +79,17 @@ mode = "static_directory"
 directory = "{{WEBSITE_DIR}}"
 index = "index.html"
 
+# Стартовый WEB-профиль (обязателен: Telemt не стартует с пустым profiles).
+# Панель добавляет сюда профили клиентов с включённым Web Proxy через API.
+[[web.vhosts.profiles]]
+user = "welcome"
+secret_mode = "dd"
+max_sessions = 1
+max_streams = 8
+max_streams_per_session = 8
+
 # === Пользователи ===
-# Управляются панелью через Control API (/v1/users), не редактируйте вручную.
+# Клиенты управляются панелью через Control API (/v1/users).
+# "welcome" — служебный пользователь стартового WEB-профиля, не удаляйте его.
 [access.users]
+welcome = "{{WELCOME_SECRET}}"

@@ -31,19 +31,26 @@ async function apiRequest(method, path, body) {
         });
     } catch (err) {
         logger.error('Telemt API недоступен', { url, error: err.message });
-        throw new Error('Сервис прокси (Telemt) недоступен. Проверьте: systemctl status telemt');
+        const e = new Error('Сервис прокси (Telemt) недоступен. Проверьте: systemctl status telemt');
+        e.statusCode = 502;
+        throw e;
     }
 
     let json;
     try {
         json = await response.json();
     } catch {
-        throw new Error(`Telemt API вернул некорректный ответ (HTTP ${response.status})`);
+        const e = new Error(`Telemt API вернул некорректный ответ (HTTP ${response.status})`);
+        e.statusCode = 502;
+        throw e;
     }
 
     if (!response.ok) {
         const apiError = json?.error?.message || json?.error || `HTTP ${response.status}`;
-        throw new Error(`Ошибка Telemt API: ${apiError}`);
+        const e = new Error(`Ошибка Telemt API: ${apiError}`);
+        // 404 пробрасываем как есть, остальные ошибки Telemt — 502 Bad Gateway
+        e.statusCode = response.status === 404 ? 404 : 502;
+        throw e;
     }
 
     // Успешный конверт API: { ok: true, data: ... }

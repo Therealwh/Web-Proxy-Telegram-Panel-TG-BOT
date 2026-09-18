@@ -46,7 +46,12 @@ export async function api(path, options = {}) {
 
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-        throw new Error(data.error || `Ошибка сервера (${response.status})`);
+        let message = data.error || `Ошибка сервера (${response.status})`;
+        // Детали валидации (какое поле не прошло) — показываем пользователю
+        if (Array.isArray(data.details) && data.details.length > 0) {
+            message += ': ' + data.details.join('; ');
+        }
+        throw new Error(message);
     }
     return data;
 }
