@@ -29,18 +29,29 @@ db.pragma('busy_timeout = 5000');
  * Создаёт резервную копию файла БД.
  * @returns {string|null} путь к бэкапу или null, если БД ещё не существует
  */
+/**
+ * Создаёт резервную копию файла БД.
+ * При невозможности записи (права, место) — предупреждение в лог,
+ * миграции продолжаются (они транзакционны и откатываются сами).
+ * @returns {string|null} путь к бэкапу или null
+ */
 function backupDatabase() {
     if (!fs.existsSync(config.dbPath)) return null;
-    fs.mkdirSync(config.backupDir, { recursive: true });
-    const backupPath = path.join(
-        config.backupDir,
-        `tggate-pre-migration-${Date.now()}.db`
-    );
-    // Сбрасываем WAL в основной файл и копируем синхронно
-    db.pragma('wal_checkpoint(TRUNCATE)');
-    fs.copyFileSync(config.dbPath, backupPath);
-    logger.info(`Бэкап БД создан: ${backupPath}`);
-    return backupPath;
+    try {
+        fs.mkdirSync(config.backupDir, { recursive: true });
+        const backupPath = path.join(
+            config.backupDir,
+            `tggate-pre-migration-${Date.now()}.db`
+        );
+        // Сбрасываем WAL в основной файл и копируем синхронно
+        db.pragma('wal_checkpoint(TRUNCATE)');
+        fs.copyFileSync(config.dbPath, backupPath);
+        logger.info(`Бэкап БД создан: ${backupPath}`);
+        return backupPath;
+    } catch (err) {
+        logger.warn('Не удалось создать бэкап БД перед миграцией', { error: err.message });
+        return null;
+    }
 }
 
 /**

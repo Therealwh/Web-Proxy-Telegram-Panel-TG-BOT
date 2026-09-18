@@ -351,7 +351,15 @@ install_panel() {
     if ! id -u tggate >/dev/null 2>&1; then
         useradd --system --home "${INSTALL_DIR}" --shell /usr/sbin/nologin tggate
     fi
-    chown -R tggate:tggate "${INSTALL_DIR}/panel" "${DATA_DIR}" "${LOG_DIR}"
+    chown -R tggate:tggate "${INSTALL_DIR}/panel" "${DATA_DIR}" "${LOG_DIR}" "${BACKUP_DIR}"
+
+    # Совместный доступ к конфигам: панель (tggate) редактирует telemt.toml,
+    # telemt его читает. install.env с секретами остаётся только для root.
+    usermod -aG tggate telemt 2>/dev/null || true
+    chgrp -R tggate "${CONFIG_DIR}"
+    chmod 2775 "${CONFIG_DIR}"
+    chmod 664 "${CONFIG_DIR}/telemt.toml" 2>/dev/null || true
+    chmod 600 "${CONFIG_DIR}/install.env"
     ok "Панель установлена и собрана"
 }
 
