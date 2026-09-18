@@ -18,20 +18,22 @@ set -euo pipefail
 
 # ---------------------------------------------------------------------------
 # Константы проекта
+# ВНИМАНИЕ: без readonly — эти же имена записываются в install.env
+# и подгружаются через source (readonly вызвал бы ошибку при повторном source).
 # ---------------------------------------------------------------------------
-readonly PANEL_REPO="https://github.com/Therealwh/Web-Proxy-Telegram-Panel-TG-BOT"
-readonly PANEL_REPO_RAW="https://raw.githubusercontent.com/Therealwh/Web-Proxy-Telegram-Panel-TG-BOT/main"
-readonly INSTALL_DIR="/opt/tggate"            # Каталог с кодом панели
-readonly CONFIG_DIR="/etc/tggate"             # Конфигурация панели
-readonly DATA_DIR="/var/lib/tggate"           # Данные: БД, сайт-заглушка
-readonly BACKUP_DIR="/var/backups/tggate"     # Резервные копии
-readonly LOG_DIR="/var/log/tggate"            # Логи
-readonly PANEL_PORT="3000"                    # Внутренний порт backend панели
-readonly TELEMT_API_PORT="9091"               # Порт Telemt Control API (loopback)
-readonly TELEMT_WEB_PORT="18080"              # WEB-listener Telemt (loopback)
-readonly MTPROTO_PORT="8443"                  # Публичный порт MTProto
-readonly NGINX_LOCAL_PORT="8080"              # Nginx слушает loopback (за Caddy)
-readonly NODE_MAJOR="22"                      # Мажорная версия Node.js LTS
+PANEL_REPO="https://github.com/Therealwh/Web-Proxy-Telegram-Panel-TG-BOT"
+PANEL_REPO_RAW="https://raw.githubusercontent.com/Therealwh/Web-Proxy-Telegram-Panel-TG-BOT/main"
+INSTALL_DIR="/opt/tggate"            # Каталог с кодом панели
+CONFIG_DIR="/etc/tggate"             # Конфигурация панели
+DATA_DIR="/var/lib/tggate"           # Данные: БД, сайт-заглушка
+BACKUP_DIR="/var/backups/tggate"     # Резервные копии
+LOG_DIR="/var/log/tggate"            # Логи
+PANEL_PORT="3000"                    # Внутренний порт backend панели
+TELEMT_API_PORT="9091"               # Порт Telemt Control API (loopback)
+TELEMT_WEB_PORT="18080"              # WEB-listener Telemt (loopback)
+MTPROTO_PORT="8443"                  # Публичный порт MTProto
+NGINX_LOCAL_PORT="8080"              # Nginx слушает loopback (за Caddy)
+readonly NODE_MAJOR="22"             # Мажорная версия Node.js LTS (в install.env не пишется)
 
 # ---------------------------------------------------------------------------
 # Цвета для красивого вывода
@@ -91,8 +93,14 @@ check_os() {
     ok "ОС: Ubuntu ${VERSION_ID}"
 }
 
-# Проверяет, что порты 80 и 443 свободны (VPS «чистый»)
+# Проверяет, что порты 80 и 443 свободны (VPS «чистый»).
+# При повторном запуске останавливает уже установленные сервисы TGGATE.
 check_ports_free() {
+    # Идемпотентность: при повторной установке наши сервисы уже держат порты
+    for svc in caddy nginx telemt tggate-panel; do
+        systemctl stop "${svc}" 2>/dev/null || true
+    done
+    sleep 1
     local busy=()
     for port in 80 443; do
         if ss -tlnp 2>/dev/null | grep -qE "[:.]${port}\s"; then
@@ -372,12 +380,22 @@ create_admin() {
         [[ ${tries} -gt 30 ]] && fail "Панель не запустилась за 30 секунд. Смотрите: journalctl -u tggate-panel"
         sleep 1
     done
-    # Внутренний эндпоинт первичной инициализации (работает только с loopback)
-    curl -fsS -X POST "http://127.0.0.1:${PANEL_PORT}/api/internal/setup-admin" \
+    # Внутренний эндпоинт первичной инициализации (работает только с loopback).
+    # При повторной установке админ уже существует (409) — это нормально, пропускаем.
+    local response http_code
+    response="$(curl -sS -X POST "http://127.0.0.1:${PANEL_PORT}/api/internal/setup-admin" \
         -H "Content-Type: application/json" \
-        -d "{\"login\":\"${ADMIN_LOGIN}\",\"password\":\"${ADMIN_PASSWORD}\"}" >/dev/null \
-        || fail "Не удалось создать администратора"
-    ok "Администратор '${ADMIN_LOGIN}' создан"
+        -d "{\"login\":\"${ADMIN_LOGIN}\",\"password\":\"${ADMIN_PASSWORD}\"}" \
+        -w $'\n%{http_code}' 2>&1)" || fail "Не удалось создать администратора: ${response}"
+    http_code="$(echo "${response}" | tail -n1)"
+    if [[ "${http_code}" == "409" ]]; then
+        ok "Администратор уже существует — пропускаю"
+        info "Если нужно сменить логин/пароль: sudo TGGATE → пункт 6"
+    elif [[ "${http_code}" == "201" ]]; then
+        ok "Администратор '${ADMIN_LOGIN}' создан"
+    else
+        fail "Не удалось создать администратора (HTTP ${http_code}): ${response}"
+    fi
 }
 
 # ---------------------------------------------------------------------------
