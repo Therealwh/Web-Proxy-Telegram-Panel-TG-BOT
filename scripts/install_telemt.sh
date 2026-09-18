@@ -38,26 +38,32 @@ echo "[Telemt] Архитектура: ${TELEMT_ARCH}"
 
 # ---------------------------------------------------------------------------
 # 2. Скачиваем бинарник из официальных релизов
+# Формат ассетов Telemt: telemt-<arch>-linux-gnu.tar.gz, тег без префикса "v"
+# (например, releases/download/3.5.7/telemt-x86_64-linux-gnu.tar.gz)
 # ---------------------------------------------------------------------------
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "${TMP_DIR}"' EXIT
 
-ASSET_NAME="telemt-${TELEMT_ARCH}-unknown-linux-gnu.tar.gz"
-DOWNLOAD_URL="${TELEMT_REPO}/releases/download/v${TELEMT_VERSION}/${ASSET_NAME}"
+ASSET_NAME="telemt-${TELEMT_ARCH}-linux-gnu.tar.gz"
+DOWNLOAD_URL="${TELEMT_REPO}/releases/download/${TELEMT_VERSION}/${ASSET_NAME}"
 
 echo "[Telemt] Скачивание: ${DOWNLOAD_URL}"
 if ! curl -fsSL --retry 3 -o "${TMP_DIR}/telemt.tar.gz" "${DOWNLOAD_URL}"; then
-    echo "[Telemt] Не удалось скачать релиз v${TELEMT_VERSION}." >&2
+    echo "[Telemt] Не удалось скачать релиз ${TELEMT_VERSION}." >&2
     echo "[Telemt] Проверьте доступные релизы: ${TELEMT_REPO}/releases" >&2
     exit 1
 fi
 
-# Контрольная сумма релиза (если опубликована — проверяем обязательно)
-SUMS_URL="${TELEMT_REPO}/releases/download/v${TELEMT_VERSION}/SHA256SUMS"
-if curl -fsSL --retry 3 -o "${TMP_DIR}/SHA256SUMS" "${SUMS_URL}" 2>/dev/null; then
+# Контрольная сумма: отдельный файл <asset>.sha256 рядом с ассетом
+SUMS_URL="${TELEMT_REPO}/releases/download/${TELEMT_VERSION}/${ASSET_NAME}.sha256"
+if curl -fsSL --retry 3 -o "${TMP_DIR}/telemt.sha256" "${SUMS_URL}" 2>/dev/null; then
     echo "[Telemt] Проверка SHA-256..."
-    (cd "${TMP_DIR}" && grep "${ASSET_NAME}" SHA256SUMS | sha256sum -c -) \
-        || { echo "[Telemt] Контрольная сумма не совпала! Прерываю установку." >&2; exit 1; }
+    EXPECTED="$(awk '{print $1}' "${TMP_DIR}/telemt.sha256")"
+    ACTUAL="$(sha256sum "${TMP_DIR}/telemt.tar.gz" | awk '{print $1}')"
+    if [[ "${EXPECTED}" != "${ACTUAL}" ]]; then
+        echo "[Telemt] Контрольная сумма не совпала! Прерываю установку." >&2
+        exit 1
+    fi
     echo "[Telemt] Контрольная сумма OK"
 else
     echo "[Telemt] Файл контрольных сумм не найден в релизе — продолжаю без проверки"

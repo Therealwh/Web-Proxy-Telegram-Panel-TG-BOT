@@ -45,15 +45,18 @@ esac
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "${TMP_DIR}"' EXIT
 
-ASSET="telemt-${ARCH}-unknown-linux-gnu.tar.gz"
+# Формат ассетов Telemt: telemt-<arch>-linux-gnu.tar.gz, тег без "v"
+ASSET="telemt-${ARCH}-linux-gnu.tar.gz"
 curl -fsSL --retry 3 -o "${TMP_DIR}/telemt.tar.gz" \
-    "${TELEMT_REPO}/releases/download/v${LATEST}/${ASSET}" \
-    || fail "Не удалось скачать релиз v${LATEST}"
+    "${TELEMT_REPO}/releases/download/${LATEST}/${ASSET}" \
+    || fail "Не удалось скачать релиз ${LATEST}"
 
 # Проверка SHA-256 (обязательна, если файл сумм опубликован)
-if curl -fsSL -o "${TMP_DIR}/SHA256SUMS" \
-    "${TELEMT_REPO}/releases/download/v${LATEST}/SHA256SUMS" 2>/dev/null; then
-    (cd "${TMP_DIR}" && grep "${ASSET}" SHA256SUMS | sha256sum -c -) \
+if curl -fsSL -o "${TMP_DIR}/telemt.sha256" \
+    "${TELEMT_REPO}/releases/download/${LATEST}/${ASSET}.sha256" 2>/dev/null; then
+    EXPECTED="$(awk '{print $1}' "${TMP_DIR}/telemt.sha256")"
+    ACTUAL="$(sha256sum "${TMP_DIR}/telemt.tar.gz" | awk '{print $1}')"
+    [[ "${EXPECTED}" == "${ACTUAL}" ]] \
         || fail "Контрольная сумма не совпала! Обновление отменено."
     info "SHA-256 проверен"
 fi
