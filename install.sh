@@ -264,12 +264,21 @@ generate_secrets() {
     step "Генерация секретов"
     mkdir -p "${CONFIG_DIR}" "${DATA_DIR}/website" "${BACKUP_DIR}" "${LOG_DIR}"
 
+    # Повторная установка: сохраняем существующие секреты и путь админки,
+    # чтобы не инвалидировать сессии и ссылку на панель
+    local old_admin_path="" old_api_token="" old_jwt=""
+    if [[ -f "${CONFIG_DIR}/install.env" ]]; then
+        old_admin_path="$(grep -oP '^ADMIN_PATH="\K[^"]+' "${CONFIG_DIR}/install.env" 2>/dev/null || true)"
+        old_api_token="$(grep -oP '^TELEMT_API_TOKEN="\K[^"]+' "${CONFIG_DIR}/install.env" 2>/dev/null || true)"
+        old_jwt="$(grep -oP '^JWT_SECRET="\K[^"]+' "${INSTALL_DIR}/panel/backend/.env" 2>/dev/null || true)"
+    fi
+
     # Токен Telemt Control API — случайный, только для loopback
-    TELEMT_API_TOKEN="$(openssl rand -hex 32)"
+    TELEMT_API_TOKEN="${old_api_token:-$(openssl rand -hex 32)}"
     # Секрет JWT для сессий панели
-    JWT_SECRET="$(openssl rand -hex 48)"
+    JWT_SECRET="${old_jwt:-$(openssl rand -hex 48)}"
     # Секретный путь админки — затрудняет перебор (не /admin)
-    ADMIN_PATH="cp-$(openssl rand -hex 6)"
+    ADMIN_PATH="${old_admin_path:-cp-$(openssl rand -hex 6)}"
     # Домен маскировки Fake-TLS по умолчанию (можно сменить в настройках)
     MASK_DOMAIN="www.cloudflare.com"
     # Версия панели
