@@ -1,0 +1,39 @@
+# =============================================================================
+# TGGATE — Systemd-сервис панели управления (backend + собранный frontend)
+# =============================================================================
+[Unit]
+Description=TGGATE Panel — панель управления Telegram-прокси
+Documentation=https://github.com/Therealwh/Web-Proxy-Telegram-Panel-TG-BOT
+After=network.target telemt.service
+Wants=telemt.service
+
+[Service]
+Type=simple
+User=tggate
+Group=tggate
+WorkingDirectory=/opt/tggate/panel/backend
+ExecStart=/usr/bin/node server.js
+
+# Перезапуск при падении
+Restart=on-failure
+RestartSec=5s
+
+# Окружение загружается из .env внутри приложения (dotenv)
+Environment=NODE_ENV=production
+
+# Ограничения безопасности
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+# Панель пишет в свои каталоги — разрешаем явно
+ReadWritePaths=/var/lib/tggate /var/log/tggate /var/backups/tggate /etc/tggate
+
+LimitNOFILE=65536
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=tggate-panel
+
+[Install]
+WantedBy=multi-user.target

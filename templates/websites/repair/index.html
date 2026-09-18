@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Технические работы</title>
+    <meta name="description" content="На сайте ведутся технические работы. Скоро вернёмся!">
+    <meta name="robots" content="noindex, nofollow">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+            color: #e2e8f0;
+            overflow: hidden;
+        }
+        .container { text-align: center; padding: 2rem; max-width: 600px; }
+        .gear {
+            width: 120px; height: 120px;
+            margin: 0 auto 2rem;
+            animation: spin 6s linear infinite;
+        }
+        .gear.small {
+            width: 60px; height: 60px;
+            position: absolute;
+            animation: spin-reverse 4s linear infinite;
+        }
+        .gear-wrap { position: relative; width: 200px; height: 140px; margin: 0 auto 2rem; }
+        .gear-wrap .gear.small { right: 10px; top: 0; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes spin-reverse { to { transform: rotate(-360deg); } }
+        h1 { font-size: 2rem; margin-bottom: 1rem; font-weight: 700; }
+        p { color: #94a3b8; font-size: 1.1rem; line-height: 1.6; margin-bottom: 2rem; }
+        .progress {
+            width: 100%; height: 6px;
+            background: #334155;
+            border-radius: 999px;
+            overflow: hidden;
+        }
+        .progress-bar {
+            height: 100%; width: 40%;
+            background: linear-gradient(90deg, #3b82f6, #8b5cf6);
+            border-radius: 999px;
+            animation: load 2.5s ease-in-out infinite;
+        }
+        @keyframes load {
+            0% { transform: translateX(-100%); width: 40%; }
+            50% { width: 60%; }
+            100% { transform: translateX(350%); width: 40%; }
+        }
+        .badge {
+            display: inline-block; margin-top: 2rem;
+            padding: 0.4rem 1rem;
+            background: rgba(59, 130, 246, 0.15);
+            border: 1px solid rgba(59, 130, 246, 0.3);
+            border-radius: 999px;
+            font-size: 0.85rem; color: #93c5fd;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="gear-wrap">
+            <svg class="gear" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="1.5">
+                <circle cx="12" cy="12" r="3"/>
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+            </svg>
+            <svg class="gear small" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" stroke-width="1.5">
+                <circle cx="12" cy="12" r="3"/>
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+            </svg>
+        </div>
+        <h1>Технические работы</h1>
+        <p>Мы обновляем сайт, чтобы сделать его лучше.<br>Совсем скоро вернёмся — загляните чуть позже!</p>
+        <div class="progress"><div class="progress-bar"></div></div>
+        <div class="badge">Ориентировочное время: несколько часов</div>
+    </div>
+</body>
+</html>

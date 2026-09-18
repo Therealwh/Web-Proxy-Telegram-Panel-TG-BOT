@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  backend:
+    name: Backend (тесты)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: panel/backend/package.json
+      - name: Установка зависимостей
+        working-directory: panel/backend
+        run: npm install
+      - name: Тесты
+        working-directory: panel/backend
+        run: npm test
+
+  frontend:
+    name: Frontend (сборка)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: panel/frontend/package.json
+      - name: Установка зависимостей
+        working-directory: panel/frontend
+        run: npm install
+      - name: Сборка
+        working-directory: panel/frontend
+        run: npm run build
+
+  shellcheck:
+    name: Bash-скрипты (shellcheck)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: ShellCheck
+        run: |
+          sudo apt-get install -y shellcheck
+          shellcheck -S error install.sh update.sh uninstall.sh tggate.sh scripts/*.sh

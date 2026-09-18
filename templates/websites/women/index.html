@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Милана — женский портал о красоте и стиле</title>
+    <meta name="description" content="Милана: красота, мода, здоровье и отношения. Советы стилистов, рецепты ухода и вдохновение каждый день.">
+    <meta name="keywords" content="красота, мода, стиль, уход, женский портал">
+    <meta property="og:title" content="Милана — женский портал">
+    <meta property="og:description" content="Красота, мода, здоровье и вдохновение каждый день.">
+    <meta property="og:type" content="website">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: Georgia, 'Times New Roman', serif; color: #44403c; background: #fdf8f6; }
+        header { background: #fff; border-bottom: 1px solid #f3e8e4; padding: 1.25rem 0; }
+        .wrap { max-width: 1080px; margin: 0 auto; padding: 0 1rem; }
+        .logo { text-align: center; font-size: 2rem; letter-spacing: .35em; color: #9d6b53; font-weight: 400; }
+        nav ul { display: flex; justify-content: center; gap: 2rem; list-style: none; margin-top: 1rem; flex-wrap: wrap; }
+        nav a { color: #78716c; text-decoration: none; font-size: .9rem; text-transform: uppercase;
+                letter-spacing: .1em; transition: color .2s; }
+        nav a:hover { color: #9d6b53; }
+        .hero { padding: 4rem 0; text-align: center; background: linear-gradient(180deg, #fdf8f6, #f7ebe6); }
+        .hero h1 { font-size: 2.2rem; font-weight: 400; font-style: italic; color: #57534e; max-width: 640px; margin: 0 auto 1rem; }
+        .hero p { color: #a8a29e; max-width: 480px; margin: 0 auto; }
+        section { padding: 3rem 0; }
+        h2 { text-align: center; font-weight: 400; font-size: 1.5rem; letter-spacing: .15em;
+             text-transform: uppercase; color: #9d6b53; margin-bottom: 2rem; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 2rem; }
+        .card { background: #fff; border-radius: 1rem; overflow: hidden; box-shadow: 0 2px 12px rgba(157,107,83,.08); }
+        .card .img { height: 180px; background: linear-gradient(135deg, #f5d5c8, #e8b4a0); }
+        .card:nth-child(2) .img { background: linear-gradient(135deg, #e9d5ff, #d8b4fe); }
+        .card:nth-child(3) .img { background: linear-gradient(135deg, #fde68a, #fcd34d); }
+        .card .body { padding: 1.5rem; }
+        .card h3 { font-weight: 400; font-size: 1.1rem; margin-bottom: .5rem; color: #44403c; }
+        .card p { color: #a8a29e; font-size: .9rem; line-height: 1.6; }
+        footer { border-top: 1px solid #f3e8e4; padding: 2rem 0; text-align: center;
+                 color: #a8a29e; font-size: .85rem; background: #fff; }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="wrap">
+            <div class="logo">МИЛАНА</div>
+            <nav>
+                <ul>
+                    <li><a href="#">Красота</a></li>
+                    <li><a href="#">Мода</a></li>
+                    <li><a href="#">Здоровье</a></li>
+                    <li><a href="#">Отношения</a></li>
+                    <li><a href="#">Лайфстайл</a></li>
+                </ul>
+            </nav>
+        </div>
+    </header>
+
+    <section class="hero">
+        <div class="wrap">
+            <h1>«Красота начинается в тот момент, когда вы решаете быть собой»</h1>
+            <p>Советы стилистов, рецепты ухода и вдохновение — каждый день на Милане.</p>
+        </div>
+    </section>
+
+    <section>
+        <div class="wrap">
+            <h2>Свежие статьи</h2>
+            <div class="grid">
+                <article class="card">
+                    <div class="img"></div>
+                    <div class="body">
+                        <h3>Утренний уход за кожей: 5 шагов</h3>
+                        <p>Простой ритуал на 10 минут, который изменит состояние вашей кожи уже через месяц.</p>
+                    </div>
+                </article>
+                <article class="card">
+                    <div class="img"></div>
+                    <div class="body">
+                        <h3>Капсульный гардероб: с чего начать</h3>
+                        <p>12 базовых вещей, из которых собирается 30 образов. Гайд от стилиста с примерами.</p>
+                    </div>
+                </article>
+                <article class="card">
+                    <div class="img"></div>
+                    <div class="body">
+                        <h3>Здоровые привычки без насилия над собой</h3>
+                        <p>Как мягко внедрить полезные ритуалы и не бросить через неделю. Психология маленьких шагов.</p>
+                    </div>
+                </article>
+            </div>
+        </div>
+    </section>
+
+    <footer>
+        <div class="wrap">© 2026 Милана. Сделано с любовью.</div>
+    </footer>
+</body>
+</html>

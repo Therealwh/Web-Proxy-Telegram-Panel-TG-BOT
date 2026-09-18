@@ -1,0 +1,83 @@
+# =============================================================================
+# TGGATE — Шаблон конфигурации Telemt (MTProto + Web Proxy)
+# Документация: https://github.com/telemt/telemt (docs/Config_params)
+#
+# Архитектура:
+#   - MTProto (classic/secure/tls) на публичном порту {{MTPROTO_PORT}}
+#   - WEB-listener на loopback {{TELEMT_WEB_PORT}} (за Nginx/Caddy, TLS на Caddy)
+#   - Control API на loopback {{TELEMT_API_PORT}} (для панели)
+#   - Decoy (сайт-заглушка) отдаётся Telemt из статического каталога
+# =============================================================================
+
+# === Общие настройки ===
+[general]
+use_middle_proxy = true
+log_level = "normal"
+
+# Режимы MTProto: secure (dd) и tls (ee) включены, classic выключен
+[general.modes]
+classic = false
+secure = true
+tls = true
+
+# Генерация ссылок подключения в логах (telemt::links)
+[general.links]
+show = "*"
+public_host = "{{DOMAIN}}"
+public_port = {{MTPROTO_PORT}}
+
+# === Основной сервер (MTProto) ===
+[server]
+port = {{MTPROTO_PORT}}
+
+# === Control API (только loopback, только с токеном) ===
+[server.api]
+enabled = true
+listen = "127.0.0.1:{{TELEMT_API_PORT}}"
+whitelist = ["127.0.0.1/32", "::1/128"]
+auth_header = "Bearer {{TELEMT_API_TOKEN}}"
+read_only = false
+
+# Публичный MTProto-listener (все интерфейсы)
+[[server.listeners]]
+ip = "0.0.0.0"
+port = {{MTPROTO_PORT}}
+
+# Приватный WEB-listener (только за Nginx; TLS терминирует Caddy)
+[[server.listeners]]
+ip = "127.0.0.1"
+port = {{TELEMT_WEB_PORT}}
+transport = "web"
+proxy_protocol = false
+web_client_ip_source = "x_forwarded_for"
+web_trusted_proxy_cidrs = ["127.0.0.1/32"]
+
+# === Антицензура и маскировка ===
+[censorship]
+# SNI-домен маскировки для Fake-TLS (ee) ссылок.
+# ВНИМАНИЕ: смена домена делает ранее выданные ee-ссылки недействительными!
+tls_domain = "{{MASK_DOMAIN}}"
+mask = true
+tls_emulation = true
+tls_front_dir = "{{TLSFRONT_DIR}}"
+
+# === Web Proxy (WEB-режим Telemt) ===
+# Carrier "https" — максимальная совместимость (в т.ч. Telegram iOS)
+[web]
+enabled = true
+carrier = "https"
+
+[[web.vhosts]]
+host = "{{DOMAIN}}"
+public_addr = "{{SERVER_IP}}:443"
+
+# Decoy: обычные (не прокси) запросы получают сайт-заглушку.
+# Панель управляет файлами сайта; после изменений вызывается reload.
+[web.vhosts.decoy]
+mode = "static_directory"
+directory = "{{WEBSITE_DIR}}"
+index = "index.html"
+
+# === Пользователи ===
+# Управляются панелью через Control API (/v1/users), не редактируйте вручную.
+[access.users]
