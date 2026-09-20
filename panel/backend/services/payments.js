@@ -31,33 +31,38 @@ async function createPaymentUrl({ paymentId, tariff, settings }) {
 /**
  * CryptoBot: createInvoice. payload = paymentId, вебхук подтверждает оплату.
  */
+/**
+ * CryptoBot: createInvoice. Бросает понятную ошибку при сбое.
+ * Документация: https://help.cr.bot/en/articles/10279948-crypto-pay-api
+ * ВАЖНО: токен из @CryptoBot (Mainnet), а не из тестнет-бота!
+ */
 async function createCryptoBotInvoice({ paymentId, tariff, token }) {
-    try {
-        const res = await fetch('https://pay.crypt.bot/api/createInvoice', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Crypto-Pay-API-Token': token },
-            body: JSON.stringify({
-                currency_type: 'fiat',
-                fiat_type: tariff.currency === 'USD' ? 'USD' : tariff.currency === 'EUR' ? 'EUR' : 'RUB',
-                amount: String(tariff.price),
-                description: `TGGATE: тариф «${tariff.name}»`,
-                payload: String(paymentId),
-                expires_in: 3600,
-            }),
-            signal: AbortSignal.timeout(6000), // быстрый фолбэк — пользователь не ждёт
-        });
-        const data = await res.json();
-        if (!data.ok) {
-            // Подробная ошибка CryptoBot (например, invalid token / network)
-            throw new Error(`CryptoBot API: ${data.error?.name || ''} ${data.error?.description || JSON.stringify(data.error || data).slice(0, 200)}`);
-        }
-        const url = data.result.pay_url || data.result.bot_invoice_url;
-        logger.info('CryptoBot инвойс создан', { paymentId, url });
-        return { url, provider: 'cryptobot' };
-    } catch (err) {
-        logger.error('Ошибка создания инвойса CryptoBot', { paymentId, error: err.message });
-        return null;
+    const res = await fetch('https://pay.crypt.bot/api/createInvoice', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Crypto-Pay-API-Token': token },
+        body: JSON.stringify({
+            currency_type: 'fiat',
+            fiat_type: tariff.currency === 'USD' ? 'USD' : tariff.currency === 'EUR' ? 'EUR' : 'RUB',
+            amount: String(tariff.price),
+            description: `TGGATE: тариф «${tariff.name}»`,
+            payload: String(paymentId),
+            expires_in: 3600,
+        }),
+        signal: AbortSignal.timeout(8000),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) {
+        const reason = data.error
+            ? `${data.error.name || ''} ${data.error.description || ''}`.trim() || `HTTP ${res.status}`
+            : `HTTP ${res.status}`;
+        logger.error('CryptoBot createInvoice отклонён', { paymentId, status: res.status, reason });
+        const e = new Error(`CryptoBot: ${reason}`);
+        e.statusCode = 502;
+        throw e;
     }
+    const url = data.result.pay_url || data.result.bot_invoice_url;
+    logger.info('CryptoBot инвойс создан', { paymentId, url });
+    return { url, provider: 'cryptobot' };
 }
 
 /**
