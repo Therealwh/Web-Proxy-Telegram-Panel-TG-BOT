@@ -1,0 +1,115 @@
+# =============================================================================
+# TGGATE — Nginx vhost (за Caddy, слушает только loopback)
+#
+# Маршрутизация:
+#   /{{ADMIN_PATH}}/*  → панель управления (127.0.0.1:{{PANEL_PORT}})
+#   /api/*, /ws        → API и WebSocket панели
+#   /qr/*, /status     → публичные страницы панели (QR, статус)
+#   /* (остальное)     → Telemt WEB-listener (127.0.0.1:{{TELEMT_WEB_PORT}})
+#
+# ВАЖНО: весь публичный vhost направляется в Telemt (требование WEB-режима).
+# Telemt сам отличает carrier-запросы от обычных и отдаёт сайт-заглушку.
+# access_log отключён, чтобы в логи не попадали carrier credentials.
+# =============================================================================
+
+upstream tggate_panel {
+    server 127.0.0.1:{{PANEL_PORT}};
+    keepalive 32;
+}
+
+upstream tggate_telemt_web {
+    server 127.0.0.1:{{TELEMT_WEB_PORT}};
+    keepalive 64;
+}
+
+server {
+    listen 127.0.0.1:{{NGINX_LOCAL_PORT}};
+    server_name {{DOMAIN}};
+
+    # Не логируем пути запросов — там могут быть секреты carrier-протокола
+    access_log off;
+    error_log /var/log/nginx/tggate-error.log warn;
+
+    client_max_body_size 16m;
+
+    # ВНИМАНИЕ: никаких add_header на уровне server/location для Telemt!
+    # Страница моста WEB-прокси встраивается в WebView Telegram Desktop,
+    # X-Frame-Options/CSP здесь ломают выполнение скрипта моста.
+    # Заголовки безопасности добавляются только в location панели ниже.
+
+    # --- Панель управления (секретный путь) ---
+    location /{{ADMIN_PATH}}/ {
+        # Заголовки безопасности — только для UI панели
+        add_header X-Content-Type-Options nosniff always;
+        add_header X-Frame-Options DENY always;
+        add_header Referrer-Policy strict-origin-when-cross-origin always;
+
+        proxy_pass http://tggate_panel/;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $tggate_connection_upgrade;
+    }
+
+    # --- ВЕСЬ /api/v1/* → Telemt WEB (критично для WEB-прокси!) ---
+    # Telemt WEB использует: GET / (bootstrap-мост), POST /api/v1/session,
+    # POST /api/v1/up, POST /api/v1/down, GET /api/v1/ws.
+    # Нельзя выделять из vhost отдельные carrier-пути (требование Telemt):
+    # панель живёт на /api/* и /panel-api/*, всё остальное — в Telemt.
+    location /api/v1/ {
+        proxy_pass http://tggate_telemt_web;
+        include /etc/nginx/tggate-telemt-proxy.inc;
+    }
+
+    # --- Публичный API панели для разработчиков (переехал с /api/v1) ---
+    location /panel-api/ {
+        proxy_pass http://tggate_panel;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+    }
+
+    # --- API панели ---
+    location /api/ {
+        proxy_pass http://tggate_panel;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+    }
+
+    # --- WebSocket панели (живые логи и статистика) ---
+    location /ws {
+        proxy_pass http://tggate_panel;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $tggate_connection_upgrade;
+        proxy_read_timeout 3600s;
+    }
+
+    # --- Публичные страницы панели: QR-страницы, QR-изображения и статус ---
+    location ~ ^/(qr|qrimg|status) {
+        proxy_pass http://tggate_panel;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+    }
+
+    # --- Всё остальное: Telemt WEB (прокси + сайт-заглушка) ---
+    # По документации Telemt: перезаписываем X-Forwarded-For (не дополняем),
+    # сохраняем Upgrade/Connection для WebSocket-carriers, отключаем буферизацию
+    # и upstream retries; таймауты выше long poll (25с) — берём 65с.
+    location / {
+        proxy_pass http://tggate_telemt_web;
+        include /etc/nginx/tggate-telemt-proxy.inc;
+    }
+}

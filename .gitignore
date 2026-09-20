@@ -1,0 +1,42 @@
+# Зависимости
+node_modules/
+package-lock.json
+
+# Сборка фронтенда
+panel/frontend/dist/
+
+# Окружение и секреты
+.env
+.env.*
+!.env.example
+
+# База данных и данные
+panel/backend/data/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Логи
+logs/
+*.log
+
+# Бэкапы
+backups/
+
+# Системные файлы
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Рабочие файлы (не для репозитория)
+PLAN.md
+TODO.md
+Дополнение.md
+промт для панели.md.txt
+
+PAY-PLAN.md

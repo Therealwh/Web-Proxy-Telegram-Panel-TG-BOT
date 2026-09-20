@@ -1,0 +1,59 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Базовые стили TGGATE */
+@layer base {
+    html {
+        @apply antialiased;
+    }
+    body {
+        @apply bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100;
+    }
+}
+
+@layer components {
+    /* Карточка */
+    .card {
+        @apply bg-white dark:bg-slate-900 rounded-xl border border-slate-200
+               dark:border-slate-800 shadow-sm p-5 transition-all duration-200;
+    }
+
+    /* Кнопки */
+    .btn {
+        @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2
+               text-sm font-medium transition-all duration-200
+               focus:outline-none focus:ring-2 focus:ring-primary/50
+               disabled:opacity-50 disabled:cursor-not-allowed min-h-[44px];
+    }
+    .btn-primary {
+        @apply btn bg-primary text-white hover:bg-primary-600 active:bg-primary-700;
+    }
+    .btn-secondary {
+        @apply btn bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200
+               hover:bg-slate-200 dark:hover:bg-slate-700;
+    }
+    .btn-danger {
+        @apply btn bg-red-500 text-white hover:bg-red-600;
+    }
+    .btn-ghost {
+        @apply btn hover:bg-slate-100 dark:hover:bg-slate-800;
+    }
+
+    /* Поля ввода */
+    .input {
+        @apply w-full rounded-lg border border-slate-300 dark:border-slate-700
+               bg-white dark:bg-slate-800 px-3 py-2 text-sm
+               focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary
+               placeholder:text-slate-400 transition-all duration-200;
+    }
+
+    /* Бейджи статусов */
+    .badge {
+        @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium;
+    }
+    .badge-green  { @apply badge bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400; }
+    .badge-red    { @apply badge bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-400; }
+    .badge-yellow { @apply badge bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400; }
+    .badge-blue   { @apply badge bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-400; }
+}

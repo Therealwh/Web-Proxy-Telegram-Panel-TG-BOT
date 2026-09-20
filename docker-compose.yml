@@ -1,0 +1,47 @@
+# =============================================================================
+# TGGATE — Docker Compose (опциональный способ запуска для разработки)
+# Внимание: основной поддерживаемый способ — install.sh на чистый VPS.
+# Docker-вариант не настраивает Caddy/Nginx/UFW — используйте для отладки.
+# =============================================================================
+
+services:
+  # Панель управления (backend + собранный frontend)
+  panel:
+    build:
+      context: .
+      dockerfile: Dockerfile.panel
+    container_name: tggate-panel
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DOMAIN: ${DOMAIN:-localhost}
+      SERVER_IP: ${SERVER_IP:-127.0.0.1}
+      JWT_SECRET: ${JWT_SECRET:?Задайте JWT_SECRET в .env}
+      TELEMT_API_URL: http://telemt:9091
+      TELEMT_API_AUTH: Bearer ${TELEMT_API_TOKEN:?Задайте TELEMT_API_TOKEN в .env}
+      DB_PATH: /data/tggate.db
+      DATA_DIR: /data
+    volumes:
+      - panel-data:/data
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      - telemt
+
+  # Telemt — прокси-сервер (MTProto + Web Proxy)
+  telemt:
+    image: ghcr.io/telemt/telemt:latest
+    container_name: tggate-telemt
+    restart: unless-stopped
+    volumes:
+      - ./etc/telemt.toml:/etc/telemt.toml:ro
+      - telemt-data:/var/lib/telemt
+    ports:
+      - "8443:8443"      # MTProto
+      - "18080:18080"    # WEB-listener (проксируйте через свой TLS-терминатор)
+      - "127.0.0.1:9091:9091"  # Control API
+
+volumes:
+  panel-data:
+  telemt-data:
