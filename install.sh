@@ -423,20 +423,10 @@ install_cli() {
     cp "${INSTALL_DIR}/tggate.sh" /usr/local/bin/TGGATE
     chmod +x /usr/local/bin/TGGATE
 
-    # Панель запускает скрипты обновления ПРЯМО из репозитория —
-    # никакие копии не устаревают после апдейтов
-    cat > /etc/sudoers.d/tggate <<EOF
-# TGGATE: панель управления запускает скрипты обновлений от root
-tggate ALL=(root) NOPASSWD: ${INSTALL_DIR}/scripts/update-panel.sh
-tggate ALL=(root) NOPASSWD: ${INSTALL_DIR}/scripts/update-telemt.sh
-tggate ALL=(root) NOPASSWD: ${INSTALL_DIR}/scripts/check-updates.sh
-EOF
-    chmod 440 /etc/sudoers.d/tggate
-    # Валидация sudoers перед применением (защита от поломки sudo)
-    if ! visudo -cf /etc/sudoers.d/tggate >/dev/null; then
-        rm -f /etc/sudoers.d/tggate
-        fail "Ошибка в sudoers-правиле — установка прервана"
-    fi
+    # Привилегированный хелпер обновлений (вместо хрупкого sudo):
+    # root-сервис на 127.0.0.1:9443, панель командует ему по секрету.
+    bash "${INSTALL_DIR}/scripts/install-helper.sh"
+
     ok "Команда управления: sudo TGGATE"
 }
 

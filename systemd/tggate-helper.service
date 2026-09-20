@@ -1,0 +1,28 @@
+# =============================================================================
+# TGGATE Helper — привилегированный помощник панели (root)
+# Слушает ТОЛЬКО 127.0.0.1:9443, доступ по секрету из /etc/tggate/install.env.
+# Запускает root-скрипты обновлений по команде панели (без sudo).
+# =============================================================================
+
+[Unit]
+Description=TGGATE Helper — привилегированный помощник панели
+After=network.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/bin/node /opt/tggate/scripts/helper.js
+Restart=always
+RestartSec=3
+Environment=HELPER_PORT=9443
+
+# Только loopback, никаких привилегий сверх root-процесса
+NoNewPrivileges=false
+ProtectHome=true
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=tggate-helper
+
+[Install]
+WantedBy=multi-user.target

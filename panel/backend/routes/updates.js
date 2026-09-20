@@ -1,14 +1,16 @@
 /**
  * @fileoverview Система обновлений: статус версий (всегда живой), список
  * доступных релизов, обновление панели/Telemt на выбранную версию, история.
+ * Root-скрипты запускаются через TGGATE Helper (127.0.0.1:9443, секрет) —
+ * без sudo и sudoers.
  * @module routes/updates
  */
 
 const express = require('express');
 const fs = require('fs');
-const { execFile } = require('child_process');
 const { z } = require('zod');
 const db = require('../db');
+const config = require('../config');
 const { httpError } = require('../middleware/errorHandler');
 const { getAll } = require('./settings');
 const versionInfo = require('../services/versionInfo');
@@ -16,13 +18,79 @@ const logger = require('../utils/logger');
 
 const router = express.Router();
 
-// Обновления выполняются root-скриптами через sudo (NOPASSWD правило
-// из install.sh). Скрипты запускаются ПРЯМО из репозитория — копии не устаревают.
+// Обновления выполняются root-скриптами через TGGATE Helper —
+// привилегированный помощник (127.0.0.1:9443, секрет из install.env).
+// Ставится автоматически install.sh / scripts/install-helper.sh.
 const SCRIPTS = {
     check: '/opt/tggate/scripts/check-updates.sh',
     panel: '/opt/tggate/scripts/update-panel.sh',
     telemt: '/opt/tggate/scripts/update-telemt.sh',
 };
+
+/**
+ * Запуск скрипта через хелпер.
+ * @returns {Promise<void>} ошибка с понятным текстом при проблемах
+ */
+async function runViaHelper(key, targetVersion) {
+    if (!config.helperUrl || !config.helperSecret) {
+        throw new Error(
+            'Хелпер обновлений не настроен. Выполните на сервере от root: ' +
+            'bash /opt/tggate/scripts/install-helper.sh && systemctl restart tggate-panel'
+        );
+    }
+    try {
+        const res = await fetch(`${config.helperUrl}/run`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ secret: config.helperSecret, key, version: targetVersion }),
+            signal: AbortSignal.timeout(10000),
+        });
+        if (!res.ok) {
+            const text = await res.text();
+            if (res.status === 403) {
+                throw new Error('Хелпер отклонил секрет. Перезапустите: bash /opt/tggate/scripts/install-helper.sh');
+            }
+            throw new Error(`Хелпер: HTTP ${res.status} ${text.slice(0, 100)}`);
+        }
+    } catch (err) {
+        if (err.name === 'AbortError' || err.cause?.code === 'ECONNREFUSED') {
+            throw new Error(
+                'Хелпер обновлений не запущен. Выполните на сервере от root: ' +
+                'bash /opt/tggate/scripts/install-helper.sh && systemctl restart tggate-panel'
+            );
+        }
+        throw err;
+    }
+}
+
+/**
+ * Запускает обновление через хелпер.
+ * @param {'check'|'panel'|'telemt'} key
+ * @param {string|null} targetVersion - конкретная версия (null = последняя)
+ * @param {import('express').Response} res
+ */
+async function runUpdateScript(key, targetVersion, res) {
+    const script = SCRIPTS[key];
+    if (!fs.existsSync(script)) {
+        throw httpError(404, `Скрипт ${script} не найден. Перезапустите установку панели.`);
+    }
+
+    try {
+        await runViaHelper(key, targetVersion);
+    } catch (err) {
+        logger.error('Обновление не запущено', { key, error: err.message });
+        throw httpError(500, err.message);
+    }
+
+    // Статус в историю пишет сам root-скрипт (перезапуск панели убьёт
+    // запущенный скрипт — это ожидаемо, всё важное он делает до рестарта)
+    res.json({
+        ok: true,
+        message: targetVersion
+            ? `Обновление до версии ${targetVersion} запущено. Это займёт 1-2 минуты.`
+            : 'Обновление запущено. Это займёт 1-2 минуты.',
+    });
+}
 
 // --- Статус версий (всегда собирается на месте, versions.json как кэш) ---
 router.get('/status', async (req, res, next) => {
@@ -60,63 +128,6 @@ router.get('/history', (req, res) => {
     const history = db.prepare('SELECT * FROM updates_log ORDER BY created_at DESC LIMIT 50').all();
     res.json({ history });
 });
-
-/**
- * Проверяет, что панель может запустить root-скрипт через sudo.
- */
-function assertSudoAccess(script) {
-    return new Promise((resolve, reject) => {
-        // -n: не спрашивать пароль; -l <script>: проверить право
-        execFile('sudo', ['-n', '-l', script], { timeout: 10000 }, (err, stdout) => {
-            const out = String(stdout);
-            if (!err && out.includes(script) && (out.includes('NOPASSWD') || !/password/i.test(out))) {
-                return resolve();
-            }
-            reject(new Error(
-                'sudo-правило не настроено. Выполните на сервере от root: ' +
-                "printf 'tggate ALL=(root) NOPASSWD: /opt/tggate/scripts/update-panel.sh\\ntggate ALL=(root) NOPASSWD: /opt/tggate/scripts/update-telemt.sh\\ntggate ALL=(root) NOPASSWD: /opt/tggate/scripts/check-updates.sh\\n' > /etc/sudoers.d/tggate && chmod 440 /etc/sudoers.d/tggate"
-            ));
-        });
-    });
-}
-
-/**
- * Запускает root-скрипт обновления через sudo и пишет результат в updates_log.
- * @param {'check'|'panel'|'telemt'} key
- * @param {string|null} targetVersion - конкретная версия (null = последняя)
- * @param {import('express').Response} res
- */
-async function runUpdateScript(key, targetVersion, res) {
-    const script = SCRIPTS[key];
-    if (!fs.existsSync(script)) {
-        throw httpError(404, `Скрипт ${script} не найден. Перезапустите установку панели.`);
-    }
-
-    // Префлайт: сразу понятная ошибка вместо крестика в истории
-    try {
-        await assertSudoAccess(script);
-    } catch (err) {
-        logger.error('Sudo недоступен для обновлений', { error: err.message });
-        throw httpError(500, err.message);
-    }
-
-    const args = targetVersion ? [targetVersion] : [];
-    // Скрипты могут работать до 10 минут (сборка фронтенда)
-    execFile('sudo', [script, ...args], { timeout: 600000 }, (error, stdout, stderr) => {
-        const status = error ? 'failed' : 'success';
-        db.prepare(
-            'INSERT INTO updates_log (component, from_version, to_version, status, log) VALUES (?, ?, ?, ?, ?)'
-        ).run(key, null, targetVersion || null, status, (stdout + '\n' + stderr).slice(0, 10000));
-        logger.info(`Обновление (${key})${targetVersion ? ' до ' + targetVersion : ''}: ${status}`);
-    });
-
-    res.json({
-        ok: true,
-        message: targetVersion
-            ? `Обновление до версии ${targetVersion} запущено. Это займёт 1-2 минуты.`
-            : 'Обновление запущено. Это займёт 1-2 минуты.',
-    });
-}
 
 // --- Запустить обновление (опционально на конкретную версию) ---
 router.post('/check', async (req, res, next) => {

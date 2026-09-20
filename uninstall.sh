@@ -45,8 +45,10 @@ systemctl reload nginx caddy 2>/dev/null || true
 
 echo "[4/7] Удаление cron-задач..."
 rm -f /etc/cron.d/tggate-updates
-rm -f /etc/sudoers.d/tggate
-
+systemctl stop tggate-helper 2>/dev/null || true
+systemctl disable tggate-helper 2>/dev/null || true
+rm -f /etc/systemd/system/tggate-helper.service
+systemctl daemon-reload
 echo "[5/7] Удаление команды управления..."
 rm -f /usr/local/bin/TGGATE
 

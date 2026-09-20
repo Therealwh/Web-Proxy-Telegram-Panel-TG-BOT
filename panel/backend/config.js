@@ -47,6 +47,10 @@ module.exports = {
         configPath: process.env.TELEMT_CONFIG || '/etc/tggate/telemt.toml',
     },
 
+    // TGGATE Helper — root-помощник для скриптов обновлений
+    helperUrl: process.env.HELPER_URL || null,       // http://127.0.0.1:9443
+    helperSecret: process.env.HELPER_SECRET || null, // секрет из install.env
+
     // Пути
     dbPath: process.env.DB_PATH || path.join(__dirname, 'data', 'tggate.db'),
     dataDir: process.env.DATA_DIR || path.join(__dirname, 'data'),
