@@ -115,7 +115,7 @@ app.use('/api/website', requireAuth, csrfProtection, audit(db), websiteRouter);
 app.use('/api/bot', requireAuth, csrfProtection, audit(db), botRouter);
 app.use('/api/api-keys', requireAuth, csrfProtection, audit(db), apiKeysModule.router);
 app.use('/api/updates', requireAuth, csrfProtection, audit(db), updatesRouter);
-app.use('/api/payments', paymentsRouter); // внутри: вебхуки публичны, админское — JWT
+app.use('/api/payments', paymentsRouter.router); // внутри: вебхуки публичны, админское — JWT
 
 // Публичный API v1 (по API-ключам). Префикс /panel-api — потому что
 // /api/v1/* на публичном домене принадлежит Telemt WEB (carrier-пути).
