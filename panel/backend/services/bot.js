@@ -902,15 +902,17 @@ async function start() {
 
 /** Создаёт счёт на пополнение и отправляет ссылку. */
 async function createAndSendDeposit(ctx, amount) {
+    let paymentId = null;
     try {
         const settings = getBotSettings();
         const result = db.prepare(
             'INSERT INTO payments (amount, currency, provider, status, telegram_id) VALUES (?, ?, ?, ?, ?, ?)'
         ).run(amount, settings.currency, 'manual', 'pending', ctx.from.id);
+        paymentId = result.lastInsertRowid;
 
         const paymentsService = require('./payments');
         const pay = await paymentsService.createPaymentUrl({
-            paymentId: result.lastInsertRowid,
+            paymentId,
             tariff: { name: 'Пополнение баланса', price: amount, currency: settings.currency },
             settings,
         });
@@ -918,14 +920,15 @@ async function createAndSendDeposit(ctx, amount) {
         if (pay) {
             const kb = new InlineKeyboard()
                 .url('💳 Оплатить онлайн', pay.url).row()
-                .text('🏦 Напрямую админу', `manualpay:${result.lastInsertRowid}`);
-            await ctx.reply(`🧾 Счёт #${result.lastInsertRowid} на ${amount} ${currencySign(settings.currency)}.\nВыберите способ оплаты:`, { reply_markup: kb });
+                .text('🏦 Напрямую админу', `manualpay:${paymentId}`);
+            await ctx.reply(`🧾 Счёт #${paymentId} на ${amount} ${currencySign(settings.currency)}.\nВыберите способ оплаты:`, { reply_markup: kb });
         } else {
-            await sendManualInstructions(ctx, result.lastInsertRowid, `${amount} ${currencySign(settings.currency)}`);
+            await sendManualInstructions(ctx, paymentId, `${amount} ${currencySign(settings.currency)}`);
         }
     } catch (e) {
-        logger.error('Ошибка создания счёта на пополнение', { error: e.message });
-        await ctx.reply('⚠️ Не удалось создать счёт. Попробуйте позже или напишите в поддержку.').catch(() => {});
+        logger.error('Ошибка создания счёта на пополнение', { error: e.message, stack: e.stack });
+        const text = `⚠️ Не удалось создать счёт: ${e.message}\nНапишите в поддержку ${SUPPORT_USERNAME} (заказ ${paymentId ? '#' + paymentId : 'не создан'})`;
+        await ctx.reply(text).catch(() => ctx.reply('⚠️ Не удалось создать счёт. Напишите в поддержку.'));
     }
 }
 

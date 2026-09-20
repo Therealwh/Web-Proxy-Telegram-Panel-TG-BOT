@@ -314,7 +314,8 @@ export default function Bot() {
 
             {/* Платёжные системы */}
             <Card title="💳 Платёжные системы"
-                  subtitle="Настройте одну из них — счёт будет создаваться автоматически, доступ выдаётся после оплаты">
+                  subtitle="Настройте одну из них — счёт будет создаваться автоматически, доступ выдаётся после оплаты"
+                  actions={<button className="btn-primary !min-h-0 !px-3 !py-1.5 text-sm" onClick={saveSettings}><Save size={14} /> Сохранить</button>}>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <Field label="🪙 CryptoBot (CryptoCloud) — токен" hint="Из @CryptoBot → Crypto Pay → Create App">
                         <input className="input font-mono" value={settings.cryptobot_token ?? ''}
