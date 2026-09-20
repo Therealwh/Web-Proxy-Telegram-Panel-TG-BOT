@@ -55,4 +55,4 @@ function broadcast(type, data) {
     }
 }
 
-module.exports = { init, broadcast };
+module.exports = { init, broadcast, closeAll };

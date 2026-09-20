@@ -15,15 +15,26 @@ const logger = require('../utils/logger');
  * @returns {Promise<{url: string, provider: string}|null>} null — если провайдер не настроен
  */
 async function createPaymentUrl({ paymentId, tariff, settings }) {
+    // CryptoBot (если настроен); при сбое/блокировке — фолбэк на ЮKassa
     if (settings.cryptobot_token) {
-        return createCryptoBotInvoice({ paymentId, tariff, token: settings.cryptobot_token });
+        try {
+            const result = await createCryptoBotInvoice({ paymentId, tariff, token: settings.cryptobot_token });
+            if (result) return result;
+        } catch (err) {
+            logger.error('CryptoBot недоступен, пробую следующий способ', { error: err.message });
+        }
     }
     if (settings.yookassa_shop_id && settings.yookassa_secret_key) {
-        return createYooKassaPayment({
-            paymentId, tariff,
-            shopId: settings.yookassa_shop_id,
-            secretKey: settings.yookassa_secret_key,
-        });
+        try {
+            const result = await createYooKassaPayment({
+                paymentId, tariff,
+                shopId: settings.yookassa_shop_id,
+                secretKey: settings.yookassa_secret_key,
+            });
+            if (result) return result;
+        } catch (err) {
+            logger.error('ЮKassa недоступна', { error: err.message });
+        }
     }
     return null;
 }
