@@ -859,9 +859,9 @@ async function start() {
         if (broadcastState.delete(ctx.from.id)) await ctx.reply('❌ Рассылка отменена');
     });
 
-    // Текст от админа в режиме рассылки
-    bot.on('message:text', async (ctx) => {
-        if (!isAdmin(ctx) || !broadcastState.has(ctx.from.id)) return;
+    // Текст от админа в режиме рассылки (пропускаем дальше, если это не рассылка!)
+    bot.on('message:text', async (ctx, next) => {
+        if (!isAdmin(ctx) || !broadcastState.has(ctx.from.id)) return next();
         broadcastState.delete(ctx.from.id);
         const clients = db.prepare('SELECT telegram_id FROM clients WHERE telegram_id IS NOT NULL').all();
         await ctx.reply(`📢 Рассылка запущена: ${clients.length} получателей...`);
