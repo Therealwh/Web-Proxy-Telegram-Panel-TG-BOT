@@ -95,4 +95,4 @@ async function createYooKassaPayment({ paymentId, tariff, shopId, secretKey }) {
     }
 }
 
-module.exports = { createPaymentUrl };
+module.exports = { createPaymentUrl, createCryptoBotInvoice, createYooKassaPayment };

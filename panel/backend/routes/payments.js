@@ -8,6 +8,7 @@ const express = require('express');
 const crypto = require('crypto');
 const { z } = require('zod');
 const db = require('../db');
+const telemt = require('../services/telemtApi');
 const { requireAuth } = require('../middleware/auth');
 const { httpError } = require('../middleware/errorHandler');
 const { fireWebhook } = require('../services/webhooks');
@@ -26,6 +27,34 @@ async function completePayment(paymentId) {
     if (payment.status === 'success') return payment; // идемпотентность
 
     const tariff = db.prepare('SELECT * FROM tariffs WHERE id = ?').get(payment.tariff_id);
+
+    // Продление конкретного прокси (покупка продления из кабинета)
+    if (tariff && payment.client_id) {
+        const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(payment.client_id);
+        if (client) {
+            const base = client.expires_at && new Date(client.expires_at) > new Date()
+                ? new Date(client.expires_at) : new Date();
+            const newExpiry = new Date(base.getTime() + tariff.days * 86400000).toISOString();
+            const patch = { expiration_rfc3339: newExpiry };
+            if (tariff.max_ips) patch.max_unique_ips = tariff.max_ips;
+            if (tariff.quota_gb) patch.data_quota_bytes = Math.round(tariff.quota_gb * 1024 ** 3);
+            await telemt.patchUser(client.username, patch).catch(() => {});
+            db.prepare("UPDATE clients SET expires_at = ?, status = 'active' WHERE id = ?").run(newExpiry, client.id);
+            db.prepare("UPDATE payments SET status = 'success', paid_at = datetime('now') WHERE id = ?").run(paymentId);
+
+            const bot = require('../services/bot');
+            if (payment.telegram_id && bot) {
+                const fmt = (d) => new Date(d).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' }) + ' МСК';
+                await bot.api.sendMessage(
+                    payment.telegram_id,
+                    `✅ <b>Продление оплачено!</b>\n\n📦 ${client.username} — до <b>${fmt(newExpiry)}</b>`,
+                    { parse_mode: 'HTML' }
+                ).catch(() => {});
+            }
+            logger.info('Прокси продлён', { paymentId, username: client.username });
+            return payment;
+        }
+    }
 
     // Пополнение баланса (платёж без тарифа): начисляем сумму на счёт клиента
     if (!tariff && payment.telegram_id) {
@@ -105,10 +134,12 @@ router.post('/webhook/cryptobot', async (req, res) => {
 // Админские эндпоинты (JWT)
 // ===========================================================================
 
-// --- Список платежей ---
+// --- Список платежей (с username покупателя) ---
 router.get('/', requireAuth, (req, res) => {
     const payments = db.prepare(
-        `SELECT p.*, t.name AS tariff_name FROM payments p
+        `SELECT p.*, t.name AS tariff_name,
+                (SELECT c.username FROM clients c WHERE c.telegram_id = p.telegram_id LIMIT 1) AS username
+         FROM payments p
          LEFT JOIN tariffs t ON t.id = p.tariff_id
          ORDER BY p.created_at DESC LIMIT 200`
     ).all();
@@ -119,6 +150,20 @@ router.get('/', requireAuth, (req, res) => {
 router.post('/:id/confirm', requireAuth, async (req, res, next) => {
     try {
         await completePayment(Number(req.params.id));
+        res.json({ ok: true });
+    } catch (err) {
+        next(err);
+    }
+});
+
+// --- Отмена платежа (покупатель не оплатил) ---
+router.post('/:id/cancel', requireAuth, (req, res, next) => {
+    try {
+        const result = db.prepare(
+            "UPDATE payments SET status = 'cancelled' WHERE id = ? AND status = 'pending'"
+        ).run(Number(req.params.id));
+        if (result.changes === 0) throw httpError(404, 'Платёж не найден или уже обработан');
+        logger.info('Платёж отменён администратором', { paymentId: req.params.id });
         res.json({ ok: true });
     } catch (err) {
         next(err);
@@ -187,4 +232,4 @@ router.post('/promo/check', (req, res, next) => {
     }
 });
 
-module.exports = router;
+module.exports = { router, completePayment };

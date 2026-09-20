@@ -1,14 +1,13 @@
 /**
  * @fileoverview Telegram-бот продаж TGGATE (grammY) с админ-панелью.
  *
- * ВАЖНО: порядок регистрации middleware строгий:
+ * Порядок регистрации middleware строгий:
  *   1. Гейт обязательной подписки на канал (первым!)
  *   2. Кнопка проверки подписки
  *   3. Все остальные хендлеры
  *
- * Пользователь: /start — приветствие и тарифы, покупка (платёжки/вручную),
- * личный кабинет (несколько прокси, продление, баланс), рефералка, тест 3ч.
- * Админ (tg_admin_chat_id): /admin — дашборд, платежи, клиенты, рассылка.
+ * Покупка: выбор способа (баланс / CryptoBot / ЮKassa / карта админа),
+ * ленивое создание инвойса, чек админу, рефералка, личный кабинет.
  * @module services/bot
  */
 
@@ -22,30 +21,17 @@ const logger = require('../utils/logger');
 /** @type {Bot|null} */
 let bot = null;
 
-// Реферальные переходы: tgId -> id клиента-реферера
+// Реферальные переходы: tgId -> id клиента-реферера (RAM + referral_pending в БД)
 const refPending = new Map();
 // Состояние рассылки: tgId админа -> true (ждём текст)
 const broadcastState = new Map();
 // Ожидание чека: tgId -> paymentId
 const receiptState = new Map();
+// Ожидание своей суммы пополнения: tgId -> true
+const depositCustom = new Map();
 
 /** Юзернейм поддержки. */
 const SUPPORT_USERNAME = '@tggatetopsupport';
-
-// Реквизиты ручной оплаты задаются в ПАНЕЛИ (Платёжные системы):
-// pay_card / pay_phone / pay_bank в настройках бота.
-
-/**
- * Формат времени по Москве с точностью до секунды (с пометкой МСК).
- * Пример: 20.09.26 15:34:39 МСК
- */
-function fmtMSK(date) {
-    return new Date(date).toLocaleString('ru-RU', {
-        timeZone: 'Europe/Moscow',
-        day: '2-digit', month: '2-digit', year: '2-digit',
-        hour: '2-digit', minute: '2-digit', second: '2-digit',
-    }) + ' МСК';
-}
 
 /** Красивое приветствие по умолчанию (меняется в панели). */
 const DEFAULT_WELCOME =
@@ -67,8 +53,21 @@ function currencySign(code) {
     return { RUB: '₽', USD: '$', EUR: '€', USDT: '₮' }[code] || code;
 }
 
-/** Клавиатура с тарифами (null, если тарифов нет). */
+/**
+ * Формат времени по Москве с точностью до секунды.
+ * Пример: 20.09.26 15:34:39 МСК
+ */
+function fmtMSK(date) {
+    return new Date(date).toLocaleString('ru-RU', {
+        timeZone: 'Europe/Moscow',
+        day: '2-digit', month: '2-digit', year: '2-digit',
+        hour: '2-digit', minute: '2-digit', second: '2-digit',
+    }) + ' МСК';
+}
+
+/** Клавиатура с тарифами: кнопки открывают описание (info), плюс кастомные кнопки из панели. */
 function tariffsKeyboard() {
+    const settings = getBotSettings();
     const tariffs = db.prepare('SELECT * FROM tariffs WHERE enabled = 1 ORDER BY days').all();
     const kb = new InlineKeyboard();
     for (const t of tariffs) {
@@ -76,11 +75,8 @@ function tariffsKeyboard() {
     }
     kb.text('📱 Мой доступ', 'my').row();
     kb.text('💬 Поддержка', 'support').row();
-    // Кастомные кнопки из панели (ссылки на ботов/каналы)
-    for (const b of getBotSettings().custom_buttons || []) {
-        if (b.enabled !== false && b.name && b.url) {
-            kb.url(b.name.slice(0, 64), b.url).row();
-        }
+    for (const b of settings.custom_buttons || []) {
+        if (b.enabled !== false && b.name && b.url) kb.url(b.name.slice(0, 64), b.url).row();
     }
     return kb;
 }
@@ -172,12 +168,12 @@ function cabinetView(ctx) {
     let text = `📱 <b>Личный кабинет</b>\n💰 Баланс: <b>${balance.toFixed(2)}</b>\n\n<b>Мои прокси:</b>\n`;
     const kb = new InlineKeyboard();
     for (const c of clients) {
-        const until = c.expires_at ? fmtMSK(c.expires_at) : '∞';
+        const until = c.expires_at ? fmtMSK(c.expires_at, false) : '∞';
         const icon = c.status === 'active' ? '🟢' : '🔴';
         text += `${icon} <b>${c.username}</b> — до ${until}\n`;
         kb.text(`♻️ Продлить: ${c.username}`, `renew:${c.id}`).row();
     }
-    kb.text(`💳 Пополнить счёт`, 'topup').row();
+    kb.text('💳 Пополнить счёт', 'topup').row();
     kb.text('🚀 Тарифы', 'tariffs');
     return { text, kb };
 }
@@ -192,69 +188,35 @@ function renewKeyboard(clientId) {
     return kb;
 }
 
-/**
- * Продление существующего клиента: баланс или счёт через платёжку.
- */
-async function handleRenew(ctx, clientId, tariffId) {
-    const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(clientId);
-    const tariff = db.prepare('SELECT * FROM tariffs WHERE id = ? AND enabled = 1').get(tariffId);
-    if (!client || !tariff) return ctx.answerCallbackQuery('Недоступно');
+/** Общий баланс пользователя. */
+function totalBalance(tgId) {
+    return db.prepare('SELECT COALESCE(SUM(balance),0) AS b FROM clients WHERE telegram_id = ?').get(tgId).b;
+}
 
-    // Оплата с баланса
-    if ((client.balance || 0) >= tariff.price) {
-        db.prepare('UPDATE clients SET balance = balance - ? WHERE id = ?').run(tariff.price, client.id);
-        const base = client.expires_at && new Date(client.expires_at) > new Date()
-            ? new Date(client.expires_at) : new Date();
-        const newExpiry = new Date(base.getTime() + tariff.days * 86400000).toISOString();
-        await telemt.patchUser(client.username, { expiration_rfc3339: newExpiry }).catch(() => {});
-        db.prepare("UPDATE clients SET expires_at = ?, status = 'active' WHERE id = ?").run(newExpiry, client.id);
-        await ctx.answerCallbackQuery();
-        return ctx.reply(
-            `✅ <b>Продлено с баланса!</b>\n\n📦 ${client.username} — до <b>${fmtMSK(newExpiry)}</b>\n💳 Списано: ${tariff.price} ${currencySign(tariff.currency)}`,
-            { parse_mode: 'HTML' }
-        );
-    }
-
-    // Счёт через платёжку
-    await ctx.answerCallbackQuery('Создаю счёт...');
-    const result = db.prepare(
-        'INSERT INTO payments (tariff_id, amount, currency, provider, status, telegram_id) VALUES (?, ?, ?, ?, ?, ?)'
-    ).run(tariff.id, tariff.price, tariff.currency, 'manual', 'pending', ctx.from.id);
-
-    const settings = getBotSettings();
-    const paymentsService = require('./payments');
-    const pay = await paymentsService.createPaymentUrl({
-        paymentId: result.lastInsertRowid,
-        tariff: { name: `${tariff.name} (продление ${client.username})`, price: tariff.price, currency: tariff.currency },
-        settings,
-    });
-
-    if (pay) {
-        const kb = new InlineKeyboard()
-            .url('💳 Оплатить онлайн', pay.url).row()
-            .text('🏦 Напрямую админу', `manualpay:${result.lastInsertRowid}`);
-        await ctx.reply(
-            `🧾 <b>Счёт #${result.lastInsertRowid}</b>\n💰 Баланса не хватило (${(client.balance || 0).toFixed(2)})\n\nВыберите способ оплаты:`,
-            { parse_mode: 'HTML', reply_markup: kb }
-        );
-    } else {
-        await sendManualInstructions(ctx, result.lastInsertRowid, `${tariff.price} ${currencySign(tariff.currency)}`);
+/** Списание с баланса (по клиентам, от большего остатка). */
+function deductBalance(tgId, amount) {
+    let left = amount;
+    const rows = db.prepare(
+        'SELECT id, balance FROM clients WHERE telegram_id = ? AND balance > 0 ORDER BY balance DESC'
+    ).all(tgId);
+    for (const c of rows) {
+        if (left <= 0) break;
+        const take = Math.min(c.balance, left);
+        db.prepare('UPDATE clients SET balance = balance - ? WHERE id = ?').run(take, c.id);
+        left -= take;
     }
 }
 
 /**
- * Выдаёт доступ покупателю по telegram_id (вебхуки оплаты и админка).
- * Каждая покупка создаёт НОВЫЙ прокси (отдельный клиент).
- * Начисляет реферальный бонус пригласившему.
+ * Выдаёт доступ покупателю по telegram_id (вебхуки оплаты, баланс, админка).
+ * Каждая покупка создаёт НОВЫЙ прокси. Начисляет реферальный бонус.
  */
 async function issueAccessFor(tgId, tariff, paymentId) {
     const settings = getAll();
     const expires = new Date(Date.now() + tariff.days * 86400000).toISOString();
 
-    // Уникальное имя: tg<id>x<n>, где n — число существующих прокси + 1
     const count = db.prepare('SELECT COUNT(*) AS c FROM clients WHERE telegram_id = ?').get(tgId).c;
     const username = `tg${tgId}x${count + 1}`;
-    // Реферал: кто пригласил (RAM или БД — на случай перезапуска панели)
     const referrerId = refPending.get(tgId)
         || db.prepare('SELECT referrer_id FROM referral_pending WHERE telegram_id = ?').get(tgId)?.referrer_id
         || null;
@@ -295,16 +257,13 @@ async function issueAccessFor(tgId, tariff, paymentId) {
         `💰 <b>Новая продажа!</b>\n📦 ${tariff.name} — ${tariff.price} ${currencySign(tariff.currency)}\n👤 ${username}`
     ).catch(() => {});
 
-    // Бонус рефереру за покупку приглашённого
     payReferralBonus(client.id, tariff.days).catch((e) =>
         logger.warn('Не удалось начислить реферальный бонус', { error: e.message }));
 
     return client;
 }
 
-/**
- * Реферальный бонус: 30+ дней → +10; 60+ → +25% срока (округление вверх).
- */
+/** Реферальный бонус: 30+ дней → +10; 60+ → +25% срока. */
 async function payReferralBonus(clientId, purchasedDays) {
     const client = db.prepare('SELECT referrer_id FROM clients WHERE id = ?').get(clientId);
     if (!client?.referrer_id) return;
@@ -326,7 +285,7 @@ async function payReferralBonus(clientId, purchasedDays) {
     if (referrer.telegram_id && bot) {
         await bot.api.sendMessage(
             referrer.telegram_id,
-            `🎁 <b>Бонус за реферала!</b>\n\nДруг купил прокси на ${purchasedDays} дн. — вам <b>+${bonus} дней</b>.\n\n${referrer.username}: до ${fmtMSK(newExpiry)}`,
+            `🎁 <b>Бонус за реферала!</b>\n\nДруг купил прокси на ${purchasedDays} дн. — вам <b>+${bonus} дней</b>.\n\n${referrer.username}: до ${fmtMSK(newExpiry, false)}`,
             { parse_mode: 'HTML' }
         ).catch(() => {});
     }
@@ -350,10 +309,7 @@ async function sendMessageTo(tgId, text) {
         .catch((e) => { throw new Error(`Telegram: ${e.message}`); });
 }
 
-/**
- * Проверяет подписку на обязательный канал.
- * @returns {Promise<boolean>} true — доступ разрешён
- */
+/** Проверка подписки на обязательный канал. */
 async function checkSubscription(ctx) {
     const s = getBotSettings();
     if (!s.channel_required || !s.channel_username) return true;
@@ -364,8 +320,7 @@ async function checkSubscription(ctx) {
         const m = await bot.api.getChatMember(s.channel_username, userId);
         return ['creator', 'administrator', 'member'].includes(m.status);
     } catch {
-        // Бот не видит канал — не блокируем пользователей
-        return true;
+        return true; // бот не видит канал — не блокируем
     }
 }
 
@@ -382,24 +337,16 @@ function subscribeScreen() {
     };
 }
 
-/**
- * Показывает инструкцию ручной оплаты (карта админа) + кнопку «Я оплатил».
- * @param {object} ctx
- * @param {number} paymentId - id платежа в БД
- * @param {string} amountText - «300 ₽» и т.п.
- */
+/** Инструкция ручной оплаты: реквизиты из панели (карта/СБП/банк). */
 async function sendManualInstructions(ctx, paymentId, amountText) {
     const s = getBotSettings();
-
-    // Реквизиты из панели: карта / телефон СБП / банк
     const rows = [];
     if (s.pay_card) rows.push(`💳 Карта: <b>${s.pay_card}</b>`);
     if (s.pay_phone) rows.push(`📱 Телефон (СБП): <b>${s.pay_phone}</b>`);
     if (s.pay_bank) rows.push(`🏦 Банк: <b>${s.pay_bank}</b>`);
-
     const requisites = rows.length > 0
         ? rows.join('\n')
-        : `⚠️ Реквизиты не заданы — админ заполнит их в панели (Платёжные системы).`;
+        : '⚠️ Реквизиты не заданы — заполните их в панели (Платёжные системы).';
 
     const kb = new InlineKeyboard().text('✅ Я оплатил', `paid:${paymentId}`);
     const text =
@@ -407,22 +354,49 @@ async function sendManualInstructions(ctx, paymentId, amountText) {
         `🧾 Заказ: <b>#${paymentId}</b>${amountText ? `\n💵 Сумма: <b>${amountText}</b>` : ''}\n\n` +
         `${requisites}\n\n` +
         `После перевода нажмите «✅ Я оплатил» и отправьте скриншот или PDF чека.`;
-
     try {
         await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb });
     } catch (e) {
-        // Текст реквизитов ломает HTML-разметку — отправляем без форматирования
         logger.warn('Инструкция оплаты: HTML не прошёл, отправляю как текст', { error: e.message });
         await ctx.reply(text.replace(/<[^>]*>/g, ''), { reply_markup: kb });
     }
 }
 
-/**
- * Приём чека: фото или PDF от пользователя пересылаются админу.
- */
+/** Создаёт счёт на пополнение и отправляет ссылку/инструкцию. */
+async function createAndSendDeposit(ctx, amount) {
+    let paymentId = null;
+    try {
+        const settings = getBotSettings();
+        paymentId = db.prepare(
+            'INSERT INTO payments (amount, currency, provider, status, telegram_id) VALUES (?, ?, ?, ?, ?, ?)'
+        ).run(amount, settings.currency, 'manual', 'pending', ctx.from.id).lastInsertRowid;
+
+        const paymentsService = require('./payments');
+        const pay = await paymentsService.createPaymentUrl({
+            paymentId,
+            tariff: { name: 'Пополнение баланса', price: amount, currency: settings.currency },
+            settings,
+        });
+
+        if (pay) {
+            const kb = new InlineKeyboard()
+                .url('💳 Оплатить онлайн', pay.url).row()
+                .text('🏦 Карта админа', `manualpay:${paymentId}`);
+            await ctx.reply(`🧾 Счёт #${paymentId} на ${amount} ${currencySign(settings.currency)}.\nВыберите способ оплаты:`, { reply_markup: kb });
+        } else {
+            await sendManualInstructions(ctx, paymentId, `${amount} ${currencySign(settings.currency)}`);
+        }
+    } catch (e) {
+        logger.error('Ошибка создания счёта на пополнение', { error: e.message, stack: e.stack });
+        const text = `⚠️ Не удалось создать счёт: ${e.message}\nНапишите в поддержку ${SUPPORT_USERNAME} (заказ ${paymentId ? '#' + paymentId : 'не создан'})`;
+        await ctx.reply(text).catch(() => ctx.reply('⚠️ Не удалось создать счёт. Напишите в поддержку.'));
+    }
+}
+
+/** Приём чека: фото/PDF пересылаются админу. */
 async function handleReceipt(ctx) {
     const paymentId = receiptState.get(ctx.from.id);
-    if (!paymentId) return; // чек не ждём — пропускаем
+    if (!paymentId) return;
     receiptState.delete(ctx.from.id);
 
     const settings = getAll();
@@ -431,7 +405,7 @@ async function handleReceipt(ctx) {
     const caption =
         `🧾 <b>Чек по заказу #${paymentId}</b>\n` +
         `👤 От: ${from.username ? '@' + from.username : from.first_name} (ID ${from.id})\n\n` +
-        `⚠️ Проверьте оплату и подтвердите:\nПанель → Дашборд или /admin → 💰 Платежи`;
+        `⚠️ Проверьте оплату и подтвердите: /admin → 💰 Платежи`;
 
     try {
         if (admin && bot) {
@@ -442,10 +416,7 @@ async function handleReceipt(ctx) {
                 await bot.api.sendDocument(admin, ctx.message.document.file_id, { caption, parse_mode: 'HTML' });
             }
         }
-        await ctx.reply(
-            `✅ <b>Чек получен!</b>\n\nАдминистратор проверит оплату — доступ придёт в этот чат.\nЗаказ #${paymentId}`,
-            { parse_mode: 'HTML' }
-        );
+        await ctx.reply(`✅ <b>Чек получен!</b> Администратор проверит оплату — доступ придёт в этот чат.\nЗаказ #${paymentId}`, { parse_mode: 'HTML' });
     } catch (e) {
         logger.error('Не удалось переслать чек админу', { error: e.message, paymentId });
         await ctx.reply('⚠️ Не удалось передать чек. Отправьте его в поддержку ' + SUPPORT_USERNAME);
@@ -469,7 +440,7 @@ async function start() {
 
     bot = new Bot(botSettings.bot_token);
 
-    // ═══ 1. ГЕЙТ ПОДПИСКИ — строго первым middleware ═══
+    // ═══ 1. ГЕЙТ ПОДПИСКИ — первым ═══
     bot.use(async (ctx, next) => {
         const s = getBotSettings();
         if (!s.channel_required || !s.channel_username) return next();
@@ -484,7 +455,7 @@ async function start() {
             } else {
                 await ctx.reply(screen.text, { parse_mode: 'HTML', reply_markup: screen.kb });
             }
-            return; // не пускаем дальше
+            return;
         }
         return next();
     });
@@ -510,13 +481,11 @@ async function start() {
             const referrer = db.prepare('SELECT id FROM clients WHERE telegram_id = ?').get(refTgId);
             if (referrer && refTgId !== ctx.from.id) {
                 refPending.set(ctx.from.id, referrer.id);
-                // Персистентно: переживает перезапуск панели
                 db.prepare(
                     'INSERT INTO referral_pending (telegram_id, referrer_id) VALUES (?, ?) ' +
                     'ON CONFLICT(telegram_id) DO UPDATE SET referrer_id = excluded.referrer_id'
                 ).run(ctx.from.id, referrer.id);
-                // Бэкфилл: если у приглашённого УЖЕ есть прокси (тест/покупка
-                // были до перехода по ссылке) — проставляем реферера сразу
+                // Бэкфилл: прокси получен до перехода — проставляем сразу
                 const backfilled = db.prepare(
                     'UPDATE clients SET referrer_id = ? WHERE telegram_id = ? AND referrer_id IS NULL'
                 ).run(referrer.id, ctx.from.id);
@@ -537,14 +506,12 @@ async function start() {
             reply_markup: mainReplyKeyboard(ctx),
             disable_web_page_preview: true,
         });
-        const kb = tariffsKeyboard();
-        if (kb) await ctx.reply('👇 <b>Выберите тариф:</b>', { parse_mode: 'HTML', reply_markup: kb });
+        await ctx.reply('👇 <b>Выберите тариф:</b>', { parse_mode: 'HTML', reply_markup: tariffsKeyboard() });
     });
 
-    bot.hears('🚀 Тарифы', async (ctx) => {
-        const kb = tariffsKeyboard();
-        await ctx.reply('👇 <b>Выберите тариф:</b>', { parse_mode: 'HTML', reply_markup: kb });
-    });
+    bot.hears('🚀 Тарифы', (ctx) =>
+        ctx.reply('👇 <b>Выберите тариф:</b>', { parse_mode: 'HTML', reply_markup: tariffsKeyboard() })
+    );
 
     bot.hears('📱 Личный кабинет', async (ctx) => {
         const view = cabinetView(ctx);
@@ -555,7 +522,6 @@ async function start() {
         let botUsername = '';
         try { botUsername = (await bot.api.getMe()).username; } catch { /* нет связи */ }
         const me = db.prepare('SELECT id FROM clients WHERE telegram_id = ?').get(ctx.from.id);
-        // Приглашённые: уже с прокси + те, кто перешёл по ссылке (ещё без прокси)
         const converted = me
             ? db.prepare('SELECT COUNT(*) AS c FROM clients WHERE referrer_id = ?').get(me.id).c
             : 0;
@@ -585,18 +551,16 @@ async function start() {
             const settings = getAll();
             if (!settings.tg_admin_chat_id) {
                 return ctx.reply(
-                    `⚠️ Админ-панель не настроена.\n\n` +
-                    `1️⃣ Ваш ID: <code>${ctx.from.id}</code>\n` +
-                    `2️⃣ Вставьте его в Панель → Настройки → Уведомления → Chat ID`,
+                    `⚠️ Админ-панель не настроена.\n\n1️⃣ Ваш ID: <code>${ctx.from.id}</code>\n2️⃣ Вставьте его в Панель → Настройки → Уведомления → Chat ID`,
                     { parse_mode: 'HTML' }
                 );
             }
-            return ctx.reply('⛔ Раздел только для администратора');
+            return ctx.reply('⛔ Только для администратора');
         }
         await ctx.reply(adminStatsText(), { parse_mode: 'HTML', reply_markup: adminKeyboard() });
     });
 
-    // ═══ 3. Кабинет: продление, пополнение, тест ═══
+    // ═══ 3. Кабинет: продление, пополнение ═══
 
     bot.callbackQuery(/^renew:(\d+)$/, async (ctx) => {
         await ctx.answerCallbackQuery();
@@ -622,8 +586,6 @@ async function start() {
         });
     });
 
-    // Своя сумма: ждём число следующим сообщением
-    const depositCustom = new Map();
     bot.callbackQuery('deposit:custom', async (ctx) => {
         await ctx.answerCallbackQuery();
         depositCustom.set(ctx.from.id, true);
@@ -636,30 +598,8 @@ async function start() {
         await createAndSendDeposit(ctx, amount);
     });
 
-    // ═══ 4. Тарифы и покупка (несколько прокси у одного клиента) ═══
+    // ═══ 4. Тарифы: описание, покупка (баланс/CryptoBot/ЮKassa/карта), продление ═══
 
-    // Приём чеков (фото и PDF) — после «Я оплатил»
-    bot.on('message:photo', handleReceipt);
-    bot.on('message:document', handleReceipt);
-
-    // «Я оплатил» → просим чек
-    bot.callbackQuery(/^paid:(\d+)$/, async (ctx) => {
-        const paymentId = Number(ctx.match[1]);
-        receiptState.set(ctx.from.id, paymentId);
-        await ctx.answerCallbackQuery();
-        await ctx.reply(
-            `🧾 Прикрепите <b>скриншот или PDF чека</b> одним сообщением — я перешлю его администратору.`,
-            { parse_mode: 'HTML' }
-        );
-    });
-
-    // Переход на ручную оплату (если платёжка уже показана)
-    bot.callbackQuery(/^manualpay:(\d+)$/, async (ctx) => {
-        await ctx.answerCallbackQuery();
-        await sendManualInstructions(ctx, Number(ctx.match[1]), null);
-    });
-
-    // Описание тарифа → подтверждение покупки
     bot.callbackQuery(/^info:(\d+)$/, async (ctx) => {
         const t = db.prepare('SELECT * FROM tariffs WHERE id = ? AND enabled = 1').get(Number(ctx.match[1]));
         if (!t) return ctx.answerCallbackQuery('Тариф недоступен');
@@ -670,70 +610,45 @@ async function start() {
         await ctx.reply(tariffDescription(t), { parse_mode: 'HTML', reply_markup: kb });
     });
 
-    // Общий баланс пользователя
-    function totalBalance(tgId) {
-        return db.prepare('SELECT COALESCE(SUM(balance),0) AS b FROM clients WHERE telegram_id = ?').get(tgId).b;
-    }
-
-    // Списание с баланса (по клиентам, от большего остатка)
-    function deductBalance(tgId, amount) {
-        let left = amount;
-        const rows = db.prepare(
-            'SELECT id, balance FROM clients WHERE telegram_id = ? AND balance > 0 ORDER BY balance DESC'
-        ).all(tgId);
-        for (const c of rows) {
-            if (left <= 0) break;
-            const take = Math.min(c.balance, left);
-            db.prepare('UPDATE clients SET balance = balance - ? WHERE id = ?').run(take, c.id);
-            left -= take;
-        }
-    }
-
+    // Покупка: выбор способа (баланс / платёжка / карта админа)
     bot.callbackQuery(/^buy:(\d+)$/, async (ctx) => {
         const tariff = db.prepare('SELECT * FROM tariffs WHERE id = ? AND enabled = 1').get(Number(ctx.match[1]));
         if (!tariff) return ctx.answerCallbackQuery('Тариф недоступен');
         await ctx.answerCallbackQuery();
 
-        // Если на балансе хватает — выбор способа: баланс или онлайн/админ
-        const balance = totalBalance(ctx.from.id);
-        if (balance >= tariff.price) {
-            const kb = new InlineKeyboard()
-                .text(`💰 Оплатить с баланса (остаток ${balance.toFixed(2)})`, `paybal:${tariff.id}`).row()
-                .text('💳 Другой способ', `bypay:${tariff.id}`);
-            await ctx.reply(
-                `${tariffDescription(tariff)}\n\n💳 <b>Выберите способ оплаты:</b>`,
-                { parse_mode: 'HTML', reply_markup: kb }
-            );
-            return;
-        }
-
-        // Баланса не хватает — выбор: платёжка (если настроена) или карта админа
-        const result = db.prepare(
-            'INSERT INTO payments (tariff_id, amount, currency, provider, status, telegram_id) VALUES (?, ?, ?, ?, ?, ?)'
-        ).run(tariff.id, tariff.price, tariff.currency, 'manual', 'pending', ctx.from.id);
-        const paymentId = result.lastInsertRowid;
-
         const settings = getBotSettings();
-        const paymentsService = require('./payments');
-        const pay = await paymentsService.createPaymentUrl({
-            paymentId, tariff: { name: tariff.name, price: tariff.price, currency: tariff.currency },
-            settings,
-        }).catch(() => null);
+        const providerConfigured = !!(settings.cryptobot_token || (settings.yookassa_shop_id && settings.yookassa_secret_key));
+
+        // Заказ создаётся сразу — любой способ привяжется к нему
+        const paymentId = db.prepare(
+            'INSERT INTO payments (tariff_id, amount, currency, provider, status, telegram_id) VALUES (?, ?, ?, ?, ?, ?)'
+        ).run(tariff.id, tariff.price, tariff.currency, 'manual', 'pending', ctx.from.id).lastInsertRowid;
 
         const kb = new InlineKeyboard();
-        if (pay?.url) {
-            kb.url(`💳 Оплатить через ${pay.provider === 'cryptobot' ? 'CryptoBot' : 'ЮKassa'}`, pay.url).row();
+
+        // Баланс (если хватает) — первый способ
+        const balance = totalBalance(ctx.from.id);
+        if (balance >= tariff.price) {
+            kb.text(`💰 С баланса (${balance.toFixed(2)})`, `paybal:${tariff.id}:${paymentId}`).row();
         }
-        kb.text('🏦 Карта админа', `manualpay:${paymentId}`);
+
+        // Онлайн-платёжка (инвойс создаётся по клику)
+        if (settings.cryptobot_token) kb.text('🪙 Оплатить через CryptoBot', `cbpay:${paymentId}:${tariff.id}:cryptobot`).row();
+        if (settings.yookassa_shop_id && settings.yookassa_secret_key) kb.text('💳 Оплатить через ЮKassa', `cbpay:${paymentId}:${tariff.id}:yookassa`).row();
+
+        // Карта админа — всегда доступна
+        kb.text('🏦 Карта админа (СБП)', `manualpay:${paymentId}`);
+
         await ctx.reply(
-            `🧾 <b>Счёт #${paymentId}</b>\n\n📦 Тариф: <b>${tariff.name}</b>\n💵 Сумма: <b>${tariff.price} ${currencySign(tariff.currency)}</b>\n\nВыберите способ оплаты:`,
+            `${tariffDescription(tariff)}\n\n🧾 Заказ #${paymentId}\n\n💳 <b>Выберите способ оплаты:</b>`,
             { parse_mode: 'HTML', reply_markup: kb }
         );
     });
 
     // Покупка с баланса: списание + выдача нового прокси
-    bot.callbackQuery(/^paybal:(\d+)$/, async (ctx) => {
+    bot.callbackQuery(/^paybal:(\d+):(\d+)$/, async (ctx) => {
         const tariff = db.prepare('SELECT * FROM tariffs WHERE id = ? AND enabled = 1').get(Number(ctx.match[1]));
+        const paymentId = Number(ctx.match[2]);
         if (!tariff) return ctx.answerCallbackQuery('Тариф недоступен');
         const balance = totalBalance(ctx.from.id);
         if (balance < tariff.price) {
@@ -742,50 +657,61 @@ async function start() {
         await ctx.answerCallbackQuery('Оформляю...');
 
         deductBalance(ctx.from.id, tariff.price);
-        const paymentId = db.prepare(
-            'INSERT INTO payments (tariff_id, amount, currency, provider, status, telegram_id) VALUES (?, ?, ?, ?, ?, ?)'
-        ).run(tariff.id, tariff.price, tariff.currency, 'balance', 'pending', ctx.from.id).lastInsertRowid;
-
         try {
             await issueAccessFor(ctx.from.id, tariff, paymentId);
         } catch (e) {
-            // Возврат средств при ошибке выдачи
             db.prepare('UPDATE clients SET balance = balance + ? WHERE telegram_id = ?').run(tariff.price, ctx.from.id);
             db.prepare("UPDATE payments SET status = 'failed' WHERE id = ?").run(paymentId);
-            logger.error('Покупка с баланса не удалась, средства возвращены', { error: e.message, tgId: ctx.from.id });
-            await ctx.reply(`⚠️ Произошла ошибка — средства возвращены на баланс. Напишите в поддержку ${SUPPORT_USERNAME}`);
+            logger.error('Покупка с баланса не удалась, средства возвращены', { error: e.message });
+            await ctx.reply(`⚠️ Произошла ошибка — средства возвращены. Напишите в поддержку ${SUPPORT_USERNAME}`);
         }
     });
 
-    // Покупка другим способом (онлайн/админ) — из карточки выбора
-    bot.callbackQuery(/^bypay:(\d+)$/, async (ctx) => {
-        const tariff = db.prepare('SELECT * FROM tariffs WHERE id = ? AND enabled = 1').get(Number(ctx.match[1]));
-        if (!tariff) return ctx.answerCallbackQuery('Тариф недоступен');
+    // Ленивое создание инвойса: CryptoBot / ЮKassa, по клику пользователя
+    bot.callbackQuery(/^cbpay:(\d+):(\d+):(cryptobot|yookassa)$/, async (ctx) => {
+        const paymentId = Number(ctx.match[1]);
+        const provider = ctx.match[3];
+        const payment = db.prepare('SELECT * FROM payments WHERE id = ?').get(paymentId);
+        const tariff = db.prepare('SELECT * FROM tariffs WHERE id = ?').get(payment?.tariff_id);
+        if (!payment || !tariff) return ctx.answerCallbackQuery('Заказ не найден');
+
         await ctx.answerCallbackQuery('Создаю счёт...');
-
-        const result = db.prepare(
-            'INSERT INTO payments (tariff_id, amount, currency, provider, status, telegram_id) VALUES (?, ?, ?, ?, ?, ?)'
-        ).run(tariff.id, tariff.price, tariff.currency, 'manual', 'pending', ctx.from.id);
-        const paymentId = result.lastInsertRowid;
-
         const settings = getBotSettings();
         const paymentsService = require('./payments');
-        const pay = await paymentsService.createPaymentUrl({
-            paymentId, tariff: { name: tariff.name, price: tariff.price, currency: tariff.currency },
-            settings,
-        });
+        const pay = provider === 'cryptobot'
+            ? await paymentsService.createCryptoBotInvoice({
+                paymentId, tariff: { name: tariff.name, price: tariff.price, currency: tariff.currency },
+                token: settings.cryptobot_token,
+            })
+            : await paymentsService.createYooKassaPayment({
+                paymentId, tariff: { name: tariff.name, price: tariff.price, currency: tariff.currency },
+                shopId: settings.yookassa_shop_id, secretKey: settings.yookassa_secret_key,
+            });
 
-        if (pay) {
-            const kb = new InlineKeyboard()
-                .url('💳 Оплатить онлайн', pay.url).row()
-                .text('🏦 Напрямую админу', `manualpay:${paymentId}`);
-            await ctx.reply(
-                `🧾 <b>Счёт #${paymentId}</b>\n\n📦 Тариф: <b>${tariff.name}</b>\n💵 Сумма: <b>${tariff.price} ${currencySign(tariff.currency)}</b>\n\nВыберите способ оплаты:`,
-                { parse_mode: 'HTML', reply_markup: kb }
-            );
+        if (pay?.url) {
+            db.prepare('UPDATE payments SET provider = ? WHERE id = ?').run(provider, paymentId);
+            const kb = new InlineKeyboard().url('💳 Перейти к оплате', pay.url);
+            await ctx.reply(`🧾 Счёт #${paymentId} готов. Оплатите — доступ придёт автоматически.`, { reply_markup: kb });
         } else {
+            // Инвойс не создался — сразу карта админа
             await sendManualInstructions(ctx, paymentId, `${tariff.price} ${currencySign(tariff.currency)}`);
         }
+    });
+
+    // Карта админа: инструкция + кнопка «Я оплатил»
+    bot.callbackQuery(/^manualpay:(\d+)$/, async (ctx) => {
+        await ctx.answerCallbackQuery();
+        const payment = db.prepare('SELECT amount, currency FROM payments WHERE id = ?').get(Number(ctx.match[1]));
+        await sendManualInstructions(ctx, Number(ctx.match[1]),
+            payment ? `${payment.amount} ${currencySign(payment.currency)}` : null);
+    });
+
+    // «Я оплатил» → просим чек
+    bot.callbackQuery(/^paid:(\d+)$/, async (ctx) => {
+        const paymentId = Number(ctx.match[1]);
+        receiptState.set(ctx.from.id, paymentId);
+        await ctx.answerCallbackQuery();
+        await ctx.reply('🧾 Прикрепите <b>скриншот или PDF чека</b> одним сообщением — я перешлю его администратору.', { parse_mode: 'HTML' });
     });
 
     // ═══ 5. Тест 3 часа, мой доступ, поддержка ═══
@@ -808,7 +734,9 @@ async function start() {
 
         const expires = new Date(Date.now() + 3 * 3600 * 1000).toISOString();
         try {
-            const created = await telemt.createUser({ username: `test${tgId}`, expiration_rfc3339: expires });
+            const created = await telemt.createUser({
+                username: `test${tgId}`, expiration_rfc3339: expires, max_unique_ips: 2,
+            });
             const referrerId = refPending.get(tgId)
                 || db.prepare('SELECT referrer_id FROM referral_pending WHERE telegram_id = ?').get(tgId)?.referrer_id
                 || null;
@@ -846,21 +774,69 @@ async function start() {
 
     bot.callbackQuery('tariffs', async (ctx) => {
         await ctx.answerCallbackQuery();
-        const kb = tariffsKeyboard();
-        if (kb) await ctx.reply('👇 <b>Выберите тариф:</b>', { parse_mode: 'HTML', reply_markup: kb });
+        await ctx.reply('👇 <b>Выберите тариф:</b>', { parse_mode: 'HTML', reply_markup: tariffsKeyboard() });
     });
 
-    // ═══ 6. Админ-панель ═══
+    // ═══ 6. Продление: баланс или платёжка ═══
 
-    const adminGuard = async (ctx, message) => {
+    async function handleRenew(ctx, clientId, tariffId) {
+        const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(clientId);
+        const tariff = db.prepare('SELECT * FROM tariffs WHERE id = ? AND enabled = 1').get(tariffId);
+        if (!client || !tariff) return ctx.answerCallbackQuery('Недоступно');
+
+        // Оплата с баланса этого клиента
+        if ((client.balance || 0) >= tariff.price) {
+            db.prepare('UPDATE clients SET balance = balance - ? WHERE id = ?').run(tariff.price, client.id);
+            const base = client.expires_at && new Date(client.expires_at) > new Date()
+                ? new Date(client.expires_at) : new Date();
+            const newExpiry = new Date(base.getTime() + tariff.days * 86400000).toISOString();
+            const patch = { expiration_rfc3339: newExpiry };
+            if (tariff.max_ips) patch.max_unique_ips = tariff.max_ips;
+            if (tariff.quota_gb) patch.data_quota_bytes = Math.round(tariff.quota_gb * 1024 ** 3);
+            await telemt.patchUser(client.username, patch).catch(() => {});
+            db.prepare("UPDATE clients SET expires_at = ?, status = 'active' WHERE id = ?").run(newExpiry, client.id);
+            await ctx.answerCallbackQuery();
+            return ctx.reply(
+                `✅ <b>Продлено с баланса!</b>\n\n📦 ${client.username} — до <b>${fmtMSK(newExpiry, false)}</b>\n💳 Списано: ${tariff.price} ${currencySign(tariff.currency)}`,
+                { parse_mode: 'HTML' }
+            );
+        }
+
+        await ctx.answerCallbackQuery('Создаю счёт...');
+        const result = db.prepare(
+            'INSERT INTO payments (tariff_id, amount, currency, provider, status, telegram_id, client_id) VALUES (?, ?, ?, ?, ?, ?, ?)'
+        ).run(tariff.id, tariff.price, tariff.currency, 'manual', 'pending', ctx.from.id, client.id);
+
+        const settings = getBotSettings();
+        const paymentsService = require('./payments');
+        const pay = await paymentsService.createPaymentUrl({
+            paymentId: result.lastInsertRowid,
+            tariff: { name: `${tariff.name} (продление ${client.username})`, price: tariff.price, currency: tariff.currency },
+            settings,
+        });
+
+        if (pay) {
+            const kb = new InlineKeyboard().url('💳 Оплатить', pay.url);
+            await ctx.reply(
+                `🧾 <b>Счёт #${result.lastInsertRowid}</b>\n💰 Баланса не хватило (${(client.balance || 0).toFixed(2)})\n\n👇 Оплатите — продление пройдёт автоматически.`,
+                { parse_mode: 'HTML', reply_markup: kb }
+            );
+        } else {
+            await sendManualInstructions(ctx, result.lastInsertRowid, `${tariff.price} ${currencySign(tariff.currency)}`);
+        }
+    }
+
+    // ═══ 7. Админ-панель ═══
+
+    const adminGuard = async (ctx) => {
         if (isAdmin(ctx)) return true;
         const settings = getAll();
         if (!settings.tg_admin_chat_id) {
-            await ctx.answerCallbackQuery({ text: 'Настройте Chat ID админа в панели!', show_alert: true }).catch(async () => {
+            await ctx.answerCallbackQuery({ text: `Настройте Chat ID админа! Ваш ID: ${ctx.from.id}`, show_alert: true }).catch(async () => {
                 await ctx.reply(`⚠️ Админка не настроена. Ваш ID: <code>${ctx.from.id}</code>\nВставьте его в Панель → Настройки → Уведомления`, { parse_mode: 'HTML' });
             });
         } else {
-            await ctx.answerCallbackQuery(message || '⛔ Только для админа');
+            await ctx.answerCallbackQuery('⛔ Только для админа');
         }
         return false;
     };
@@ -894,7 +870,7 @@ async function start() {
         let text = `👥 <b>Последние клиенты</b>\n\n`;
         text += clients.map((c) => {
             const icon = c.status === 'active' ? '🟢' : c.status === 'blocked' ? '🔴' : '🟡';
-            const until = c.expires_at ? fmtMSK(c.expires_at) : '∞';
+            const until = c.expires_at ? fmtMSK(c.expires_at, false) : '∞';
             return `${icon} <b>${c.username}</b> — до ${until}`;
         }).join('\n') || 'Пока никого';
         const kb = new InlineKeyboard().text('⬅️ Назад', 'admin:stats');
@@ -928,27 +904,13 @@ async function start() {
         if (!payment || payment.status === 'success') return ctx.answerCallbackQuery('Уже обработан');
         await ctx.answerCallbackQuery('Подтверждаю...');
 
-        const tariff = payment.tariff_id
-            ? db.prepare('SELECT * FROM tariffs WHERE id = ?').get(payment.tariff_id)
-            : null;
-
         try {
-            if (tariff && payment.telegram_id) {
-                await issueAccessFor(payment.telegram_id, tariff, paymentId);
-            } else if (!tariff && payment.telegram_id) {
-                // Пополнение баланса
-                const client = db.prepare('SELECT * FROM clients WHERE telegram_id = ?').get(payment.telegram_id);
-                if (client) {
-                    db.prepare('UPDATE clients SET balance = balance + ? WHERE id = ?').run(payment.amount, client.id);
-                }
-                db.prepare("UPDATE payments SET status = 'success', paid_at = datetime('now') WHERE id = ?").run(paymentId);
-            } else {
-                db.prepare("UPDATE payments SET status = 'success', paid_at = datetime('now') WHERE id = ?").run(paymentId);
-            }
+            const paymentsRoute = require('../routes/payments');
+            await paymentsRoute.completePayment(paymentId);
             await ctx.editMessageText(`✅ Платёж #${paymentId} подтверждён.`);
         } catch (e) {
             logger.error('Ошибка подтверждения платежа', { paymentId, error: e.message });
-            await ctx.editMessageText(`⚠️ Платёж #${paymentId} подтверждён, но выдача не удалась: ${e.message}`);
+            await ctx.editMessageText(`⚠️ Платёж #${paymentId}: ${e.message}`);
         }
     });
 
@@ -966,35 +928,21 @@ async function start() {
         if (broadcastState.delete(ctx.from.id)) await ctx.reply('❌ Рассылка отменена');
     });
 
-    // Текст от админа в режиме рассылки (пропускаем дальше, если это не рассылка!)
+    // Текст от админа в режиме рассылки (иначе — передаём дальше по цепочке)
     bot.on('message:text', async (ctx, next) => {
-        if (!isAdmin(ctx) || !broadcastState.has(ctx.from.id)) return next();
-        broadcastState.delete(ctx.from.id);
-        const clients = db.prepare('SELECT telegram_id FROM clients WHERE telegram_id IS NOT NULL').all();
-        await ctx.reply(`📢 Рассылка запущена: ${clients.length} получателей...`);
-        let sent = 0;
-        for (const c of clients) {
-            try {
-                await bot.api.sendMessage(c.telegram_id, ctx.message.text, { parse_mode: 'HTML' });
-                sent += 1;
-                await new Promise((r) => setTimeout(r, 50));
-            } catch { /* заблокировали бота */ }
-        }
-        await ctx.reply(`✅ Доставлено: ${sent} из ${clients.length}`);
-    });
-
-    // Своя сумма пополнения: число от пользователя
-    bot.on('message::bot_command', () => {}); // no-op для читаемости
-    bot.on('message:text', async (ctx, next) => {
-        if (depositCustom.has(ctx.from.id)) {
-            const amount = Number(ctx.message.text.trim());
-            if (!Number.isFinite(amount) || amount <= 0 || amount > 1000000) {
-                return ctx.reply('❌ Введите корректную сумму числом (например: 250)');
+        if (isAdmin(ctx) && broadcastState.has(ctx.from.id)) {
+            broadcastState.delete(ctx.from.id);
+            const clients = db.prepare('SELECT telegram_id FROM clients WHERE telegram_id IS NOT NULL').all();
+            await ctx.reply(`📢 Рассылка запущена: ${clients.length} получателей...`);
+            let sent = 0;
+            for (const c of clients) {
+                try {
+                    await bot.api.sendMessage(c.telegram_id, ctx.message.text, { parse_mode: 'HTML' });
+                    sent += 1;
+                    await new Promise((r) => setTimeout(r, 50));
+                } catch { /* заблокировали бота */ }
             }
-            depositCustom.delete(ctx.from.id);
-            await ctx.reply(`⏳ Создаю счёт на ${amount}...`);
-            await createAndSendDeposit(ctx, amount);
-            return;
+            return ctx.reply(`✅ Доставлено: ${sent} из ${clients.length}`);
         }
         return next();
     });
@@ -1005,38 +953,6 @@ async function start() {
         logger.error('TG-бот упал', { error: err.message });
     });
     logger.info('TG-бот продаж запущен');
-}
-
-/** Создаёт счёт на пополнение и отправляет ссылку. */
-async function createAndSendDeposit(ctx, amount) {
-    let paymentId = null;
-    try {
-        const settings = getBotSettings();
-        const result = db.prepare(
-            'INSERT INTO payments (amount, currency, provider, status, telegram_id) VALUES (?, ?, ?, ?, ?)'
-        ).run(amount, settings.currency, 'manual', 'pending', ctx.from.id);
-        paymentId = result.lastInsertRowid;
-
-        const paymentsService = require('./payments');
-        const pay = await paymentsService.createPaymentUrl({
-            paymentId,
-            tariff: { name: 'Пополнение баланса', price: amount, currency: settings.currency },
-            settings,
-        });
-
-        if (pay) {
-            const kb = new InlineKeyboard()
-                .url('💳 Оплатить онлайн', pay.url).row()
-                .text('🏦 Напрямую админу', `manualpay:${paymentId}`);
-            await ctx.reply(`🧾 Счёт #${paymentId} на ${amount} ${currencySign(settings.currency)}.\nВыберите способ оплаты:`, { reply_markup: kb });
-        } else {
-            await sendManualInstructions(ctx, paymentId, `${amount} ${currencySign(settings.currency)}`);
-        }
-    } catch (e) {
-        logger.error('Ошибка создания счёта на пополнение', { error: e.message, stack: e.stack });
-        const text = `⚠️ Не удалось создать счёт: ${e.message}\nНапишите в поддержку ${SUPPORT_USERNAME} (заказ ${paymentId ? '#' + paymentId : 'не создан'})`;
-        await ctx.reply(text).catch(() => ctx.reply('⚠️ Не удалось создать счёт. Напишите в поддержку.'));
-    }
 }
 
 /** Останавливает бота. */

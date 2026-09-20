@@ -92,6 +92,17 @@ export default function Dashboard() {
         }
     };
 
+    const cancelPayment = async (id) => {
+        if (!confirm(`Отменить заказ #${id}?`)) return;
+        try {
+            await post(`/payments/${id}/cancel`);
+            toast.success(`Заказ #${id} отменён`);
+            setPending((p) => p.filter((x) => x.id !== id));
+        } catch (e) {
+            toast.error(e.message);
+        }
+    };
+
     // WebSocket: живая нагрузка сервера (с автопереподключением)
     useEffect(() => {
         if (!accessToken) return;
@@ -233,11 +244,17 @@ export default function Dashboard() {
                             <div key={p.id} className="flex items-center justify-between gap-3 rounded-lg bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 px-3 py-2">
                                 <span className="text-sm">
                                     <b>#{p.id}</b> — {p.tariff_name || 'пополнение'} · {p.amount} {p.currency}
+                                    {p.username ? ` · ${p.username}` : ''}
                                     {p.telegram_id ? ` · TG ${p.telegram_id}` : ''}
                                 </span>
-                                <button className="btn-primary !min-h-0 !px-3 !py-1.5 text-xs" onClick={() => approvePayment(p.id)}>
-                                    ✓ Одобрить
-                                </button>
+                                <span className="flex gap-2">
+                                    <button className="btn-danger !min-h-0 !px-3 !py-1.5 text-xs" onClick={() => cancelPayment(p.id)}>
+                                        ✕ Отменить
+                                    </button>
+                                    <button className="btn-primary !min-h-0 !px-3 !py-1.5 text-xs" onClick={() => approvePayment(p.id)}>
+                                        ✓ Одобрить
+                                    </button>
+                                </span>
                             </div>
                         ))}
                     </div>
