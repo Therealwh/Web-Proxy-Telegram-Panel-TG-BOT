@@ -41,11 +41,13 @@ log_history() {
 # Откат при любой ошибке ДО финального рестарта
 # ---------------------------------------------------------------------------
 rollback() {
-    echo "[update] ОШИБКА! Откатываюсь на бэкап ${BACKUP_PATH}..." >&2
+    local failed_cmd="${BASH_COMMAND:-неизвестно}"
+    echo "[update] ОШИБКА (команда: ${failed_cmd})! Откатываюсь на бэкап ${BACKUP_PATH}..." >&2
     cp -a "${BACKUP_PATH}/panel/." "${INSTALL_DIR}/panel/" 2>/dev/null || true
     cp -a "${BACKUP_PATH}/tggate.db" "${DATA_DIR}/tggate.db" 2>/dev/null || true
     cp -a "${BACKUP_PATH}/etc-tggate/." "${CONFIG_DIR}/" 2>/dev/null || true
-    log_history "panel" "failed" "откат на бэкап ${BACKUP_PATH}"
+    [[ -f "${BACKUP_PATH}/VERSION" ]] && cp -a "${BACKUP_PATH}/VERSION" "${INSTALL_DIR}/VERSION"
+    log_history "panel" "failed" "упала команда: ${failed_cmd} (бэкап: ${BACKUP_PATH})"
     systemctl restart tggate-panel 2>/dev/null || true
     echo "[update] Откат выполнен, панель перезапущена." >&2
     exit 1
@@ -58,6 +60,7 @@ trap rollback ERR
 info "Создаю бэкап: ${BACKUP_PATH}"
 mkdir -p "${BACKUP_PATH}"
 cp -a "${INSTALL_DIR}/panel" "${BACKUP_PATH}/panel"
+cp -a "${INSTALL_DIR}/VERSION" "${BACKUP_PATH}/VERSION" 2>/dev/null || true
 cp -a "${CONFIG_DIR}" "${BACKUP_PATH}/etc-tggate"
 cp -a "${DATA_DIR}/website" "${BACKUP_PATH}/website" 2>/dev/null || true
 cp -a "${DB_PATH}" "${BACKUP_PATH}/tggate.db" 2>/dev/null || true
@@ -100,6 +103,10 @@ npm install --omit=dev --no-audit --no-fund
 
 cd "${INSTALL_DIR}/panel/frontend"
 npm install --no-audit --no-fund
+# Сборка Vite на малых VPS: ограничиваем память Node, чтобы OOM-killer не убил сборку
+export NODE_OPTIONS="--max-old-space-size=768"
+sync
+echo 3 > /proc/sys/vm/drop_caches 2>/dev/null || true   # сбрасываем файловый кэш перед сборкой
 npm run build
 
 # ---------------------------------------------------------------------------
