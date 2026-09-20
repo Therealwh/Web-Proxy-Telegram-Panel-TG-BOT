@@ -906,7 +906,7 @@ async function createAndSendDeposit(ctx, amount) {
     try {
         const settings = getBotSettings();
         const result = db.prepare(
-            'INSERT INTO payments (amount, currency, provider, status, telegram_id) VALUES (?, ?, ?, ?, ?, ?)'
+            'INSERT INTO payments (amount, currency, provider, status, telegram_id) VALUES (?, ?, ?, ?, ?)'
         ).run(amount, settings.currency, 'manual', 'pending', ctx.from.id);
         paymentId = result.lastInsertRowid;
 
