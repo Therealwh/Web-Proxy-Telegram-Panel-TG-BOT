@@ -515,6 +515,17 @@ async function start() {
                     'INSERT INTO referral_pending (telegram_id, referrer_id) VALUES (?, ?) ' +
                     'ON CONFLICT(telegram_id) DO UPDATE SET referrer_id = excluded.referrer_id'
                 ).run(ctx.from.id, referrer.id);
+                // Бэкфилл: если у приглашённого УЖЕ есть прокси (тест/покупка
+                // были до перехода по ссылке) — проставляем реферера сразу
+                const backfilled = db.prepare(
+                    'UPDATE clients SET referrer_id = ? WHERE telegram_id = ? AND referrer_id IS NULL'
+                ).run(referrer.id, ctx.from.id);
+                if (backfilled.changes > 0) {
+                    logger.info('Реферал: referrer проставлен задним числом', { tgId: ctx.from.id, referrer: referrer.id });
+                }
+                logger.info('Реферал: переход по ссылке зафиксирован', { tgId: ctx.from.id, referrer: referrer.id });
+            } else if (refTgId === ctx.from.id) {
+                logger.warn('Реферал: самоприглашение отклонено', { tgId: ctx.from.id });
             }
         }
         const text = renderTemplate(

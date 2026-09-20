@@ -47,7 +47,10 @@ async function createCryptoBotInvoice({ paymentId, tariff, token }) {
             signal: AbortSignal.timeout(6000), // быстрый фолбэк — пользователь не ждёт
         });
         const data = await res.json();
-        if (!data.ok) throw new Error(data.error?.name || 'CryptoBot error');
+        if (!data.ok) {
+            // Подробная ошибка CryptoBot (например, invalid token / network)
+            throw new Error(`CryptoBot API: ${data.error?.name || ''} ${data.error?.description || JSON.stringify(data.error || data).slice(0, 200)}`);
+        }
         const url = data.result.pay_url || data.result.bot_invoice_url;
         logger.info('CryptoBot инвойс создан', { paymentId, url });
         return { url, provider: 'cryptobot' };

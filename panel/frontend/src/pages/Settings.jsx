@@ -1,5 +1,5 @@
 // Настройки панели с категориями
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Save } from 'lucide-react';
 import { get, put } from '../api';
 import { toast } from '../store';
@@ -116,6 +116,77 @@ export default function Settings() {
                     </div>
                 </Card>
             ))}
+
+            {/* Резервное копирование: экспорт/импорт всех данных */}
+            <BackupCard />
         </div>
+    );
+}
+
+/** Карточка бэкапа: скачать все данные / восстановить из файла */
+function BackupCard() {
+    const [restoring, setRestoring] = useState(false);
+    const fileRef = useRef(null);
+
+    const download = () => {
+        const token = sessionStorage.getItem('tggate_token');
+        const a = document.createElement('a');
+        a.href = `/api/backup/export?token=${encodeURIComponent(token || '')}`;
+        a.download = '';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        toast.success('Бэкап скачивается...');
+    };
+
+    const restore = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        if (!confirm(`Восстановить из ${file.name}? ВСЕ текущие данные панели будут заменены данными из бэкапа!`)) {
+            e.target.value = '';
+            return;
+        }
+        setRestoring(true);
+        try {
+            const text = await file.text();
+            const res = await fetch('/api/backup/restore', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                    Authorization: `Bearer ${sessionStorage.getItem('tggate_token')}`,
+                },
+                body: text,
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.error || `Ошибка ${res.status}`);
+            toast.success('Бэкап восстановлен! Обновите страницу (F5).');
+        } catch (err) {
+            toast.error(`Ошибка восстановления: ${err.message}`);
+        } finally {
+            setRestoring(false);
+            if (fileRef.current) fileRef.current.value = '';
+        }
+    };
+
+    return (
+        <Card title="💾 Резервное копирование"
+              subtitle="Для переноса панели на другой сервер: скачайте бэкап здесь и восстановите его там">
+            <div className="flex flex-wrap gap-2">
+                <button className="btn-secondary" onClick={download}>
+                    ⬇️ Скачать бэкап (все данные)
+                </button>
+                <label className="btn-secondary cursor-pointer">
+                    ⬆️ Восстановить из файла
+                    <input ref={fileRef} type="file" accept=".json,application/json"
+                           className="hidden" onChange={restore} disabled={restoring} />
+                </label>
+                {restoring && <span className="text-sm text-slate-500 self-center">Восстановление...</span>}
+            </div>
+            <p className="text-xs text-slate-400 mt-3">
+                В бэкап входят: администраторы, клиенты, тарифы, платежи, настройки (включая токены),
+                промокоды, API-ключи, вебхуки, тикеты. Схема базы обновляется автоматически.
+            </p>
+        </Card>
     );
 }

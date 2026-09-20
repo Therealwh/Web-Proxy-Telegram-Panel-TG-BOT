@@ -37,8 +37,8 @@ module.exports = {
 
     // Безопасность
     jwtSecret: required('JWT_SECRET'),
-    jwtAccessTtl: process.env.JWT_ACCESS_TTL || '15m',   // жизнь access-токена
-    jwtRefreshTtl: process.env.JWT_REFRESH_TTL || '7d',  // жизнь refresh-токена
+    jwtAccessTtl: process.env.JWT_ACCESS_TTL || '12h',   // жизнь access-токена
+    jwtRefreshTtl: process.env.JWT_REFRESH_TTL || '30d',  // жизнь refresh-токена
 
     // Telemt Control API
     telemt: {

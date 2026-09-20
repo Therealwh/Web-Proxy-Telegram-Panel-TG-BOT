@@ -83,7 +83,23 @@ export default function Bot() {
                     <Card><div className="text-2xl font-bold">{stats.sales_total}</div><div className="text-sm text-slate-500">Продаж всего</div></Card>
                     <Card><div className="text-2xl font-bold">{stats.sales_month}</div><div className="text-sm text-slate-500">За месяц</div></Card>
                     <Card><div className="text-2xl font-bold">{stats.revenue_month} ₽</div><div className="text-sm text-slate-500">Доход за месяц</div></Card>
-                    <Card><div className="text-2xl font-bold">{stats.revenue_total} ₽</div><div className="text-sm text-slate-500">Доход всего</div></Card>
+                    <Card className="flex flex-col justify-between">
+                        <div>
+                            <div className="text-2xl font-bold">{stats.revenue_total} ₽</div>
+                            <div className="text-sm text-slate-500">Доход всего</div>
+                        </div>
+                        <button className="btn-danger !min-h-0 !px-2 !py-1.5 text-xs mt-2"
+                                onClick={async () => {
+                                    if (!confirm('Сбросить статистику продаж и дохода? История платежей будет удалена (клиенты останутся).')) return;
+                                    try {
+                                        await post('/bot/stats/reset');
+                                        toast.success('Статистика сброшена');
+                                        load();
+                                    } catch (e) { toast.error(e.message); }
+                                }}>
+                                🧹 Сбросить продажи
+                        </button>
+                    </Card>
                 </div>
             )}
 
@@ -348,9 +364,9 @@ export default function Bot() {
                     </Field>
                 </div>
                 <p className="text-xs text-slate-400 mt-3">
-                    Вебхуки: ЮKassa → <code className="font-mono">/api/payments/webhook/yookassa</code>,
-                    CryptoBot → <code className="font-mono">/api/payments/webhook/cryptobot</code>.
-                    Вебхук CryptoBot нужно включить в @CryptoBot (Webhooks).
+                    Вебхук CryptoBot: <code className="font-mono">https://ваш-домен/api/payments/webhook/cryptobot</code>
+                    (вставьте в @CryptoBot → Webhooks). ЮKassa → <code className="font-mono">/api/payments/webhook/yookassa</code>.
+                    Если счёт не создаётся — проверьте с VPS: <code className="font-mono">curl -I https://pay.crypt.bot</code> (домен должен быть доступен).
                 </p>
             </Card>
 

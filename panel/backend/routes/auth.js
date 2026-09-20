@@ -51,7 +51,8 @@ function issueTokens(admin) {
         { expiresIn: config.jwtAccessTtl }
     );
     const refreshToken = crypto.randomBytes(48).toString('hex');
-    const expiresAt = new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString();
+    // Сессия на 30 дней (согласовано с cookie maxAge и config.jwtRefreshTtl)
+    const expiresAt = new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString();
     db.prepare(
         'INSERT INTO refresh_tokens (admin_id, token_hash, expires_at) VALUES (?, ?, ?)'
     ).run(admin.id, hashToken(refreshToken), expiresAt);
@@ -65,7 +66,7 @@ function setRefreshCookie(res, refreshToken) {
         secure: config.isProd,
         sameSite: 'strict',
         path: '/api/auth',
-        maxAge: 7 * 24 * 3600 * 1000,
+        maxAge: 30 * 24 * 3600 * 1000,
     });
 }
 

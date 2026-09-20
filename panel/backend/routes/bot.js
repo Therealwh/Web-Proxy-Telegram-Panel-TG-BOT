@@ -148,6 +148,17 @@ router.get('/stats', (req, res) => {
     });
 });
 
+// --- Сброс статистики продаж и дохода (тестовые платежи) ---
+router.post('/stats/reset', (req, res, next) => {
+    try {
+        const info = db.prepare("DELETE FROM payments WHERE status IN ('success', 'failed')").run();
+        logger.info('Статистика продаж сброшена', { deleted: info.changes });
+        res.json({ ok: true, deleted: info.changes });
+    } catch (err) {
+        next(err);
+    }
+});
+
 // ═══ Админка бота: пользователи Telegram ═══
 
 // --- Список пользователей бота (сгруппированы по telegram_id) ---
