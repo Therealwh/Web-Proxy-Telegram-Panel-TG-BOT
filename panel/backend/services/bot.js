@@ -649,7 +649,97 @@ async function start() {
         await ctx.reply(tariffDescription(t), { parse_mode: 'HTML', reply_markup: kb });
     });
 
+    // Общий баланс пользователя
+    function totalBalance(tgId) {
+        return db.prepare('SELECT COALESCE(SUM(balance),0) AS b FROM clients WHERE telegram_id = ?').get(tgId).b;
+    }
+
+    // Списание с баланса (по клиентам, от большего остатка)
+    function deductBalance(tgId, amount) {
+        let left = amount;
+        const rows = db.prepare(
+            'SELECT id, balance FROM clients WHERE telegram_id = ? AND balance > 0 ORDER BY balance DESC'
+        ).all(tgId);
+        for (const c of rows) {
+            if (left <= 0) break;
+            const take = Math.min(c.balance, left);
+            db.prepare('UPDATE clients SET balance = balance - ? WHERE id = ?').run(take, c.id);
+            left -= take;
+        }
+    }
+
     bot.callbackQuery(/^buy:(\d+)$/, async (ctx) => {
+        const tariff = db.prepare('SELECT * FROM tariffs WHERE id = ? AND enabled = 1').get(Number(ctx.match[1]));
+        if (!tariff) return ctx.answerCallbackQuery('Тариф недоступен');
+        await ctx.answerCallbackQuery();
+
+        // Если на балансе хватает — выбор способа: баланс или онлайн/админ
+        const balance = totalBalance(ctx.from.id);
+        if (balance >= tariff.price) {
+            const kb = new InlineKeyboard()
+                .text(`💰 Оплатить с баланса (остаток ${balance.toFixed(2)})`, `paybal:${tariff.id}`).row()
+                .text('💳 Другой способ', `bypay:${tariff.id}`);
+            await ctx.reply(
+                `${tariffDescription(tariff)}\n\n💳 <b>Выберите способ оплаты:</b>`,
+                { parse_mode: 'HTML', reply_markup: kb }
+            );
+            return;
+        }
+
+        // Баланса не хватает — сразу платёжка или админ
+        const result = db.prepare(
+            'INSERT INTO payments (tariff_id, amount, currency, provider, status, telegram_id) VALUES (?, ?, ?, ?, ?, ?)'
+        ).run(tariff.id, tariff.price, tariff.currency, 'manual', 'pending', ctx.from.id);
+        const paymentId = result.lastInsertRowid;
+
+        const settings = getBotSettings();
+        const paymentsService = require('./payments');
+        const pay = await paymentsService.createPaymentUrl({
+            paymentId, tariff: { name: tariff.name, price: tariff.price, currency: tariff.currency },
+            settings,
+        });
+
+        if (pay) {
+            const kb = new InlineKeyboard()
+                .url('💳 Оплатить онлайн', pay.url).row()
+                .text('🏦 Напрямую админу', `manualpay:${paymentId}`);
+            await ctx.reply(
+                `🧾 <b>Счёт #${paymentId}</b>\n\n📦 Тариф: <b>${tariff.name}</b>\n💵 Сумма: <b>${tariff.price} ${currencySign(tariff.currency)}</b>\n\nВыберите способ оплаты:`,
+                { parse_mode: 'HTML', reply_markup: kb }
+            );
+        } else {
+            await sendManualInstructions(ctx, paymentId, `${tariff.price} ${currencySign(tariff.currency)}`);
+        }
+    });
+
+    // Покупка с баланса: списание + выдача нового прокси
+    bot.callbackQuery(/^paybal:(\d+)$/, async (ctx) => {
+        const tariff = db.prepare('SELECT * FROM tariffs WHERE id = ? AND enabled = 1').get(Number(ctx.match[1]));
+        if (!tariff) return ctx.answerCallbackQuery('Тариф недоступен');
+        const balance = totalBalance(ctx.from.id);
+        if (balance < tariff.price) {
+            return ctx.answerCallbackQuery({ text: 'Недостаточно средств на балансе', show_alert: true });
+        }
+        await ctx.answerCallbackQuery('Оформляю...');
+
+        deductBalance(ctx.from.id, tariff.price);
+        const paymentId = db.prepare(
+            'INSERT INTO payments (tariff_id, amount, currency, provider, status, telegram_id) VALUES (?, ?, ?, ?, ?, ?)'
+        ).run(tariff.id, tariff.price, tariff.currency, 'balance', 'pending', ctx.from.id).lastInsertRowid;
+
+        try {
+            await issueAccessFor(ctx.from.id, tariff, paymentId);
+        } catch (e) {
+            // Возврат средств при ошибке выдачи
+            db.prepare('UPDATE clients SET balance = balance + ? WHERE telegram_id = ?').run(tariff.price, ctx.from.id);
+            db.prepare("UPDATE payments SET status = 'failed' WHERE id = ?").run(paymentId);
+            logger.error('Покупка с баланса не удалась, средства возвращены', { error: e.message, tgId: ctx.from.id });
+            await ctx.reply(`⚠️ Произошла ошибка — средства возвращены на баланс. Напишите в поддержку ${SUPPORT_USERNAME}`);
+        }
+    });
+
+    // Покупка другим способом (онлайн/админ) — из карточки выбора
+    bot.callbackQuery(/^bypay:(\d+)$/, async (ctx) => {
         const tariff = db.prepare('SELECT * FROM tariffs WHERE id = ? AND enabled = 1').get(Number(ctx.match[1]));
         if (!tariff) return ctx.answerCallbackQuery('Тариф недоступен');
         await ctx.answerCallbackQuery('Создаю счёт...');
@@ -667,7 +757,6 @@ async function start() {
         });
 
         if (pay) {
-            // Платёжка подключена: выбор способа оплаты
             const kb = new InlineKeyboard()
                 .url('💳 Оплатить онлайн', pay.url).row()
                 .text('🏦 Напрямую админу', `manualpay:${paymentId}`);
@@ -676,7 +765,6 @@ async function start() {
                 { parse_mode: 'HTML', reply_markup: kb }
             );
         } else {
-            // Платёжек нет — сразу инструкция с картой
             await sendManualInstructions(ctx, paymentId, `${tariff.price} ${currencySign(tariff.currency)}`);
         }
     });
