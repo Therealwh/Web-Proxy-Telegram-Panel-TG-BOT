@@ -1,5 +1,5 @@
 // Каркас приложения: боковое меню, шапка, маршрутизация
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import {
     LayoutDashboard, Users, ScrollText, Settings, QrCode, Globe,
@@ -27,7 +27,13 @@ export default function Layout() {
     const { login, clearAuth } = useAuthStore();
     const { theme, toggleTheme } = useThemeStore();
     const [menuOpen, setMenuOpen] = useState(false);
+    const [version, setVersion] = useState('');
     const navigate = useNavigate();
+
+    // Версия панели из API (всегда актуальная)
+    useEffect(() => {
+        fetch('/api/health').then((r) => r.json()).then((d) => setVersion(d.version || '')).catch(() => {});
+    }, []);
 
     const logout = async () => {
         try { await post('/auth/logout'); } catch { /* игнорируем */ }
@@ -100,7 +106,7 @@ export default function Layout() {
                     <Outlet />
                 </main>
                 <footer className="px-6 py-4 text-center text-xs text-slate-400 dark:text-slate-500 space-y-1">
-                    <div>© 2026 TGGATE | Версия 1.1.6 | Работает на Telemt</div>
+                    <div>© 2026 TGGATE | Версия {version || '...'} | Работает на Telemt</div>
                     <div className="flex items-center justify-center gap-4">
                         <a href="https://t.me/tggatetopsupport" target="_blank" rel="noreferrer"
                            className="hover:text-primary transition-colors">🛟 Поддержка @tggatetopsupport</a>

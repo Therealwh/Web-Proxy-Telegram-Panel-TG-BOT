@@ -17,11 +17,11 @@ const logger = require('../utils/logger');
 const router = express.Router();
 
 // Обновления выполняются root-скриптами через sudo (NOPASSWD правило
-// из install.sh). Пути — /usr/local/bin, см. install_cli().
+// из install.sh). Скрипты запускаются ПРЯМО из репозитория — копии не устаревают.
 const SCRIPTS = {
-    check: '/usr/local/bin/tggate-check-updates',
-    panel: '/usr/local/bin/tggate-update-panel',
-    telemt: '/usr/local/bin/tggate-update-telemt',
+    check: '/opt/tggate/scripts/check-updates.sh',
+    panel: '/opt/tggate/scripts/update-panel.sh',
+    telemt: '/opt/tggate/scripts/update-telemt.sh',
 };
 
 // --- Статус версий (всегда собирается на месте, versions.json как кэш) ---
@@ -74,7 +74,7 @@ function assertSudoAccess(script) {
             }
             reject(new Error(
                 'sudo-правило не настроено. Выполните на сервере от root: ' +
-                "printf 'tggate ALL=(root) NOPASSWD: /usr/local/bin/tggate-update-panel\\ntggate ALL=(root) NOPASSWD: /usr/local/bin/tggate-update-telemt\\ntggate ALL=(root) NOPASSWD: /usr/local/bin/tggate-check-updates\\n' > /etc/sudoers.d/tggate && chmod 440 /etc/sudoers.d/tggate"
+                "printf 'tggate ALL=(root) NOPASSWD: /opt/tggate/scripts/update-panel.sh\\ntggate ALL=(root) NOPASSWD: /opt/tggate/scripts/update-telemt.sh\\ntggate ALL=(root) NOPASSWD: /opt/tggate/scripts/check-updates.sh\\n' > /etc/sudoers.d/tggate && chmod 440 /etc/sudoers.d/tggate"
             ));
         });
     });
@@ -172,7 +172,7 @@ router.put('/settings', (req, res, next) => {
         try {
             if (data.auto_check) {
                 fs.writeFileSync('/etc/cron.d/tggate-updates',
-                    `${cronMap[data.frequency]} root /usr/local/bin/tggate-check-updates >/dev/null 2>&1\n`);
+                    `${cronMap[data.frequency]} root /opt/tggate/scripts/check-updates.sh >/dev/null 2>&1\n`);
             } else {
                 fs.rmSync('/etc/cron.d/tggate-updates', { force: true });
             }

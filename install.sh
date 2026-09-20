@@ -416,26 +416,20 @@ create_admin() {
 }
 
 # ---------------------------------------------------------------------------
-# Команда управления sudo TGGATE + root-скрипты обновлений
+# Команда управления sudo TGGATE + sudo-правила для обновлений
 # ---------------------------------------------------------------------------
 install_cli() {
     step "Установка команды управления TGGATE"
     cp "${INSTALL_DIR}/tggate.sh" /usr/local/bin/TGGATE
     chmod +x /usr/local/bin/TGGATE
 
-    # Root-скрипты для панели: обновления запускаются из веб-интерфейса
-    # от пользователя tggate через sudo (NOPASSWD, только эти скрипты)
-    cp "${INSTALL_DIR}/scripts/update-panel.sh"   /usr/local/bin/tggate-update-panel
-    cp "${INSTALL_DIR}/scripts/update-telemt.sh"  /usr/local/bin/tggate-update-telemt
-    cp "${INSTALL_DIR}/scripts/check-updates.sh"  /usr/local/bin/tggate-check-updates
-    chmod +x /usr/local/bin/tggate-update-panel /usr/local/bin/tggate-update-telemt /usr/local/bin/tggate-check-updates
-
-    # Sudo-правило: tggate может запускать ТОЛЬКО эти три скрипта без пароля
-    cat > /etc/sudoers.d/tggate <<'EOF'
+    # Панель запускает скрипты обновления ПРЯМО из репозитория —
+    # никакие копии не устаревают после апдейтов
+    cat > /etc/sudoers.d/tggate <<EOF
 # TGGATE: панель управления запускает скрипты обновлений от root
-tggate ALL=(root) NOPASSWD: /usr/local/bin/tggate-update-panel
-tggate ALL=(root) NOPASSWD: /usr/local/bin/tggate-update-telemt
-tggate ALL=(root) NOPASSWD: /usr/local/bin/tggate-check-updates
+tggate ALL=(root) NOPASSWD: ${INSTALL_DIR}/scripts/update-panel.sh
+tggate ALL=(root) NOPASSWD: ${INSTALL_DIR}/scripts/update-telemt.sh
+tggate ALL=(root) NOPASSWD: ${INSTALL_DIR}/scripts/check-updates.sh
 EOF
     chmod 440 /etc/sudoers.d/tggate
     # Валидация sudoers перед применением (защита от поломки sudo)
@@ -451,10 +445,9 @@ EOF
 # ---------------------------------------------------------------------------
 install_cron() {
     step "Настройка автопроверки обновлений"
-    cp "${INSTALL_DIR}/scripts/check-updates.sh" /usr/local/bin/tggate-check-updates
-    chmod +x /usr/local/bin/tggate-check-updates
-    # По умолчанию — раз в сутки в 04:00 (меняется в настройках панели)
-    echo "0 4 * * * root /usr/local/bin/tggate-check-updates >/dev/null 2>&1" > /etc/cron.d/tggate-updates
+    # Скрипт запускается прямо из репозитория — при обновлении кода cron
+    # автоматически использует свежую версию
+    echo "0 4 * * * root ${INSTALL_DIR}/scripts/check-updates.sh >/dev/null 2>&1" > /etc/cron.d/tggate-updates
     ok "Cron-задача добавлена"
 }
 

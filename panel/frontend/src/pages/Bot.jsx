@@ -37,11 +37,17 @@ export default function Bot() {
     };
 
     const saveTariff = async (t) => {
+        // Нормализация: пустые строки → null (без лимита)
+        const payload = {
+            ...t,
+            max_ips: t.max_ips === '' || t.max_ips == null ? null : Number(t.max_ips),
+            quota_gb: t.quota_gb === '' || t.quota_gb == null ? null : Number(t.quota_gb),
+        };
         try {
-            if (t.id) {
-                await put(`/bot/tariffs/${t.id}`, t);
+            if (payload.id) {
+                await put(`/bot/tariffs/${payload.id}`, payload);
             } else {
-                await post('/bot/tariffs', t);
+                await post('/bot/tariffs', payload);
             }
             toast.success('Тариф сохранён');
             load();
@@ -338,7 +344,7 @@ export default function Bot() {
             {/* Тарифы */}
             <Card title="💰 Тарифы" actions={
                 <button className="btn-secondary !min-h-0 !px-3 !py-1.5 text-sm"
-                        onClick={() => setTariffs([...tariffs, { name: '', days: 30, price: 100, protocols: 'both', max_ips: '', quota_gb: '', enabled: 1 }])}>
+                        onClick={() => setTariffs([...tariffs, { name: '', days: 30, price: 100, protocols: 'both', max_ips: null, quota_gb: null, enabled: 1 }])}>
                     <Plus size={14} /> Добавить
                 </button>
             }>

@@ -44,8 +44,7 @@ rm -f /etc/caddy/Caddyfile
 systemctl reload nginx caddy 2>/dev/null || true
 
 echo "[4/7] Удаление cron-задач..."
-rm -f /etc/cron.d/tggate-updates /usr/local/bin/tggate-check-updates
-rm -f /usr/local/bin/tggate-update-panel /usr/local/bin/tggate-update-telemt
+rm -f /etc/cron.d/tggate-updates
 rm -f /etc/sudoers.d/tggate
 
 echo "[5/7] Удаление команды управления..."

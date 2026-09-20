@@ -79,8 +79,17 @@ app.use('/api', rateLimit({
 // API
 // ---------------------------------------------------------------------------
 
+// Версия панели из файла VERSION (кэшируем при старте)
+const PANEL_VERSION = (() => {
+    try {
+        return fs.readFileSync(path.join(__dirname, '..', '..', 'VERSION'), 'utf8').trim();
+    } catch {
+        return '1.0.0';
+    }
+})();
+
 // Проверка живости (для install.sh и мониторинга) — без авторизации
-app.get('/api/health', (req, res) => res.json({ ok: true, service: 'tggate-panel' }));
+app.get('/api/health', (req, res) => res.json({ ok: true, service: 'tggate-panel', version: PANEL_VERSION }));
 
 // Внутренние (только loopback): /api/internal/*
 app.use('/api/internal', internalRouter);
