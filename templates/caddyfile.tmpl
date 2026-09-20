@@ -1,0 +1,31 @@
+# =============================================================================
+# TGGATE — Caddyfile
+# Caddy терминирует TLS (авто-SSL Let's Encrypt) и передаёт всё на Nginx.
+# Документация: https://caddyserver.com/docs/
+# =============================================================================
+
+{
+	# Email для регистрации в Let's Encrypt и уведомлений о продлении
+	email {{EMAIL}}
+}
+
+{{DOMAIN}} {
+	# Весь трафик — на Nginx (он маршрутизирует: панель / Telemt WEB)
+	reverse_proxy 127.0.0.1:{{NGINX_LOCAL_PORT}} {
+		# Передаём реальный IP клиента цепочкой доверенных заголовков
+		header_up X-Real-IP {remote_host}
+		header_up X-Forwarded-For {remote_host}
+		header_up Host {host}
+	}
+
+	# Безопасность: минимальные заголовки на уровне TLS-терминатора
+	header {
+		-Server
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+	}
+
+	# Логи: только ошибки, чтобы не светить пути (carrier credentials)
+	log {
+		level ERROR
+	}
+}
