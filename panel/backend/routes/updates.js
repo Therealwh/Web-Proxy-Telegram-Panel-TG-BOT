@@ -153,7 +153,7 @@ router.post('/telemt', async (req, res, next) => {
 });
 
 // --- Настройки обновлений ---
-router.put('/settings', (req, res, next) => {
+router.put('/settings', async (req, res, next) => {
     try {
         const schema = z.object({
             auto_check: z.boolean(),
