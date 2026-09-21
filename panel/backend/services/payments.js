@@ -48,29 +48,33 @@ async function createPaymentUrl({ paymentId, tariff, settings }) {
  * ВАЖНО: токен из @CryptoBot (Mainnet), а не из тестнет-бота!
  */
 async function createCryptoBotInvoice({ paymentId, tariff, token }) {
+    // USDT — криптовалюта, остальное — фиат (документация: поле fiat)
+    const isUsdt = tariff.currency === 'USDT';
+    const body = isUsdt
+        ? { currency_type: 'crypto', asset: 'USDT', amount: String(tariff.price), description: `TGGATE: тариф «${tariff.name}»`, payload: String(paymentId), expires_in: 3600 }
+        : { currency_type: 'fiat', fiat: tariff.currency || 'RUB', amount: String(tariff.price), description: `TGGATE: тариф «${tariff.name}»`, payload: String(paymentId), expires_in: 3600 };
+
     const res = await fetch('https://pay.crypt.bot/api/createInvoice', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Crypto-Pay-API-Token': token },
-        body: JSON.stringify({
-            currency_type: 'fiat',
-            fiat_type: tariff.currency === 'USD' ? 'USD' : tariff.currency === 'EUR' ? 'EUR' : 'RUB',
-            amount: String(tariff.price),
-            description: `TGGATE: тариф «${tariff.name}»`,
-            payload: String(paymentId),
-            expires_in: 3600,
-        }),
+        body: JSON.stringify(body),
         signal: AbortSignal.timeout(8000),
     });
-    const data = await res.json().catch(() => ({}));
+
+    // Читаем сырой текст — в лог идёт полный ответ API при отказе
+    const rawText = await res.text();
+    let data = {};
+    try { data = JSON.parse(rawText); } catch { /* не JSON — покажем raw в ошибке */ }
+
     if (!res.ok || !data.ok) {
-        const reason = data.error
-            ? `${data.error.name || ''} ${data.error.description || ''}`.trim() || `HTTP ${res.status}`
-            : `HTTP ${res.status}`;
-        logger.error('CryptoBot createInvoice отклонён', { paymentId, status: res.status, reason });
+        const apiError = data.error ? `${data.error.name || ''} ${data.error.description || ''}`.trim() : '';
+        const reason = apiError || rawText.slice(0, 300) || `HTTP ${res.status}`;
+        logger.error('CryptoBot createInvoice отклонён', { paymentId, status: res.status, raw: rawText.slice(0, 500) });
         const e = new Error(`CryptoBot: ${reason}`);
         e.statusCode = 502;
         throw e;
     }
+
     const url = data.result.pay_url || data.result.bot_invoice_url;
     logger.info('CryptoBot инвойс создан', { paymentId, url });
     return { url, provider: 'cryptobot' };
