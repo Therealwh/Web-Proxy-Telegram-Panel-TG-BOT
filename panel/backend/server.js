@@ -204,10 +204,14 @@ server.listen(config.port, config.host, () => {
 });
 
 // Graceful shutdown
-process.on('SIGTERM', () => {
-    logger.info('Получен SIGTERM, завершаю работу...');
+// Graceful shutdown: закрываем WS-клиенты и сервер, форс-выход за 3 сек
+// (иначе открытые WebSocket-соединения держат процесс 90 секунд — 502 при рестарте)
+async function shutdown(signal) {
+    logger.info(`Получен ${signal}, завершаю работу...`);
+    try { wsHub.closeAll(); } catch { /* ignore */ }
+    try { server.closeAllConnections?.(); } catch { /* старые версии Node */ }
     server.close(() => process.exit(0));
-});
-process.on('SIGINT', () => {
-    server.close(() => process.exit(0));
-});
+    setTimeout(() => process.exit(0), 3000).unref();
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));

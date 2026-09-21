@@ -55,4 +55,12 @@ function broadcast(type, data) {
     }
 }
 
+/** Принудительно закрывает все WS-соединения (используется при остановке панели). */
+function closeAll() {
+    for (const ws of clients) {
+        try { ws.terminate(); } catch { /* ignore */ }
+    }
+    clients.clear();
+}
+
 module.exports = { init, broadcast, closeAll };
