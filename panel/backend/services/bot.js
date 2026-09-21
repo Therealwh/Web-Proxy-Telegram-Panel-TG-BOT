@@ -678,15 +678,23 @@ async function start() {
         await ctx.answerCallbackQuery('Создаю счёт...');
         const settings = getBotSettings();
         const paymentsService = require('./payments');
-        const pay = provider === 'cryptobot'
-            ? await paymentsService.createCryptoBotInvoice({
-                paymentId, tariff: { name: tariff.name, price: tariff.price, currency: tariff.currency },
-                token: settings.cryptobot_token,
-            })
-            : await paymentsService.createYooKassaPayment({
-                paymentId, tariff: { name: tariff.name, price: tariff.price, currency: tariff.currency },
-                shopId: settings.yookassa_shop_id, secretKey: settings.yookassa_secret_key,
-            });
+        let pay = null;
+        try {
+            pay = provider === 'cryptobot'
+                ? await paymentsService.createCryptoBotInvoice({
+                    paymentId, tariff: { name: tariff.name, price: tariff.price, currency: tariff.currency },
+                    token: settings.cryptobot_token,
+                })
+                : await paymentsService.createYooKassaPayment({
+                    paymentId, tariff: { name: tariff.name, price: tariff.price, currency: tariff.currency },
+                    shopId: settings.yookassa_shop_id, secretKey: settings.yookassa_secret_key,
+                });
+        } catch (e) {
+            logger.error('Инвойс не создался', { provider, error: e.message });
+            // Сбой платёжки — сразу карта админа, заказ остаётся в силе
+            await sendManualInstructions(ctx, paymentId, `${tariff.price} ${currencySign(tariff.currency)}`);
+            return;
+        }
 
         if (pay?.url) {
             db.prepare('UPDATE payments SET provider = ? WHERE id = ?').run(provider, paymentId);
