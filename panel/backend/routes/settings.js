@@ -18,9 +18,8 @@ const DEFAULTS = {
     web_proxy_enabled: true,             // Web Proxy вкл/выкл
     mtproto_enabled: true,               // MTProto вкл/выкл
 
-    // 🔒 Безопасность
-    ip_whitelist: [],                    // whitelist IP для админки (пусто = все)
-    login_rate_limit: 10,                // попыток входа за 15 минут
+    // 🔒 Безопасность: лимит попыток входа фиксируется в коде (routes/auth.js),
+    // а ip_whitelist требует доступа к sudoers — поэтому здесь не настраиваются.
 
     // 🔔 Уведомления
     tg_bot_token: null,                  // токен бота администратора
@@ -94,7 +93,15 @@ router.put('/', (req, res, next) => {
             }
         })();
 
-        res.json({ ok: true, settings: getAll() });
+        const all = getAll();
+        if (all.tg_bot_token) all.tg_bot_token = '••••••' + String(all.tg_bot_token).slice(-4);
+        if (all.bot_settings?.bot_token) {
+            all.bot_settings = { ...all.bot_settings };
+            for (const sk of ['bot_token', 'cryptobot_token', 'yookassa_secret_key']) {
+                if (all.bot_settings[sk]) all.bot_settings[sk] = '••••••' + String(all.bot_settings[sk]).slice(-4);
+            }
+        }
+        res.json({ ok: true, settings: all });
     } catch (err) {
         next(err);
     }

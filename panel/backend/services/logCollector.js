@@ -64,7 +64,7 @@ async function pollOnce() {
             wsHub.broadcast('log', rec);
         } catch { /* БД не должна падать */ }
     }
-    prevKeys = new Set(snapshot.keys());
+    // Полный провал опроса — не сбрасываем prevKeys, чтобы после\n    // восстановления Telemt не задублировать все подключения\n    if (snapshot.size === 0 && prevKeys.size > 0) return;\n    prevKeys = new Set(snapshot.keys());
 }
 
 /** Запускает периодический опрос. */

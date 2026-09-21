@@ -22,9 +22,17 @@ const router = express.Router();
  * @param {number} paymentId - id платежа в БД
  */
 async function completePayment(paymentId) {
+    // Атомарный захват: помечаем успех ДО ветвления — исключает двойную
+    // выдачу/начисление при параллельных вебхуке и ручном подтверждении
+    const claim = db.prepare(
+        "UPDATE payments SET status = 'success', paid_at = datetime('now') WHERE id = ? AND status = 'pending'"
+    ).run(paymentId);
+    if (claim.changes === 0) {
+        const existing = db.prepare('SELECT * FROM payments WHERE id = ?').get(paymentId);
+        if (!existing) throw httpError(404, 'Платёж не найден');
+        return existing; // уже обработан — идемпотентность
+    }
     const payment = db.prepare('SELECT * FROM payments WHERE id = ?').get(paymentId);
-    if (!payment) throw httpError(404, 'Платёж не найден');
-    if (payment.status === 'success') return payment; // идемпотентность
 
     const tariff = db.prepare('SELECT * FROM tariffs WHERE id = ?').get(payment.tariff_id);
 
@@ -43,13 +51,12 @@ async function completePayment(paymentId) {
             db.prepare("UPDATE payments SET status = 'success', paid_at = datetime('now') WHERE id = ?").run(paymentId);
 
             const bot = require('../services/bot');
-            if (payment.telegram_id && bot) {
+            if (payment.telegram_id && bot.isRunning()) {
                 const fmt = (d) => new Date(d).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' }) + ' МСК';
-                await bot.api.sendMessage(
+                await bot.sendMessageTo(
                     payment.telegram_id,
-                    `✅ <b>Продление оплачено!</b>\n\n📦 ${client.username} — до <b>${fmt(newExpiry)}</b>`,
-                    { parse_mode: 'HTML' }
-                ).catch(() => {});
+                    `✅ <b>Продление оплачено!</b>\n\n📦 ${client.username} — до <b>${fmt(newExpiry)}</b>`
+                );
             }
             logger.info('Прокси продлён', { paymentId, username: client.username });
             return payment;
@@ -90,13 +97,38 @@ async function completePayment(paymentId) {
 // Вебхуки провайдеров (публичные, без JWT — проверка подписи провайдера)
 // ===========================================================================
 
-// --- ЮKassa: проверяем по событию payment.succeeded ---
+// --- ЮKassa: верификация через API + обработка payment.succeeded ---
+// БЕЗ проверки нельзя: кто угодно может POST-нуть "оплату" и получить прокси.
 router.post('/webhook/yookassa', async (req, res) => {
     try {
         const event = req.body;
         if (event?.event !== 'payment.succeeded') return res.json({ ok: true });
-        const paymentId = Number(event?.object?.metadata?.tggate_payment_id);
-        if (paymentId) await completePayment(paymentId);
+
+        const ykPaymentId = event?.object?.id;
+        const localPaymentId = Number(event?.object?.metadata?.tggate_payment_id);
+        if (!ykPaymentId || !localPaymentId) return res.json({ ok: true });
+
+        // Верифицируем платёж напрямую в ЮKassa (авторитетный источник)
+        const bs = (getAll().bot_settings) || {};
+        if (!bs.yookassa_shop_id || !bs.yookassa_secret_key) {
+            logger.error('ЮKassa вебхук: ключи магазина не настроены — игнорирую');
+            return res.status(400).json({ error: 'ЮKassa не настроена' });
+        }
+        const vres = await fetch(`https://api.yookassa.ru/v3/payments/${encodeURIComponent(ykPaymentId)}`, {
+            headers: { Authorization: 'Basic ' + Buffer.from(`${bs.yookassa_shop_id}:${bs.yookassa_secret_key}`).toString('base64') },
+            signal: AbortSignal.timeout(10000),
+        });
+        if (!vres.ok) {
+            logger.error('ЮKassa верификация: платёж не получен', { ykPaymentId, status: vres.status });
+            return res.status(400).json({ error: 'verification failed' });
+        }
+        const vp = await vres.json();
+        if (vp.status !== 'succeeded' || Number(vp.metadata?.tggate_payment_id) !== localPaymentId) {
+            logger.error('ЮKassa верификация провалена', { ykPaymentId, status: vp.status });
+            return res.status(400).json({ error: 'verification failed' });
+        }
+
+        await completePayment(localPaymentId);
         res.json({ ok: true });
     } catch (err) {
         logger.error('Ошибка вебхука ЮKassa', { error: err.message });

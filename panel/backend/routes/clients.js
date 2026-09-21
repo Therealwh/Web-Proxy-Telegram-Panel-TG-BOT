@@ -258,15 +258,15 @@ router.delete('/:id', async (req, res, next) => {
         const row = db.prepare('SELECT * FROM clients WHERE id = ?').get(req.params.id);
         if (!row) throw httpError(404, 'Клиент не найден');
 
-        // 1. Удаляем из БД панели (синк профилей больше не будет его включать)
-        db.prepare('DELETE FROM clients WHERE id = ?').run(row.id);
-
-        // 2. Убираем WEB-профиль ДО удаления пользователя в Telemt,
+        // 1. Убираем WEB-профиль ДО удаления пользователя в Telemt,
         //    иначе Telemt отклонит удаление (profile references unknown user)
-        await syncWebProfiles();
+        await syncWebProfiles(row.username);
 
-        // 3. Теперь пользователь ни на что не ссылается — удаляем в Telemt
+        // 2. Удаляем в Telemt
         await telemt.deleteUser(row.username);
+
+        // 3. Удаляем из БД панели
+        db.prepare('DELETE FROM clients WHERE id = ?').run(row.id);
 
         logger.info('Клиент удалён', { username: row.username });
         res.json({ ok: true });

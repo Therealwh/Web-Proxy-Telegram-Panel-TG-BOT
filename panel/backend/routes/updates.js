@@ -173,23 +173,17 @@ router.put('/settings', (req, res, next) => {
             upsert.run('updates_auto_install', JSON.stringify(data.auto_install));
         })();
 
-        // Обновляем cron-задачу под новую частоту
-        const cronMap = {
-            hourly: '0 * * * *',
-            daily: '0 4 * * *',
-            weekly: '0 4 * * 1',
-            monthly: '0 4 1 * *',
-        };
         try {
-            if (data.auto_check) {
-                fs.writeFileSync('/etc/cron.d/tggate-updates',
-                    `${cronMap[data.frequency]} root /opt/tggate/scripts/check-updates.sh >/dev/null 2>&1\n`);
-            } else {
-                fs.rmSync('/etc/cron.d/tggate-updates', { force: true });
+            if (config.helperUrl && config.helperSecret) {
+                await fetch(`${config.helperUrl}/cron`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ secret: config.helperSecret, frequency: data.auto_check ? data.frequency : 'off' }),
+                    signal: AbortSignal.timeout(5000),
+                });
             }
         } catch (err) {
-            // /etc/cron.d пишет root — от пользователя панели может не выйти (не критично)
-            logger.warn('Не удалось обновить cron-задачу', { error: err.message });
+            logger.warn('Не удалось обновить cron через хелпер', { error: err.message });
         }
 
         res.json({ ok: true });

@@ -3,6 +3,21 @@ import { useAuthStore } from './store';
 
 const API_BASE = '/api';
 
+// Single-flight refresh: параллельные 401 ждут один общий запрос обновления
+let refreshPromise = null;
+
+function refreshSession() {
+    if (!refreshPromise) {
+        refreshPromise = fetch(`${API_BASE}/auth/refresh`, {
+            method: 'POST',
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        })
+            .then(async (r) => ({ ok: r.ok, data: await r.json().catch(() => ({})) }))
+            .finally(() => { setTimeout(() => { refreshPromise = null; }, 100); });
+    }
+    return refreshPromise;
+}
+
 /**
  * Выполняет запрос к API с авторизацией. При 401 пробует обновить
  * access-токен через refresh-cookie и повторяет запрос один раз.
@@ -30,13 +45,12 @@ export async function api(path, options = {}) {
 
     let response = await doFetch(accessToken);
 
-    // Пробуем обновить токен один раз при 401
+    // Пробуем обновить токен один раз при 401 (single-flight)
     if (response.status === 401 && accessToken) {
-        const refresh = await fetch(`${API_BASE}/auth/refresh`, { method: 'POST' });
+        const refresh = await refreshSession();
         if (refresh.ok) {
-            const data = await refresh.json();
-            setAuth(data.accessToken, data.login);
-            response = await doFetch(data.accessToken);
+            setAuth(refresh.data.accessToken, refresh.data.login);
+            response = await doFetch(refresh.data.accessToken);
         } else {
             clearAuth();
             window.location.hash = '#/login';

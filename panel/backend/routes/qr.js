@@ -25,7 +25,12 @@ router.use((req, res, next) => {
     let token = null;
     const header = req.headers.authorization || '';
     if (header.startsWith('Bearer ')) token = header.slice(7);
-    if (!token && req.query.token) token = String(req.query.token);
+    if (!token && req.query.token) {
+        if (!['GET', 'HEAD'].includes(req.method)) {
+            return res.status(401).json({ error: 'Требуется авторизация' });
+        }
+        token = String(req.query.token);
+    }
 
     if (!token) return res.status(401).json({ error: 'Требуется авторизация' });
     try {

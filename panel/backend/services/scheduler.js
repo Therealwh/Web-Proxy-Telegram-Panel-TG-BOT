@@ -16,36 +16,40 @@ const logger = require('../utils/logger');
 
 /** Проверка доступности прокси: MTProto (TCP) и Web (HTTPS через домен). */
 async function checkProxies() {
-    // MTProto: TCP-порт открыт?
-    let mtOk = 0;
     try {
-        execSync(`timeout 5 bash -c "echo > /dev/tcp/127.0.0.1/${config.mtprotoPort}"`);
-        mtOk = 1;
-    } catch { mtOk = 0; }
+        // MTProto: TCP-порт открыт?
+        let mtOk = 0;
+        try {
+            execSync(`timeout 5 bash -c "echo > /dev/tcp/127.0.0.1/${config.mtprotoPort}"`);
+            mtOk = 1;
+        } catch { mtOk = 0; }
 
-    // Web: домен отвечает?
-    let webOk = 0;
-    let webLatency = null;
-    try {
-        const start = Date.now();
-        const res = await fetch(`https://${config.domain}/`, { signal: AbortSignal.timeout(8000) });
-        webLatency = Date.now() - start;
-        webOk = res.status < 500 ? 1 : 0;
-    } catch { webOk = 0; }
+        // Web: домен отвечает?
+        let webOk = 0;
+        let webLatency = null;
+        try {
+            const start = Date.now();
+            const res = await fetch(`https://${config.domain}/`, { signal: AbortSignal.timeout(8000) });
+            webLatency = Date.now() - start;
+            webOk = res.status < 500 ? 1 : 0;
+        } catch { webOk = 0; }
 
-    const insert = db.prepare('INSERT INTO uptime_checks (service, ok, latency_ms) VALUES (?, ?, ?)');
-    insert.run('mtproto', mtOk, null);
-    insert.run('web', webOk, webLatency);
+        const insert = db.prepare('INSERT INTO uptime_checks (service, ok, latency_ms) VALUES (?, ?, ?)');
+        insert.run('mtproto', mtOk, null);
+        insert.run('web', webOk, webLatency);
 
-    // Чистим старые проверки (храним 35 дней)
-    db.prepare("DELETE FROM uptime_checks WHERE created_at < datetime('now','-35 days')").run();
+        // Чистим старые проверки (храним 35 дней)
+        db.prepare("DELETE FROM uptime_checks WHERE created_at < datetime('now','-35 days')").run();
 
-    // Алерты при падении
-    const settings = getAll();
-    if (settings.notify_services && (!mtOk || !webOk)) {
-        notifier.notifyAdmin(settings,
-            `🚨 <b>Проблема с прокси!</b>\nMTProto: ${mtOk ? '✅' : '❌'}\nWeb Proxy: ${webOk ? '✅' : '❌'}`
-        ).catch(() => {});
+        // Алерты при падении
+        const settings = getAll();
+        if (settings.notify_services && (!mtOk || !webOk)) {
+            notifier.notifyAdmin(settings,
+                `🚨 <b>Проблема с прокси!</b>\nMTProto: ${mtOk ? '✅' : '❌'}\nWeb Proxy: ${webOk ? '✅' : '❌'}`
+            ).catch(() => {});
+        }
+    } catch (err) {
+        logger.error('Ошибка проверки прокси', { error: err.message });
     }
 }
 
@@ -99,13 +103,14 @@ async function disableExpired() {
 }
 
 /**
- * Удаление просроченных ТЕСТОВЫХ клиентов (username начинается с test):
+ * Удаление просроченных ТЕСТОВЫХ клиентов (username = test<tgId>):
  * через 24 часа после истечения удаляются из Telemt и из базы.
+ * Удаляем в Telemt только при успехе — запись из базы.
  */
 async function cleanupTestClients() {
     const rows = db.prepare(
         `SELECT * FROM clients
-         WHERE username LIKE 'test%'
+         WHERE username GLOB 'test[0-9]*'
            AND status IN ('expired', 'blocked')
            AND expires_at IS NOT NULL
            AND expires_at < datetime('now', '-24 hours')`
@@ -113,7 +118,10 @@ async function cleanupTestClients() {
     const telemt = require('./telemtApi');
     for (const client of rows) {
         try {
-            await telemt.deleteUser(client.username).catch(() => {});
+            await telemt.deleteUser(client.username).catch(async (e) => {
+                // Пользователя могли удалить вручную из Telemt — тогда просто чистим базу
+                if (!/not found|404/i.test(e.message)) throw e;
+            });
             db.prepare('DELETE FROM clients WHERE id = ?').run(client.id);
             logger.info('Тестовый клиент удалён', { username: client.username });
         } catch (err) {
@@ -129,6 +137,7 @@ function autoBackup() {
     try {
         fs.mkdirSync(config.backupDir, { recursive: true });
         const dest = path.join(config.backupDir, `auto-${new Date().toISOString().slice(0, 10)}.db`);
+        db.pragma('wal_checkpoint(TRUNCATE)');
         fs.copyFileSync(config.dbPath, dest);
 
         // Ротация: удаляем бэкапы старше N дней
@@ -161,19 +170,19 @@ function checkDisk() {
 /** Запускает все фоновые задачи с их интервалами. */
 function start() {
     // Проверка доступности каждые 5 минут
-    setInterval(checkProxies, 5 * 60 * 1000).unref();
+    setInterval(() => checkProxies().catch(() => {}), 5 * 60 * 1000).unref();
     checkProxies().catch(() => {});
 
     // Ежечасно: истечения, просроченные, тестовые, диск
     setInterval(() => {
-        checkExpiring();
+        try { checkExpiring(); } catch (e) { logger.error(e); }
         disableExpired().catch(() => {});
         cleanupTestClients().catch(() => {});
-        checkDisk();
+        try { checkDisk(); } catch (e) { logger.error(e); }
     }, 60 * 60 * 1000).unref();
     // Первый прогон через 2 минуты после старта
     setTimeout(() => {
-        checkExpiring();
+        try { checkExpiring(); } catch (e) { logger.error(e); }
         disableExpired().catch(() => {});
         cleanupTestClients().catch(() => {});
     }, 2 * 60 * 1000).unref();

@@ -154,7 +154,7 @@ router.patch('/clients/:id', requireApiKey('write'), async (req, res, next) => {
 // --- Получить/обновить/удалить клиента ---
 router.get('/clients/:id', requireApiKey('read'), (req, res, next) => {
     try {
-        const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(req.params.id);
+        const client = db.prepare('SELECT id, username, status, quota_bytes, traffic_used, expires_at, created_at FROM clients WHERE id = ?').get(req.params.id);
         if (!client) throw httpError(404, 'Клиент не найден');
         res.json({ client });
     } catch (err) { next(err); }
@@ -164,10 +164,10 @@ router.delete('/clients/:id', requireApiKey('write'), async (req, res, next) => 
     try {
         const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(req.params.id);
         if (!client) throw httpError(404, 'Клиент не найден');
-        // Порядок критичен: сначала профиль, потом пользователь
-        db.prepare('DELETE FROM clients WHERE id = ?').run(client.id);
-        await syncWebProfiles();
+        // Порядок: профиль → пользователь → запись
+        await syncWebProfiles(client.username);
         await telemt.deleteUser(client.username);
+        db.prepare('DELETE FROM clients WHERE id = ?').run(client.id);
         res.json({ ok: true });
     } catch (err) { next(err); }
 });

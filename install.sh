@@ -270,7 +270,7 @@ generate_secrets() {
     if [[ -f "${CONFIG_DIR}/install.env" ]]; then
         old_admin_path="$(grep -oP '^ADMIN_PATH="\K[^"]+' "${CONFIG_DIR}/install.env" 2>/dev/null || true)"
         old_api_token="$(grep -oP '^TELEMT_API_TOKEN="\K[^"]+' "${CONFIG_DIR}/install.env" 2>/dev/null || true)"
-        old_jwt="$(grep -oP '^JWT_SECRET="\K[^"]+' "${INSTALL_DIR}/panel/backend/.env" 2>/dev/null || true)"
+        old_jwt="$(grep -oP '^JWT_SECRET=\K.*' "${INSTALL_DIR}/panel/backend/.env" 2>/dev/null || true)"
     fi
 
     # Токен Telemt Control API — случайный, только для loopback

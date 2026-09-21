@@ -1,6 +1,6 @@
 // Управление сайтом-заглушкой: файлы, редактор, шаблоны, предпросмотр
 import React, { useEffect, useState } from 'react';
-import { Save, Upload, Trash2, FileText, RefreshCw, Eye } from 'lucide-react';
+import { Save, Upload, Trash2, FileText, Eye } from 'lucide-react';
 import { get, post, put, del } from '../api';
 import { toast } from '../store';
 import { Card, Modal, Skeleton } from '../components/ui';
@@ -46,7 +46,6 @@ export default function Website() {
         const formData = new FormData();
         formData.append('file', file);
         try {
-            const token = JSON.parse(JSON.stringify({})); // токен подставится в api(); здесь fetch напрямую
             const res = await fetch('/api/website/upload', {
                 method: 'POST',
                 headers: {
@@ -92,7 +91,7 @@ export default function Website() {
             <div className="flex flex-wrap items-center justify-between gap-3">
                 <h1 className="text-2xl font-bold">Сайт-заглушка</h1>
                 <div className="flex gap-2">
-                    <a href="/" target="_blank" rel="noreferrer" className="btn-secondary"><Eye size={16} /> Открыть сайт</a>
+                    <a href={`${location.protocol}//${location.host}/`} target="_blank" rel="noreferrer" className="btn-secondary"><Eye size={16} /> Открыть сайт</a>
                     <label className="btn-secondary cursor-pointer">
                         <Upload size={16} /> Загрузить файл
                         <input type="file" className="hidden" onChange={uploadFile} />

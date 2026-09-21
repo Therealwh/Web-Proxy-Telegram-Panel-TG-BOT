@@ -53,7 +53,13 @@ export default function Clients() {
         const params = new URLSearchParams();
         if (search) params.set('search', search);
         if (statusFilter) params.set('status', statusFilter);
-        get(`/clients?${params}`).then((d) => setClients(d.clients)).catch((e) => toast.error(e.message));
+        params.set('limit', '200'); // максимум бэкенда; при >200 покажем уведомление
+        get(`/clients?${params}`).then((d) => {
+            if (d.total > d.clients.length) {
+                toast.info(`Показаны первые ${d.clients.length} из ${d.total}. Уточните поиск.`);
+            }
+            setClients(d.clients);
+        }).catch((e) => toast.error(e.message));
     };
 
     // Поиск с debounce 300 мс

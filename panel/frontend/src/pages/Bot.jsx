@@ -3,7 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { Plus, Save, Trash2, Power, Wallet, MessageSquare, ChevronDown } from 'lucide-react';
 import { get, post, put, del } from '../api';
 import { toast } from '../store';
-import { Card, Field, Toggle, Skeleton, Modal, StatusBadge, formatDate, formatBytes } from '../components/ui';
+import { Card, Field, Toggle, Skeleton, Modal, StatusBadge, formatDate } from '../components/ui';
 
 export default function Bot() {
     const [settings, setSettings] = useState(null);

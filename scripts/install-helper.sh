@@ -52,7 +52,5 @@ rm -f /etc/sudoers.d/tggate
 # 5. Перезапуск панели, чтобы она прочитала новые переменные
 systemctl restart tggate-panel 2>/dev/null || true
 
-sleep 1
-if curl -fsS "http://127.0.0.1:9443/" >/dev/null 2>&1; then true; fi
 systemctl is-active --quiet tggate-helper && echo "[helper] Готово! Обновления из панели теперь работают всегда." \
     || { echo "[helper] ОШИБКА: сервис не запустился: journalctl -u tggate-helper" >&2; exit 1; }

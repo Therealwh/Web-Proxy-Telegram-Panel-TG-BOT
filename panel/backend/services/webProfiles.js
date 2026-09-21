@@ -41,12 +41,12 @@ let lastSyncedJson = null;
  * (все клиенты с включённым Web Proxy). Не бросает исключений наружу —
  * ошибки логируются: клиент продолжит работать по MTProto.
  */
-async function syncWebProfiles() {
+async function syncWebProfiles(excludeUsername = null) {
     try {
         // Клиенты с включённым Web Proxy
         const users = db.prepare(
-            'SELECT username FROM clients WHERE web_enabled = 1 ORDER BY id'
-        ).all().map((r) => r.username);
+            'SELECT username FROM clients WHERE web_enabled = 1 AND username != ? ORDER BY id'
+        ).all(excludeUsername || '').map((r) => r.username);
 
         const wanted = [
             WELCOME_PROFILE,

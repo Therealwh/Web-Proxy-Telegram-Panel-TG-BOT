@@ -15,7 +15,9 @@ const router = express.Router();
 
 /**
  * Пропускает запросы только с loopback-интерфейса.
- * Двойная защита поверх Nginx-маршрутизации.
+ * req.ip с trust proxy='loopback' корректно извлекает реального клиента
+ * из X-Forwarded-For и НЕ доверяет подделкам: внешний запрос получит
+ * свой внешний IP и будет отклонён.
  */
 function loopbackOnly(req, res, next) {
     const ip = req.ip || '';

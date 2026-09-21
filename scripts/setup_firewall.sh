@@ -2,34 +2,49 @@
 #
 # =============================================================================
 # TGGATE — Настройка файрвола UFW
-# Открывает только необходимые порты: 80/tcp, 443/tcp, 8443/tcp, SSH
+# Безопасно: определяет реальный порт SSH и НЕ сбрасывает существующие
+# правила (сброс на сервере с нестандартным SSH = потеря доступа).
 # =============================================================================
 
 set -euo pipefail
 
-# Подтягиваем параметры установки (MTPROTO_PORT и др.)
 source /etc/tggate/install.env
 
 echo "[UFW] Настройка правил файрвола..."
 
-# Сбрасываем до предсказуемого состояния
-ufw --force reset >/dev/null
+# ---------------------------------------------------------------------------
+# 1. Определяем реальный порт SSH (до любых изменений!)
+# ---------------------------------------------------------------------------
+SSH_PORT="22"
+SSHD_PORT_FROM_CONFIG="$(grep -oP '^\s*Port\s+\K\d+' /etc/ssh/sshd_config 2>/dev/null | tail -1 || true)"
+if [[ -n "${SSHD_PORT_FROM_CONFIG}" ]]; then
+    SSH_PORT="${SSHD_PORT_FROM_CONFIG}"
+else
+    # Ищем слушающий sshd через ss
+    DETECTED="$(ss -tlnp 2>/dev/null | grep -E 'sshd' | grep -oP ':\K\d+' | head -1 || true)"
+    if [[ -n "${DETECTED}" ]]; then SSH_PORT="${DETECTED}"; fi
+fi
+echo "[UFW] Порт SSH: ${SSH_PORT}"
 
-# Политики по умолчанию: входящие запрещены, исходящие разрешены
-ufw default deny incoming >/dev/null
-ufw default allow outgoing >/dev/null
+# Иные разрешённые правила не трогаем — только добавляем нужные.
 
-# SSH — критично не заблокировать доступ к серверу!
-ufw allow ssh >/dev/null
+# ---------------------------------------------------------------------------
+# 2. Добавляем правила (идемпотентно)
+# ---------------------------------------------------------------------------
+ufw allow "${SSH_PORT}/tcp" >/dev/null && echo "[UFW] SSH ${SSH_PORT}/tcp — разрешён"
+ufw allow 80/tcp  >/dev/null && echo "[UFW] 80/tcp — разрешён"
+ufw allow 443/tcp >/dev/null && echo "[UFW] 443/tcp — разрешён"
+ufw allow "${MTPROTO_PORT}/tcp" >/dev/null && echo "[UFW] MTProto ${MTPROTO_PORT}/tcp — разрешён"
 
-# HTTP/HTTPS для Caddy (SSL + сайт-заглушка + Web Proxy через reverse proxy)
-ufw allow 80/tcp >/dev/null
-ufw allow 443/tcp >/dev/null
-
-# MTProto прокси (Telemt)
-ufw allow "${MTPROTO_PORT}/tcp" >/dev/null
-
-# Включаем файрвол
+# ---------------------------------------------------------------------------
+# 3. Включаем UFW (не сбрасывая правила!) с защитой от блокировки SSH
+# ---------------------------------------------------------------------------
+if ! ufw status | grep -q "Status: active"; then
+    echo "[UFW] Внимание: сейчас включится файрвол. Убедитесь, что порт SSH ${SSH_PORT} верен!"
+    read -rp "Продолжить? [y/N]: " ans
+    [[ "${ans,,}" == "y" ]] || { echo "[UFW] Отменено — включите ufw вручную."; exit 0; }
+fi
 ufw --force enable >/dev/null
 
-echo "[UFW] Готово. Открыты порты: 22(ssh), 80, 443, ${MTPROTO_PORT}"
+echo "[UFW] Готово. Активные правила:"
+ufw status numbered | sed 's/^/[UFW] /'

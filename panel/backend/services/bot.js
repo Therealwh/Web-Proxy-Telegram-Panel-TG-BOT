@@ -122,7 +122,7 @@ function adminStatsText() {
     const users = db.prepare('SELECT COUNT(*) AS c FROM clients').get().c;
     const active = db.prepare("SELECT COUNT(*) AS c FROM clients WHERE status = 'active'").get().c;
     const online = db.prepare(
-        "SELECT COUNT(DISTINCT username) AS c FROM connection_logs WHERE created_at >= datetime('now', '-5 minutes')"
+        "SELECT COUNT(DISTINCT username) AS c FROM connection_logs WHERE datetime(created_at) >= datetime('now', '-5 minutes')"
     ).get().c;
     const revenueToday = db.prepare(
         "SELECT COALESCE(SUM(amount),0) AS s FROM payments WHERE status = 'success' AND date(paid_at) = date('now')"
@@ -791,6 +791,10 @@ async function start() {
         const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(clientId);
         const tariff = db.prepare('SELECT * FROM tariffs WHERE id = ? AND enabled = 1').get(tariffId);
         if (!client || !tariff) return ctx.answerCallbackQuery('Недоступно');
+        // Чужой прокси продлить нельзя
+        if (client.telegram_id !== ctx.from.id) {
+            return ctx.answerCallbackQuery({ text: 'Это не ваш прокси', show_alert: true });
+        }
 
         // Оплата с баланса этого клиента
         if ((client.balance || 0) >= tariff.price) {

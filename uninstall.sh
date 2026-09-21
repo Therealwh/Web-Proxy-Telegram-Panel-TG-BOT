@@ -45,6 +45,7 @@ systemctl reload nginx caddy 2>/dev/null || true
 
 echo "[4/7] Удаление cron-задач..."
 rm -f /etc/cron.d/tggate-updates
+rm -f /etc/nginx/tggate-telemt-proxy.inc
 systemctl stop tggate-helper 2>/dev/null || true
 systemctl disable tggate-helper 2>/dev/null || true
 rm -f /etc/systemd/system/tggate-helper.service

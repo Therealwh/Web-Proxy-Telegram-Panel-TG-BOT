@@ -63,12 +63,19 @@ function audit(db) {
         res.on('finish', () => {
             if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method) && res.statusCode < 400) {
                 try {
+                    // Маскируем секретные поля — в аудите им не место
+                    const body = JSON.parse(JSON.stringify(req.body || {}));
+                    for (const key of Object.keys(body)) {
+                        if (/token|secret|password|key|card/i.test(key)) {
+                            body[key] = '***';
+                        }
+                    }
                     db.prepare(
                         'INSERT INTO audit_log (admin, action, details, ip) VALUES (?, ?, ?, ?)'
                     ).run(
                         req.admin?.login || 'unknown',
                         `${req.method} ${req.originalUrl}`,
-                        JSON.stringify(req.body || {}).slice(0, 2000),
+                        JSON.stringify(body).slice(0, 2000),
                         req.ip
                     );
                 } catch {

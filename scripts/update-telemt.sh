@@ -15,6 +15,7 @@ readonly BIN_PATH="/usr/local/bin/telemt"
 readonly BIN_BACKUP="/usr/local/bin/telemt.bak"
 
 info() { echo "[telemt-update] $*"; }
+warn() { echo "[telemt-update] WARN: $*" >&2; }
 fail() { echo "[telemt-update] ОШИБКА: $*" >&2; exit 1; }
 
 # ---------------------------------------------------------------------------

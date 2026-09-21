@@ -17,12 +17,6 @@ const CATEGORIES = [
         ],
     },
     {
-        id: 'security', icon: '🔒', title: 'Безопасность',
-        fields: [
-            { key: 'login_rate_limit', label: 'Лимит попыток входа (за 15 мин)', type: 'number' },
-        ],
-    },
-    {
         id: 'notify', icon: '🔔', title: 'Уведомления',
         fields: [
             { key: 'tg_bot_token', label: 'Токен Telegram-бота администратора', hint: 'Получите у @BotFather' },

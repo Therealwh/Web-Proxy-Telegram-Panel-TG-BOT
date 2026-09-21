@@ -33,7 +33,16 @@ export function connectLive(onMessage) {
         };
 
         ws.onopen = () => { attempt = 0; };
-        ws.onclose = () => { if (!closed) scheduleReconnect(); };
+        // 4001 = «Требуется авторизация» — токен истёк, повторять бессмысленно
+        ws.onclose = (ev) => {
+            if (closed) return;
+            if (ev.code === 4001) {
+                useAuthStore.getState().clearAuth();
+                window.location.hash = '#/login';
+                return;
+            }
+            scheduleReconnect();
+        };
         ws.onerror = () => { try { ws.close(); } catch { /* игнорируем */ } };
     };
 

@@ -1,6 +1,6 @@
 // Страница QR-кодов: выбор клиента, типы QR, скачивание, статистика сканов
 import React, { useEffect, useState } from 'react';
-import { Download, Send, RefreshCw } from 'lucide-react';
+import { Download, Send } from 'lucide-react';
 import { get, post } from '../api';
 import { toast } from '../store';
 import { Card, Field, Skeleton } from '../components/ui';

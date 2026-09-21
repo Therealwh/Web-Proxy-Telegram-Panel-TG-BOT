@@ -53,6 +53,8 @@ function issueTokens(admin) {
     const refreshToken = crypto.randomBytes(48).toString('hex');
     // Сессия на 30 дней (согласовано с cookie maxAge и config.jwtRefreshTtl)
     const expiresAt = new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString();
+    // Чистим просроченные/отозванные токены (таблица не должна расти бесконечно)
+    db.prepare("DELETE FROM refresh_tokens WHERE expires_at < datetime('now') OR (revoked = 1 AND created_at < datetime('now', '-7 days'))").run();
     db.prepare(
         'INSERT INTO refresh_tokens (admin_id, token_hash, expires_at) VALUES (?, ?, ?)'
     ).run(admin.id, hashToken(refreshToken), expiresAt);

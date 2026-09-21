@@ -24,8 +24,8 @@ export default function Login() {
                 },
                 body: JSON.stringify({ login, password }),
             });
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.error || 'Ошибка входа');
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.error || `Ошибка входа (${res.status})`);
             setAuth(data.accessToken, data.login);
             toast.success('Добро пожаловать!');
             navigate('/');

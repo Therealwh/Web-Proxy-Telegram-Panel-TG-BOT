@@ -17,7 +17,7 @@ export default function Logs() {
     const [filters, setFilters] = useState({ username: '', ip: '', protocol: '', status: '' });
     const [paused, setPaused] = useState(false);
     const accessToken = useAuthStore((s) => s.accessToken);
-    const listRef = useRef(null);
+    
 
     // Загрузка с фильтрами
     const load = () => {
@@ -77,7 +77,7 @@ export default function Logs() {
                             onChange={(e) => setFilters({ ...filters, status: e.target.value })}>
                         <option value="">Все статусы</option>
                         <option value="ok">Успешные</option>
-                        <option value="blocked">Блокированные</option>
+                        <option value="blocked">Заблокированные</option>
                         <option value="suspicious">Подозрительные</option>
                     </select>
                 </div>
@@ -85,7 +85,7 @@ export default function Logs() {
 
             {/* Список логов */}
             <Card className="!p-0 overflow-hidden">
-                <div ref={listRef} className="max-h-[60vh] overflow-y-auto font-mono text-xs">
+                <div className="max-h-[60vh] overflow-y-auto font-mono text-xs">
                     {logs.length === 0 ? (
                         <p className="p-8 text-center text-slate-500 font-sans text-sm">
                             Логов пока нет — они появятся при подключениях клиентов

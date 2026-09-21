@@ -21,10 +21,8 @@ RestartSec=5s
 # Окружение загружается из .env внутри приложения (dotenv)
 Environment=NODE_ENV=production
 
-# Ограничения безопасности
-# ВНИМАНИЕ: NoNewPrivileges=true здесь НЕЛЬЗЯ — панель запускает
-# root-скрипты обновлений через sudo (sudoers). С остальными флагами
-# (ProtectSystem, ProtectHome) изоляция сохраняется.
+# Ограничения безопасности (sudo больше не используется — обновления через Helper)
+NoNewPrivileges=true
 ProtectSystem=full
 ProtectHome=true
 PrivateTmp=true

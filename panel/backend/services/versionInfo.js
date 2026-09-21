@@ -11,7 +11,7 @@ const { execFile } = require('child_process');
 const logger = require('../utils/logger');
 
 const PANEL_REPO_API = 'https://api.github.com/repos/Therealwh/Web-Proxy-Telegram-Panel-TG-BOT/releases';
-const TELEMТ_REPO_API = 'https://api.github.com/repos/telemt/telemt/releases';
+const TELEMT_REPO_API = 'https://api.github.com/repos/telemt/telemt/releases';
 const VERSIONS_FILE = '/etc/tggate/versions.json';
 
 const CACHE_TTL = 10 * 60 * 1000;        // свежий кэш: 10 минут
@@ -152,7 +152,7 @@ async function getStatus() {
 
     const [panelLatest, telemtLatest, telemtCurrent, ssl] = await Promise.all([
         getLatestRelease(PANEL_REPO_API),
-        getLatestRelease(TELEMТ_REPO_API),
+        getLatestRelease(TELEMT_REPO_API),
         getTelemtVersion(),
         getSslExpirySafe(),
     ]);
@@ -187,7 +187,7 @@ function getSslExpirySafe() {
 
 /** Список релизов панели или Telemt. @param {'panel'|'telemt'} component */
 async function getAvailableReleases(component) {
-    const apiUrl = component === 'panel' ? PANEL_REPO_API : TELEMТ_REPO_API;
+    const apiUrl = component === 'panel' ? PANEL_REPO_API : TELEMT_REPO_API;
     return getReleases(apiUrl, 10);
 }
 
