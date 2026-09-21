@@ -679,14 +679,18 @@ async function start() {
         const settings = getBotSettings();
         const paymentsService = require('./payments');
         let pay = null;
+        // Для продления — подпись с юзернеймом прокси
+        const tariffName = payment.client_id
+            ? (() => { const c = db.prepare('SELECT username FROM clients WHERE id = ?').get(payment.client_id); return c ? `${tariff.name} (продление ${c.username})` : tariff.name; })()
+            : tariff.name;
         try {
             pay = provider === 'cryptobot'
                 ? await paymentsService.createCryptoBotInvoice({
-                    paymentId, tariff: { name: tariff.name, price: tariff.price, currency: tariff.currency },
+                    paymentId, tariff: { name: tariffName, price: tariff.price, currency: tariff.currency },
                     token: settings.cryptobot_token,
                 })
                 : await paymentsService.createYooKassaPayment({
-                    paymentId, tariff: { name: tariff.name, price: tariff.price, currency: tariff.currency },
+                    paymentId, tariff: { name: tariffName, price: tariff.price, currency: tariff.currency },
                     shopId: settings.yookassa_shop_id, secretKey: settings.yookassa_secret_key,
                 });
         } catch (e) {
@@ -814,28 +818,29 @@ async function start() {
             );
         }
 
-        await ctx.answerCallbackQuery('Создаю счёт...');
+        await ctx.answerCallbackQuery();
         const result = db.prepare(
             'INSERT INTO payments (tariff_id, amount, currency, provider, status, telegram_id, client_id) VALUES (?, ?, ?, ?, ?, ?, ?)'
         ).run(tariff.id, tariff.price, tariff.currency, 'manual', 'pending', ctx.from.id, client.id);
 
         const settings = getBotSettings();
-        const paymentsService = require('./payments');
-        const pay = await paymentsService.createPaymentUrl({
-            paymentId: result.lastInsertRowid,
-            tariff: { name: `${tariff.name} (продление ${client.username})`, price: tariff.price, currency: tariff.currency },
-            settings,
-        });
 
-        if (pay) {
-            const kb = new InlineKeyboard().url('💳 Оплатить', pay.url);
-            await ctx.reply(
-                `🧾 <b>Счёт #${result.lastInsertRowid}</b>\n💰 Баланса не хватило (${(client.balance || 0).toFixed(2)})\n\n👇 Оплатите — продление пройдёт автоматически.`,
-                { parse_mode: 'HTML', reply_markup: kb }
-            );
-        } else {
+        // Показываем выбор способа оплаты (как при покупке), а не кидаем сразу на CryptoBot
+        const hasOnline = !!(settings.cryptobot_token || (settings.yookassa_shop_id && settings.yookassa_secret_key));
+        if (!hasOnline) {
             await sendManualInstructions(ctx, result.lastInsertRowid, `${tariff.price} ${currencySign(tariff.currency)}`);
+            return;
         }
+
+        const kb = new InlineKeyboard();
+        if (settings.cryptobot_token) kb.text('🪙 Оплатить через CryptoBot', `cbpay:${result.lastInsertRowid}:${tariff.id}:cryptobot`).row();
+        if (settings.yookassa_shop_id && settings.yookassa_secret_key) kb.text('💳 Оплатить через ЮKassa', `cbpay:${result.lastInsertRowid}:${tariff.id}:yookassa`).row();
+        kb.text('🏦 Карта админа (СБП)', `manualpay:${result.lastInsertRowid}`);
+
+        await ctx.reply(
+            `🧾 <b>Счёт #${result.lastInsertRowid}</b>\n💰 Баланса не хватило (${(client.balance || 0).toFixed(2)})\n\n💳 <b>Выберите способ оплаты — продление пройдёт автоматически:</b>`,
+            { parse_mode: 'HTML', reply_markup: kb }
+        );
     }
 
     // ═══ 7. Админ-панель ═══
