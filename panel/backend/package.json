@@ -1,6 +1,6 @@
 {
   "name": "tggate-backend",
-  "version": "1.3.2",
+  "version": "1.3.5",
   "description": "TGGATE — backend панели управления Telegram-прокси (Telemt)",
   "private": true,
   "main": "server.js",
