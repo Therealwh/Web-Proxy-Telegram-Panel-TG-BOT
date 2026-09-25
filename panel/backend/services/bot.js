@@ -167,10 +167,15 @@ function cabinetView(ctx) {
 
     let text = `📱 <b>Личный кабинет</b>\n💰 Баланс: <b>${balance.toFixed(2)}</b>\n\n<b>Мои прокси:</b>\n`;
     const kb = new InlineKeyboard();
+    const maskDomain = getAll().mask_domain;
     for (const c of clients) {
         const until = c.expires_at ? fmtMSK(c.expires_at, false) : '∞';
         const icon = c.status === 'active' ? '🟢' : '🔴';
         text += `${icon} <b>${c.username}</b> — до ${until}\n`;
+        const links = clientLinks(c, maskDomain);
+        if (links.web_https) kb.url('🌐 Подключить ВЕБ прокси', links.web_https);
+        if (links.mtproto_https) kb.url('🔌 Подключить MTProto прокси', links.mtproto_https);
+        if (links.web_https || links.mtproto_https) kb.row();
         kb.text(`♻️ Продлить: ${c.username}`, `renew:${c.id}`).row();
     }
     kb.text('💳 Пополнить счёт', 'topup').row();
@@ -178,11 +183,15 @@ function cabinetView(ctx) {
     return { text, kb };
 }
 
-function renewKeyboard(clientId) {
-    const tariffs = db.prepare('SELECT * FROM tariffs WHERE enabled = 1 ORDER BY days').all();
+function renewKeyboard(clientId, mode) {
+    let tariffs = db.prepare('SELECT * FROM tariffs WHERE enabled = 1 ORDER BY days').all();
+    if (mode === 'web' || mode === 'mtproto' || mode === 'both') {
+        tariffs = tariffs.filter((t) => t.protocols === mode);
+    }
     const kb = new InlineKeyboard();
     for (const t of tariffs) {
-        kb.text(`${t.name} — ${t.price} ${currencySign(t.currency)}`, `renewpay:${clientId}:${t.id}`).row();
+        kb.text(`${t.name} — ${t.days} дн. — ${t.price} ${currencySign(t.currency)}`,
+            `renewpay:${clientId}:${t.id}${mode ? `:${mode}` : ''}`).row();
     }
     kb.text('⬅️ Назад', 'cabinet');
     return kb;
@@ -440,6 +449,27 @@ async function start() {
 
     bot = new Bot(botSettings.bot_token);
 
+    // ═══ 0. УЧЁТ ПОЛЬЗОВАТЕЛЕЙ — раньше всех (в том числе без подписки) ═══
+    bot.use(async (ctx, next) => {
+        const from = ctx.from;
+        if (from && !from.is_bot) {
+            try {
+                db.prepare(
+                    `INSERT INTO bot_users (telegram_id, username, first_name, last_name, seen_at)
+                     VALUES (?, ?, ?, ?, datetime('now'))
+                     ON CONFLICT(telegram_id) DO UPDATE SET
+                       username = COALESCE(excluded.username, bot_users.username),
+                       first_name = COALESCE(excluded.first_name, bot_users.first_name),
+                       last_name = COALESCE(excluded.last_name, bot_users.last_name),
+                       seen_at = datetime('now')`
+                ).run(from.id, from.username || null, from.first_name || null, from.last_name || null);
+            } catch (e) {
+                logger.warn('bot_users: не удалось сохранить пользователя', { error: e.message });
+            }
+        }
+        return next();
+    });
+
     // ═══ 1. ГЕЙТ ПОДПИСКИ — первым ═══
     bot.use(async (ctx, next) => {
         const s = getBotSettings();
@@ -564,13 +594,41 @@ async function start() {
 
     bot.callbackQuery(/^renew:(\d+)$/, async (ctx) => {
         await ctx.answerCallbackQuery();
+        const clientId = Number(ctx.match[1]);
+        const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(clientId);
+        // У прокси оба протокола (например, тестовый) — предлагаем выбор
+        if (client && client.web_enabled && client.mtproto_enabled) {
+            const until = client.expires_at ? fmtMSK(client.expires_at) : '∞';
+            const kb = new InlineKeyboard()
+                .text('🌐 Только Web Proxy', `renewmode:${clientId}:web`).row()
+                .text('🔌 Только MTProto', `renewmode:${clientId}:mtproto`).row()
+                .text('📦 Оба протокола', `renewmode:${clientId}:both`).row()
+                .text('⬅️ Назад', 'cabinet');
+            return ctx.reply(
+                `♻️ <b>Продление: ${client.username}</b> — до ${until}\n\nВыберите, что продлеваем:`,
+                { parse_mode: 'HTML', reply_markup: kb }
+            );
+        }
         await ctx.reply('♻️ <b>Выберите тариф продления:</b>', {
-            parse_mode: 'HTML', reply_markup: renewKeyboard(Number(ctx.match[1])),
+            parse_mode: 'HTML', reply_markup: renewKeyboard(clientId),
         });
     });
 
-    bot.callbackQuery(/^renewpay:(\d+):(\d+)$/, async (ctx) => {
-        await handleRenew(ctx, Number(ctx.match[1]), Number(ctx.match[2]));
+    bot.callbackQuery(/^renewmode:(\d+):(web|mtproto|both)$/, async (ctx) => {
+        const clientId = Number(ctx.match[1]);
+        const mode = ctx.match[2];
+        const has = db.prepare('SELECT COUNT(*) AS c FROM tariffs WHERE enabled = 1 AND protocols = ?').get(mode).c;
+        if (!has) {
+            return ctx.answerCallbackQuery({ text: 'Нет тарифов этого типа — выберите другой вариант', show_alert: true });
+        }
+        await ctx.answerCallbackQuery();
+        await ctx.reply('♻️ <b>Выберите тариф продления:</b>', {
+            parse_mode: 'HTML', reply_markup: renewKeyboard(clientId, mode),
+        });
+    });
+
+    bot.callbackQuery(/^renewpay:(\d+):(\d+)(?::(web|mtproto|both))?$/, async (ctx) => {
+        await handleRenew(ctx, Number(ctx.match[1]), Number(ctx.match[2]), ctx.match[3] || null);
     });
 
     bot.callbackQuery('topup', async (ctx) => {
@@ -791,7 +849,7 @@ async function start() {
 
     // ═══ 6. Продление: баланс или платёжка ═══
 
-    async function handleRenew(ctx, clientId, tariffId) {
+    async function handleRenew(ctx, clientId, tariffId, mode) {
         const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(clientId);
         const tariff = db.prepare('SELECT * FROM tariffs WHERE id = ? AND enabled = 1').get(tariffId);
         if (!client || !tariff) return ctx.answerCallbackQuery('Недоступно');
@@ -799,6 +857,10 @@ async function start() {
         if (client.telegram_id !== ctx.from.id) {
             return ctx.answerCallbackQuery({ text: 'Это не ваш прокси', show_alert: true });
         }
+        const modeSql = `UPDATE clients SET web_enabled = ?, mtproto_enabled = ? WHERE id = ?`;
+        const modeFlags = {
+            web: [1, 0], mtproto: [0, 1], both: [1, 1],
+        };
 
         // Оплата с баланса этого клиента
         if ((client.balance || 0) >= tariff.price) {
@@ -811,17 +873,21 @@ async function start() {
             if (tariff.quota_gb) patch.data_quota_bytes = Math.round(tariff.quota_gb * 1024 ** 3);
             await telemt.patchUser(client.username, patch).catch(() => {});
             db.prepare("UPDATE clients SET expires_at = ?, status = 'active' WHERE id = ?").run(newExpiry, client.id);
+            if (mode && modeFlags[mode]) db.prepare(modeSql).run(...modeFlags[mode], client.id);
             await ctx.answerCallbackQuery();
+            const modeText = mode === 'web' ? ' (только Web Proxy)'
+                : mode === 'mtproto' ? ' (только MTProto)'
+                : mode === 'both' ? ' (оба протокола)' : '';
             return ctx.reply(
-                `✅ <b>Продлено с баланса!</b>\n\n📦 ${client.username} — до <b>${fmtMSK(newExpiry, false)}</b>\n💳 Списано: ${tariff.price} ${currencySign(tariff.currency)}`,
+                `✅ <b>Продлено с баланса!</b>\n\n📦 ${client.username}${modeText} — до <b>${fmtMSK(newExpiry, false)}</b>\n💳 Списано: ${tariff.price} ${currencySign(tariff.currency)}`,
                 { parse_mode: 'HTML' }
             );
         }
 
         await ctx.answerCallbackQuery();
         const result = db.prepare(
-            'INSERT INTO payments (tariff_id, amount, currency, provider, status, telegram_id, client_id) VALUES (?, ?, ?, ?, ?, ?, ?)'
-        ).run(tariff.id, tariff.price, tariff.currency, 'manual', 'pending', ctx.from.id, client.id);
+            'INSERT INTO payments (tariff_id, amount, currency, provider, status, telegram_id, client_id, renew_protocols) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+        ).run(tariff.id, tariff.price, tariff.currency, 'manual', 'pending', ctx.from.id, client.id, mode);
 
         const settings = getBotSettings();
 
@@ -965,6 +1031,34 @@ async function start() {
     });
 
     bot.catch((err) => logger.error('Ошибка TG-бота', { error: err.message }));
+
+    // Бэкфилл юзернеймов: тихо, в фоне, только для тех, кто известен боту
+    (async () => {
+        try {
+            const ids = db.prepare(
+                `SELECT DISTINCT c.telegram_id AS id
+                 FROM clients c
+                 WHERE c.telegram_id IS NOT NULL
+                   AND c.telegram_id NOT IN (SELECT telegram_id FROM bot_users WHERE username IS NOT NULL)`
+            ).all().map((r) => r.id).slice(0, 200);
+            for (const id of ids) {
+                try {
+                    const chat = await bot.api.getChat(id);
+                    db.prepare(
+                        `INSERT INTO bot_users (telegram_id, username, first_name, last_name, seen_at)
+                         VALUES (?, ?, ?, ?, datetime('now'))
+                         ON CONFLICT(telegram_id) DO UPDATE SET
+                           username = COALESCE(excluded.username, bot_users.username),
+                           first_name = COALESCE(excluded.first_name, bot_users.first_name),
+                           last_name = COALESCE(excluded.last_name, bot_users.last_name)`
+                    ).run(id, chat.username || null, chat.first_name || null, chat.last_name || null);
+                } catch { /* пользователь недоступен боту */ }
+                await new Promise((r) => setTimeout(r, 350));
+            }
+        } catch (e) {
+            logger.warn('Бэкфилл юзернеймов не удался', { error: e.message });
+        }
+    })();
 
     bot.start({ drop_pending_updates: true }).catch((err) => {
         logger.error('TG-бот упал', { error: err.message });

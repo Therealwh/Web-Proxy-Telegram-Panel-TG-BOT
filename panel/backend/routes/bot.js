@@ -162,6 +162,8 @@ router.post('/stats/reset', (req, res, next) => {
 // ═══ Админка бота: пользователи Telegram ═══
 
 // --- Список пользователей бота (сгруппированы по telegram_id) ---
+// Показываем ВСЕХ: и тех, кто взаимодействовал с ботом без покупок (bot_users),
+// и тех, у кого есть прокси (clients.telegram_id).
 router.get('/users', (req, res) => {
     const rows = db.prepare(
         `SELECT id, username, status, balance, expires_at, created_at, telegram_id
@@ -170,13 +172,29 @@ router.get('/users', (req, res) => {
     ).all();
 
     const users = new Map();
+
+    // Все, кто писал/нажимал боту (даже без прокси)
+    for (const b of db.prepare(
+        'SELECT telegram_id, username, first_name, last_name, seen_at FROM bot_users'
+    ).all()) {
+        users.set(b.telegram_id, {
+            telegram_id: b.telegram_id,
+            username: b.username || null,
+            first_name: b.first_name || null,
+            last_name: b.last_name || null,
+            seen_at: b.seen_at,
+            proxies: [],
+            balance: 0,
+            active: 0,
+        });
+    }
+
     for (const r of rows) {
         if (!users.has(r.telegram_id)) {
             users.set(r.telegram_id, {
                 telegram_id: r.telegram_id,
-                proxies: [],
-                balance: 0,
-                active: 0,
+                username: null, first_name: null, last_name: null, seen_at: null,
+                proxies: [], balance: 0, active: 0,
             });
         }
         const u = users.get(r.telegram_id);
@@ -188,7 +206,17 @@ router.get('/users', (req, res) => {
         if (r.status === 'active') u.active += 1;
     }
 
-    res.json({ users: [...users.values()] });
+    // С прокси сверху (по новому прокси), затем остальные — по последней активности
+    const list = [...users.values()].sort((a, b) => {
+        if (a.proxies.length && b.proxies.length) {
+            return String(b.proxies[0].created_at || '').localeCompare(String(a.proxies[0].created_at || ''));
+        }
+        if (a.proxies.length) return -1;
+        if (b.proxies.length) return 1;
+        return String(b.seen_at || '').localeCompare(String(a.seen_at || ''));
+    });
+
+    res.json({ users: list });
 });
 
 // --- Изменить баланс пользователю (выдать/списать) ---

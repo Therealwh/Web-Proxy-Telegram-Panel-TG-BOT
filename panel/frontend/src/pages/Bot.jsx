@@ -105,7 +105,7 @@ export default function Bot() {
 
             {/* ═══ Админка бота: пользователи Telegram ═══ */}
             <Card title="👥 Пользователи бота"
-                  subtitle="Все, кто получил прокси через бота (сгруппированы по Telegram)"
+                  subtitle="Все пользователи бота (сгруппированы по Telegram)"
                   actions={
                       <button className="btn-secondary !min-h-0 !px-3 !py-1.5 text-sm" onClick={load}>
                           Обновить
@@ -128,11 +128,24 @@ export default function Bot() {
                                 <React.Fragment key={u.telegram_id}>
                                     <tr className="border-b border-slate-100 dark:border-slate-800">
                                         <td className="py-2 pr-4">
-                                            <button className="flex items-center gap-1 font-mono text-xs hover:text-primary transition-colors"
-                                                    onClick={() => setExpanded(expanded === u.telegram_id ? null : u.telegram_id)}>
-                                                <ChevronDown size={14} className={`transition-transform ${expanded === u.telegram_id ? 'rotate-180' : ''}`} />
-                                                {u.telegram_id}
-                                            </button>
+                                            <div className="flex flex-wrap items-center gap-2">
+                                                <button className="flex items-center gap-1 font-mono text-xs hover:text-primary transition-colors"
+                                                        onClick={() => setExpanded(expanded === u.telegram_id ? null : u.telegram_id)}>
+                                                    <ChevronDown size={14} className={`transition-transform ${expanded === u.telegram_id ? 'rotate-180' : ''}`} />
+                                                    {u.telegram_id}
+                                                </button>
+                                                {u.username && (
+                                                    <a className="text-xs text-primary hover:underline"
+                                                       href={`https://t.me/${u.username}`} target="_blank" rel="noreferrer">
+                                                        @{u.username}
+                                                    </a>
+                                                )}
+                                                {!u.username && (u.first_name || u.last_name) && (
+                                                    <span className="text-xs text-slate-400">
+                                                        {[u.first_name, u.last_name].filter(Boolean).join(' ')}
+                                                    </span>
+                                                )}
+                                            </div>
                                         </td>
                                         <td className="py-2 pr-4">
                                             <span className="badge-green">🟢 {u.active} актив.</span>{' '}

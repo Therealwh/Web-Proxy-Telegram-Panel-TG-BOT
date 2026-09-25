@@ -48,14 +48,24 @@ async function completePayment(paymentId) {
             if (tariff.quota_gb) patch.data_quota_bytes = Math.round(tariff.quota_gb * 1024 ** 3);
             await telemt.patchUser(client.username, patch).catch(() => {});
             db.prepare("UPDATE clients SET expires_at = ?, status = 'active' WHERE id = ?").run(newExpiry, client.id);
+            // Выбранный при продлении набор протоколов ('web'|'mtproto'|'both')
+            const mode = payment.renew_protocols;
+            const modeFlags = { web: [1, 0], mtproto: [0, 1], both: [1, 1] };
+            if (mode && modeFlags[mode]) {
+                db.prepare('UPDATE clients SET web_enabled = ?, mtproto_enabled = ? WHERE id = ?')
+                    .run(...modeFlags[mode], client.id);
+            }
             db.prepare("UPDATE payments SET status = 'success', paid_at = datetime('now') WHERE id = ?").run(paymentId);
 
             const bot = require('../services/bot');
             if (payment.telegram_id && bot.isRunning()) {
                 const fmt = (d) => new Date(d).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' }) + ' МСК';
+                const modeText = mode === 'web' ? '\n🔌 Протоколы: только Web Proxy'
+                    : mode === 'mtproto' ? '\n🔌 Протоколы: только MTProto'
+                    : mode === 'both' ? '\n🔌 Протоколы: Web Proxy + MTProto' : '';
                 await bot.sendMessageTo(
                     payment.telegram_id,
-                    `✅ <b>Продление оплачено!</b>\n\n📦 ${client.username} — до <b>${fmt(newExpiry)}</b>`
+                    `✅ <b>Продление оплачено!</b>\n\n📦 ${client.username} — до <b>${fmt(newExpiry)}</b>${modeText}`
                 );
             }
             logger.info('Прокси продлён', { paymentId, username: client.username });

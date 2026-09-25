@@ -46,3 +46,9 @@ PLAN-1.3.1.md
 PLAN-*.md
 
 FIX-PLAN.md
+
+# Рабочие артефакты
+.codebuff/
+.freebuff/
+AUDIT-ERRORS.md
+SKILLS-AUDIT.md
