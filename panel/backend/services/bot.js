@@ -548,6 +548,13 @@ async function start() {
         await ctx.reply(view.text, { parse_mode: 'HTML', reply_markup: view.kb, disable_web_page_preview: true });
     });
 
+    // «⬅️ Назад» из экранов кабинета
+    bot.callbackQuery('cabinet', async (ctx) => {
+        await ctx.answerCallbackQuery();
+        const view = cabinetView(ctx);
+        await ctx.reply(view.text, { parse_mode: 'HTML', reply_markup: view.kb, disable_web_page_preview: true });
+    });
+
     bot.hears('🤝 Рефералы', async (ctx) => {
         let botUsername = '';
         try { botUsername = (await bot.api.getMe()).username; } catch { /* нет связи */ }
@@ -862,9 +869,10 @@ async function start() {
             web: [1, 0], mtproto: [0, 1], both: [1, 1],
         };
 
-        // Оплата с баланса этого клиента
-        if ((client.balance || 0) >= tariff.price) {
-            db.prepare('UPDATE clients SET balance = balance - ? WHERE id = ?').run(tariff.price, client.id);
+        // Оплата с общего баланса пользователя (как при покупке)
+        const balance = totalBalance(ctx.from.id);
+        if (balance >= tariff.price) {
+            deductBalance(ctx.from.id, tariff.price);
             const base = client.expires_at && new Date(client.expires_at) > new Date()
                 ? new Date(client.expires_at) : new Date();
             const newExpiry = new Date(base.getTime() + tariff.days * 86400000).toISOString();
@@ -879,7 +887,7 @@ async function start() {
                 : mode === 'mtproto' ? ' (только MTProto)'
                 : mode === 'both' ? ' (оба протокола)' : '';
             return ctx.reply(
-                `✅ <b>Продлено с баланса!</b>\n\n📦 ${client.username}${modeText} — до <b>${fmtMSK(newExpiry, false)}</b>\n💳 Списано: ${tariff.price} ${currencySign(tariff.currency)}`,
+                `✅ <b>Продлено с баланса!</b>\n\n📦 ${client.username}${modeText} — до <b>${fmtMSK(newExpiry, false)}</b>\n💳 Списано: ${tariff.price} ${currencySign(tariff.currency)}\n💰 Остаток: ${totalBalance(ctx.from.id).toFixed(2)}`,
                 { parse_mode: 'HTML' }
             );
         }
@@ -904,7 +912,7 @@ async function start() {
         kb.text('🏦 Карта админа (СБП)', `manualpay:${result.lastInsertRowid}`);
 
         await ctx.reply(
-            `🧾 <b>Счёт #${result.lastInsertRowid}</b>\n💰 Баланса не хватило (${(client.balance || 0).toFixed(2)})\n\n💳 <b>Выберите способ оплаты — продление пройдёт автоматически:</b>`,
+            `🧾 <b>Счёт #${result.lastInsertRowid}</b>\n💰 Баланса не хватило (${balance.toFixed(2)})\n\n💳 <b>Выберите способ оплаты — продление пройдёт автоматически:</b>`,
             { parse_mode: 'HTML', reply_markup: kb }
         );
     }
