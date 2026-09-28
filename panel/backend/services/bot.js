@@ -746,6 +746,18 @@ async function start() {
         await ctx.reply('✏️ Введите сумму пополнения одним числом (например: 250):');
     });
 
+    // Своя сумма пополнения: ждём число после кнопки «Своя сумма»
+    bot.on('message:text', async (ctx, next) => {
+        if (!depositCustom.has(ctx.from.id)) return next();
+        const amount = parseInt(String(ctx.message.text).trim(), 10);
+        if (!Number.isFinite(amount) || amount <= 0 || amount > 1000000) {
+            return ctx.reply('⚠️ Введите сумму одним числом от 1 до 1 000 000, например: 250');
+        }
+        depositCustom.delete(ctx.from.id);
+        await ctx.answerCallbackQuery().catch(() => {});
+        await createAndSendDeposit(ctx, amount);
+    });
+
     bot.callbackQuery(/^deposit:(\d+)$/, async (ctx) => {
         const amount = Number(ctx.match[1]);
         await ctx.answerCallbackQuery('Создаю счёт...');
