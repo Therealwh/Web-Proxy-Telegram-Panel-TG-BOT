@@ -54,6 +54,24 @@ function currencySign(code) {
 }
 
 /**
+ * Цена тарифа в Telegram Stars (автоконверт по курсу из настроек, округление вверх).
+ * @returns {number|null} null — Stars выключены или цена выше лимита инвойса (2500 ⭐)
+ */
+function starsPrice(tariff, settings) {
+    if (!settings.stars_enabled) return null;
+    const isUsdLike = tariff.currency === 'USD' || tariff.currency === 'USDT';
+    const rate = isUsdLike
+        ? (Number(settings.stars_rate_usd) || 0.02)
+        : (Number(settings.stars_rate_rub) || 2);
+    const stars = Math.max(1, Math.ceil((Number(tariff.price) || 0) / rate));
+    if (stars > 2500) {
+        logger.warn('Stars: цена превышает лимит инвойса 2500 ⭐', { tariffId: tariff.id, stars });
+        return null;
+    }
+    return stars;
+}
+
+/**
  * Формат времени по Москве с точностью до секунды.
  * Пример: 20.09.26 15:34:39 МСК
  */
@@ -701,6 +719,10 @@ async function start() {
         if (settings.cryptobot_token) kb.text('🪙 Оплатить через CryptoBot', `cbpay:${paymentId}:${tariff.id}:cryptobot`).row();
         if (settings.yookassa_shop_id && settings.yookassa_secret_key) kb.text('💳 Оплатить через ЮKassa', `cbpay:${paymentId}:${tariff.id}:yookassa`).row();
 
+        // Telegram Stars (инвойс в чат)
+        const stars = starsPrice(tariff, settings);
+        if (stars) kb.text(`⭐ Оплатить звёздами (${stars} ⭐)`, `starspay:${paymentId}`).row();
+
         // Карта админа — всегда доступна
         kb.text('🏦 Карта админа (СБП)', `manualpay:${paymentId}`);
 
@@ -772,6 +794,60 @@ async function start() {
         } else {
             // Инвойс не создался — сразу карта админа
             await sendManualInstructions(ctx, paymentId, `${tariff.price} ${currencySign(tariff.currency)}`);
+        }
+    });
+
+    // Telegram Stars: отправляем инвойс прямо в чат (payload = paymentId)
+    bot.callbackQuery(/^starspay:(\d+)$/, async (ctx) => {
+        const paymentId = Number(ctx.match[1]);
+        const payment = db.prepare('SELECT * FROM payments WHERE id = ?').get(paymentId);
+        const tariff = payment ? db.prepare('SELECT * FROM tariffs WHERE id = ?').get(payment.tariff_id) : null;
+        if (!payment || payment.status !== 'pending' || !tariff) {
+            return ctx.answerCallbackQuery('Заказ не найден');
+        }
+        const settings = getBotSettings();
+        const stars = starsPrice(tariff, settings);
+        if (!stars) return ctx.answerCallbackQuery({ text: 'Оплата звёздами недоступна', show_alert: true });
+
+        await ctx.answerCallbackQuery();
+        const description = payment.client_id
+            ? `Продление прокси на ${tariff.days} дн.`
+            : `Доступ на ${tariff.days} дн.`;
+        await ctx.api.sendInvoice(
+            ctx.from.id,
+            `TGGATE: ${tariff.name}`,
+            description,
+            String(paymentId),
+            '',              // для XTR provider_token не нужен
+            'XTR',
+            [{ label: tariff.name, amount: stars }]
+        ).catch(async (e) => {
+            logger.error('Stars: sendInvoice не удался', { paymentId, error: e.message });
+            await sendManualInstructions(ctx, paymentId, `${tariff.price} ${currencySign(tariff.currency)}`);
+        });
+    });
+
+    // Pre-checkout: заказ должен существовать и быть в статусе pending (ответ ≤ 10 сек)
+    bot.on('pre_checkout_query', async (ctx) => {
+        const paymentId = Number(ctx.preCheckoutQuery.invoice_payload);
+        const ok = !!db.prepare("SELECT id FROM payments WHERE id = ? AND status = 'pending'").get(paymentId);
+        if (ok) return ctx.answerPreCheckoutQuery(true);
+        return ctx.answerPreCheckoutQuery(false, { error_message: 'Заказ не найден или уже оплачен — создайте новый' });
+    });
+
+    // Успешная оплата звёздами → та же логика выдачи/продления, что и у других способов
+    bot.on('message:successful_payment', async (ctx) => {
+        const paymentId = Number(ctx.message.successful_payment.invoice_payload);
+        logger.info('Stars: оплата получена', { paymentId, charge: ctx.message.successful_payment.telegram_payment_charge_id });
+        try {
+            const paymentsRoute = require('../routes/payments');
+            await paymentsRoute.completePayment(paymentId);
+        } catch (e) {
+            logger.error('Stars: ошибка обработки платежа', { paymentId, error: e.message });
+            await ctx.reply(
+                `⚠️ Оплата прошла (#${paymentId}), но выдать доступ автоматически не удалось.\nНапишите в поддержку ${SUPPORT_USERNAME} — всё решим.`,
+                { parse_mode: 'HTML' }
+            );
         }
     });
 
@@ -900,7 +976,9 @@ async function start() {
         const settings = getBotSettings();
 
         // Показываем выбор способа оплаты (как при покупке), а не кидаем сразу на CryptoBot
-        const hasOnline = !!(settings.cryptobot_token || (settings.yookassa_shop_id && settings.yookassa_secret_key));
+        const hasOnline = !!(settings.cryptobot_token
+            || (settings.yookassa_shop_id && settings.yookassa_secret_key)
+            || starsPrice(tariff, settings));
         if (!hasOnline) {
             await sendManualInstructions(ctx, result.lastInsertRowid, `${tariff.price} ${currencySign(tariff.currency)}`);
             return;
@@ -909,6 +987,8 @@ async function start() {
         const kb = new InlineKeyboard();
         if (settings.cryptobot_token) kb.text('🪙 Оплатить через CryptoBot', `cbpay:${result.lastInsertRowid}:${tariff.id}:cryptobot`).row();
         if (settings.yookassa_shop_id && settings.yookassa_secret_key) kb.text('💳 Оплатить через ЮKassa', `cbpay:${result.lastInsertRowid}:${tariff.id}:yookassa`).row();
+        const stars = starsPrice(tariff, settings);
+        if (stars) kb.text(`⭐ Оплатить звёздами (${stars} ⭐)`, `starspay:${result.lastInsertRowid}`).row();
         kb.text('🏦 Карта админа (СБП)', `manualpay:${result.lastInsertRowid}`);
 
         await ctx.reply(

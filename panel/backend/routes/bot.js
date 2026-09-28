@@ -49,6 +49,10 @@ router.put('/settings', async (req, res, next) => {
             cryptobot_token: z.string().max(100).nullable().optional(),
             yookassa_shop_id: z.string().max(100).nullable().optional(),
             yookassa_secret_key: z.string().max(200).nullable().optional(),
+            // Telegram Stars (оплата звёздами): тумблер + курс автоконверта
+            stars_enabled: z.boolean().optional(),
+            stars_rate_rub: z.number().positive().max(100000).optional(),
+            stars_rate_usd: z.number().positive().max(1000).optional(),
             // Реквизиты для ручной оплаты
             pay_card: z.string().max(64).nullable().optional(),
             pay_phone: z.string().max(64).nullable().optional(),

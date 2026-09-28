@@ -375,6 +375,20 @@ export default function Bot() {
                         <textarea className="input min-h-[70px]" value={settings.payment_instructions ?? ''}
                                   onChange={(e) => setSettings({ ...settings, payment_instructions: e.target.value })} />
                     </Field>
+                    <div className="flex items-end pb-2">
+                        <Toggle label="⭐ Telegram Stars (оплата звёздами)"
+                                checked={!!settings.stars_enabled}
+                                onChange={(v) => setSettings({ ...settings, stars_enabled: v })} />
+                    </div>
+                    <div />
+                    <Field label="⭐ Курс: 1 звезда = ₽" hint="Для тарифов в рублях. Звёзды = цена / курс, округление вверх">
+                        <input className="input" type="number" step="0.01" min="0.01" value={settings.stars_rate_rub ?? 2}
+                               onChange={(e) => setSettings({ ...settings, stars_rate_rub: Number(e.target.value) })} />
+                    </Field>
+                    <Field label="⭐ Курс: 1 звезда = $" hint="Для тарифов в $ и USDT">
+                        <input className="input" type="number" step="0.001" min="0.001" value={settings.stars_rate_usd ?? 0.02}
+                               onChange={(e) => setSettings({ ...settings, stars_rate_usd: Number(e.target.value) })} />
+                    </Field>
                 </div>
                 <p className="text-xs text-slate-400 mt-3">
                     Вебхук CryptoBot: <code className="font-mono">https://ваш-домен/api/payments/webhook/cryptobot</code>
