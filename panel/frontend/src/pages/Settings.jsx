@@ -249,15 +249,24 @@ function DomainCard() {
                     </button>
                 </div>
             </div>
+
+            {/* Рассылка новых ссылок — доступна всегда (после смены домена и не только) */}
+            <div className="mt-4 p-3 rounded-lg bg-slate-50 dark:bg-slate-800/50 flex flex-wrap items-center justify-between gap-3">
+                <p className="text-sm text-slate-500">
+                    После смены домена клиенты должны переподключиться — разошлите им новые ссылки
+                    (старые перестанут работать).
+                </p>
+                <button className="btn-secondary whitespace-nowrap text-sm" disabled={busy} onClick={notifyClients}>
+                    📣 Разослать новые ссылки активным клиентам
+                </button>
+            </div>
+
             {changed && (
-                <div className="mt-4 p-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
+                <div className="mt-3 p-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
                     <p className="text-sm">
-                        ⏳ Панель перезапускается с новым доменом. Обновите страницу через 30–60 секунд,
-                        затем разошлите клиентам новые ссылки — старые перестанут работать.
+                        ⏳ Панель перезапускается с новым доменом. Обновите страницу через 30–60 секунд
+                        и разошлите клиентам новые ссылки.
                     </p>
-                    <button className="btn-secondary mt-2 text-sm" disabled={busy} onClick={notifyClients}>
-                        📣 Разослать новые ссылки активным клиентам
-                    </button>
                 </div>
             )}
         </Card>

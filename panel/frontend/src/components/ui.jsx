@@ -149,14 +149,14 @@ export function formatDate(iso) {
     });
 }
 
-/** Определение устройства по User-Agent (web-сессии Telemt). MTProto UA не имеет. */
+/** РћРїСЂРµРґРµР»РµРЅРёРµ СѓСЃС‚СЂРѕР№СЃС‚РІР° РїРѕ User-Agent (web-СЃРµСЃСЃРёРё Telemt). РЈ MTProto UA РЅРµС‚. */
 export function deviceInfo(ua) {
-    if (!ua) return { icon: '??', label: '—' };
+    if (!ua) return { icon: '', label: 'вЂ”' };
     const s = String(ua).toLowerCase();
-    if (s.includes('iphone') || s.includes('ipad')) return { icon: '??', label: 'iOS' };
-    if (s.includes('android')) return { icon: '??', label: 'Android' };
-    if (s.includes('mac os') || s.includes('macintosh')) return { icon: '', label: 'macOS' };
-    if (s.includes('windows')) return { icon: '???', label: 'Windows' };
-    if (s.includes('linux') || s.includes('x11')) return { icon: '??', label: 'Linux' };
-    return { icon: '??', label: 'Др.' };
+    if (s.includes('iphone') || s.includes('ipad')) return { icon: 'рџ“±', label: 'iOS' };
+    if (s.includes('android')) return { icon: 'рџ¤–', label: 'Android' };
+    if (s.includes('mac os') || s.includes('macintosh')) return { icon: 'рџЌЋ', label: 'macOS' };
+    if (s.includes('windows')) return { icon: 'рџ–ҐпёЏ', label: 'Windows' };
+    if (s.includes('linux') || s.includes('x11')) return { icon: 'рџђ§', label: 'Linux' };
+    return { icon: 'рџЊђ', label: 'Р”СЂ.' };
 }
