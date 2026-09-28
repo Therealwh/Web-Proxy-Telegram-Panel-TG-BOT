@@ -818,7 +818,6 @@ async function start() {
             `TGGATE: ${tariff.name}`,
             description,
             String(paymentId),
-            '',              // для XTR provider_token не нужен
             'XTR',
             [{ label: tariff.name, amount: stars }]
         ).catch(async (e) => {
