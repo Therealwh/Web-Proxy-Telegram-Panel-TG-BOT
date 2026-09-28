@@ -25,6 +25,8 @@ const CATEGORIES = [
             { key: 'notify_services', label: 'Падение сервисов', type: 'toggle' },
             { key: 'notify_new_client', label: 'Новый клиент', type: 'toggle' },
             { key: 'notify_quota', label: 'Превышение квоты', type: 'toggle' },
+            { key: 'auto_renew_enabled', label: '♻️ Автопродление с баланса (вкл. в боте клиентом)', type: 'toggle' },
+            { key: 'backup_tg_enabled', label: '📤 Присылать бэкап базы ботом в Telegram', type: 'toggle' },
         ],
     },
     {

@@ -35,6 +35,10 @@ const DEFAULTS = {
     notify_new_client: true,             // новый клиент
     notify_quota: true,                  // превышение квоты
 
+    // ♻️ Обслуживание клиентов
+    auto_renew_enabled: true,            // автопродление с баланса (клиент включает в боте)
+    backup_tg_enabled: true,             // присылать бэкап базы ботом админу раз в сутки
+
     // 🎨 Внешний вид
     theme: 'dark',                       // dark | light
     language: 'ru',                      // ru | en

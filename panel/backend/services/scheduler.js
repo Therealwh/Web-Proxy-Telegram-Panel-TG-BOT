@@ -14,6 +14,9 @@ const { getAll } = require('../routes/settings');
 const notifier = require('./notifier');
 const logger = require('../utils/logger');
 
+// Счётчик последовательных сбоев сервисов (для алертов без спама)
+let downStreak = 0;
+
 /** Проверка доступности прокси: MTProto (TCP) и Web (HTTPS через домен). */
 async function checkProxies() {
     try {
@@ -38,15 +41,34 @@ async function checkProxies() {
         insert.run('mtproto', mtOk, null);
         insert.run('web', webOk, webLatency);
 
+        // Telemt Control API здоров?
+        let apiOk = 0;
+        try {
+            const telemt = require('./telemtApi');
+            await telemt.getHealth();
+            apiOk = 1;
+        } catch { apiOk = 0; }
+        insert.run('api', apiOk, null);
+
         // Чистим старые проверки (храним 35 дней)
         db.prepare("DELETE FROM uptime_checks WHERE created_at < datetime('now','-35 days')").run();
 
-        // Алерты при падении
+        // Алерты: падение — после 2 проверок подряд (без спама каждые 5 минут),
+        // восстановление — сразу
         const settings = getAll();
-        if (settings.notify_services && (!mtOk || !webOk)) {
-            notifier.notifyAdmin(settings,
-                `🚨 <b>Проблема с прокси!</b>\nMTProto: ${mtOk ? '✅' : '❌'}\nWeb Proxy: ${webOk ? '✅' : '❌'}`
-            ).catch(() => {});
+        const down = !mtOk || !webOk || !apiOk;
+        if (down) {
+            downStreak += 1;
+            if (downStreak === 2 && settings.notify_services) {
+                notifier.notifyAdmin(settings,
+                    `🚨 <b>Сервис недоступен!</b>\nMTProto: ${mtOk ? '✅' : '❌'}\nWeb Proxy: ${webOk ? '✅' : '❌'}\nTelemt API: ${apiOk ? '✅' : '❌'}`
+                );
+            }
+        } else {
+            if (downStreak >= 2 && settings.notify_services) {
+                notifier.notifyAdmin(settings, '✅ <b>Сервис восстановлен</b> — всё работает.');
+            }
+            downStreak = 0;
         }
     } catch (err) {
         logger.error('Ошибка проверки прокси', { error: err.message });
@@ -130,8 +152,75 @@ async function cleanupTestClients() {
     }
 }
 
+/** Автопродление с баланса: клиент включил в боте, до конца ≤3 дней, баланс хватает. */
+async function autoRenew() {
+    const settings = getAll();
+    if (!settings.auto_renew_enabled) return;
+    const rows = db.prepare(
+        `SELECT * FROM clients
+         WHERE status = 'active' AND auto_renew = 1 AND telegram_id IS NOT NULL
+           AND expires_at IS NOT NULL AND expires_at <= datetime('now', '+3 days')`
+    ).all();
+    if (rows.length === 0) return;
+
+    const bot = require('./bot');
+    const telemt = require('./telemtApi');
+    const botSettings = bot.getBotSettings();
+    const token = botSettings.bot_token || settings.tg_bot_token;
+
+    for (const client of rows) {
+        try {
+            // Тариф последней успешной покупки этого прокси
+            const last = db.prepare(
+                `SELECT tariff_id FROM payments
+                 WHERE client_id = ? AND status = 'success' AND tariff_id IS NOT NULL
+                 ORDER BY paid_at DESC LIMIT 1`
+            ).get(client.id);
+            const tariff = last ? db.prepare('SELECT * FROM tariffs WHERE id = ?').get(last.tariff_id) : null;
+            if (!tariff) continue;
+
+            const balance = bot.totalBalance(client.telegram_id);
+            if (balance < tariff.price) {
+                // Уведомляем не чаще раза в сутки (пометка в аудите на сегодня)
+                const sent = db.prepare(
+                    "SELECT COUNT(*) AS c FROM audit_log WHERE action = 'notify.autorenew.fail' AND details LIKE ? AND created_at >= date('now')"
+                ).get(`%${client.username}%`).c;
+                if (!sent && token) {
+                    notifier.sendMessage(token, client.telegram_id,
+                        `⚠️ <b>Автопродление не сработало</b> — не хватает ${tariff.price} (баланс: ${balance.toFixed(2)}).\n` +
+                        `Пополните счёт в личном кабинете — продлим автоматически.`
+                    ).catch(() => {});
+                    db.prepare("INSERT INTO audit_log (admin, action, details) VALUES ('system', 'notify.autorenew.fail', ?)")
+                        .run(`Недостаточно баланса для автопродления: ${client.username}`);
+                }
+                continue;
+            }
+
+            bot.deductBalance(client.telegram_id, tariff.price);
+            const base = client.expires_at && new Date(client.expires_at) > new Date()
+                ? new Date(client.expires_at) : new Date();
+            const newExpiry = new Date(base.getTime() + tariff.days * 86400000).toISOString();
+            await telemt.patchUser(client.username, { expiration_rfc3339: newExpiry }).catch(() => {});
+            db.prepare("UPDATE clients SET expires_at = ?, status = 'active' WHERE id = ?").run(newExpiry, client.id);
+
+            if (token) {
+                const until = new Date(newExpiry).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' }) + ' МСК';
+                notifier.sendMessage(token, client.telegram_id,
+                    `♻️ <b>Автопродление выполнено!</b>\n\n📦 ${client.username} — до <b>${until}</b>\n` +
+                    `💳 Списано: ${tariff.price} · Баланс: ${(balance - tariff.price).toFixed(2)}`
+                ).catch(() => {});
+            }
+            db.prepare("INSERT INTO audit_log (admin, action, details) VALUES ('system', 'autorenew', ?)")
+                .run(`Автопродление ${client.username}: +${tariff.days} дн. за ${tariff.price}`);
+            logger.info('Автопродление выполнено', { username: client.username, days: tariff.days });
+        } catch (err) {
+            logger.warn('Ошибка автопродления', { username: client.username, error: err.message });
+        }
+    }
+}
+
 /** Ежедневный автобэкап + ротация старых. */
-function autoBackup() {
+async function autoBackup() {
     const settings = getAll();
     if (!settings.backup_auto) return;
     try {
@@ -149,6 +238,26 @@ function autoBackup() {
             if (fs.statSync(full).mtimeMs < cutoff) fs.rmSync(full);
         }
         logger.info('Автобэкап создан', { dest });
+
+        // Копия бэкапа админу в Telegram: хранится в мессенджере, место на диске не тратит
+        if (settings.backup_tg_enabled && settings.tg_bot_token && settings.tg_admin_chat_id) {
+            try {
+                const bot = require('./bot');
+                if (bot.isRunning()) {
+                    await bot.sendFileTo(
+                        settings.tg_admin_chat_id,
+                        fs.readFileSync(dest),
+                        `tggate-backup-${new Date().toISOString().slice(0, 10)}.db`
+                    );
+                    logger.info('Бэкап отправлен админу в Telegram');
+                } else {
+                    logger.warn('Бэкап в Telegram не отправлен — бот не запущен');
+                }
+            } catch (err) {
+                logger.warn('Бэкап в Telegram не отправлен', { error: err.message });
+                notifier.notifyAdmin(settings, `⚠️ Не удалось отправить автобэкап в Telegram: ${err.message}`);
+            }
+        }
     } catch (err) {
         logger.error('Ошибка автобэкапа', { error: err.message });
     }
@@ -173,18 +282,20 @@ function start() {
     setInterval(() => checkProxies().catch(() => {}), 5 * 60 * 1000).unref();
     checkProxies().catch(() => {});
 
-    // Ежечасно: истечения, просроченные, тестовые, диск
+    // Ежечасно: истечения, просроченные, тестовые, диск, автопродление
     setInterval(() => {
         try { checkExpiring(); } catch (e) { logger.error(e); }
         disableExpired().catch(() => {});
         cleanupTestClients().catch(() => {});
         try { checkDisk(); } catch (e) { logger.error(e); }
+        autoRenew().catch((e) => logger.error('Ошибка автопродления', { error: e.message }));
     }, 60 * 60 * 1000).unref();
     // Первый прогон через 2 минуты после старта
     setTimeout(() => {
         try { checkExpiring(); } catch (e) { logger.error(e); }
         disableExpired().catch(() => {});
         cleanupTestClients().catch(() => {});
+        autoRenew().catch((e) => logger.error('Ошибка автопродления', { error: e.message }));
     }, 2 * 60 * 1000).unref();
 
     // Ежедневно: автобэкап (в 03:30 по локальному времени)

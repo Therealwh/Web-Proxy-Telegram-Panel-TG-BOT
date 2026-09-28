@@ -11,7 +11,7 @@
  * @module services/bot
  */
 
-const { Bot, InlineKeyboard, Keyboard } = require('grammy');
+const { Bot, InlineKeyboard, Keyboard, InputFile } = require('grammy');
 const db = require('../db');
 const telemt = require('./telemtApi');
 const { clientLinks } = require('./links');
@@ -185,7 +185,8 @@ function cabinetView(ctx) {
 
     let text = `📱 <b>Личный кабинет</b>\n💰 Баланс: <b>${balance.toFixed(2)}</b>\n\n<b>Мои прокси:</b>\n`;
     const kb = new InlineKeyboard();
-    const maskDomain = getAll().mask_domain;
+    const settings = getAll();
+    const maskDomain = settings.mask_domain;
     for (const c of clients) {
         const until = c.expires_at ? fmtMSK(c.expires_at, false) : '∞';
         const icon = c.status === 'active' ? '🟢' : '🔴';
@@ -195,6 +196,9 @@ function cabinetView(ctx) {
         if (links.mtproto_https) kb.url('🔌 Подключить MTProto прокси', links.mtproto_https);
         if (links.web_https || links.mtproto_https) kb.row();
         kb.text(`♻️ Продлить: ${c.username}`, `renew:${c.id}`).row();
+        if (settings.auto_renew_enabled) {
+            kb.text(c.auto_renew ? '♻️ Автопродление: ✅ вкл' : '♻️ Автопродление: ❌ выкл', `autorenew:${c.id}`).row();
+        }
     }
     kb.text('💳 Пополнить счёт', 'topup').row();
     kb.text('🚀 Тарифы', 'tariffs');
@@ -334,6 +338,12 @@ async function sendMessageTo(tgId, text) {
     if (!text.startsWith('<')) text = `<b>${text}</b>`;
     await bot.api.sendMessage(tgId, text, { parse_mode: 'HTML' })
         .catch((e) => { throw new Error(`Telegram: ${e.message}`); });
+}
+
+/** Отправка файла (например, бэкапа базы) админу/пользователю. */
+async function sendFileTo(tgId, buffer, filename) {
+    if (!bot) throw new Error('Бот не запущен — включите его в настройках');
+    await bot.api.sendDocument(tgId, new InputFile(buffer, filename));
 }
 
 /**
@@ -689,6 +699,19 @@ async function start() {
         await ctx.reply('♻️ <b>Выберите тариф продления:</b>', {
             parse_mode: 'HTML', reply_markup: renewKeyboard(clientId, mode),
         });
+    });
+
+    // Переключатель автопродления с баланса (для конкретного прокси)
+    bot.callbackQuery(/^autorenew:(\d+)$/, async (ctx) => {
+        const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(Number(ctx.match[1]));
+        if (!client || client.telegram_id !== ctx.from.id) {
+            return ctx.answerCallbackQuery({ text: 'Это не ваш прокси', show_alert: true });
+        }
+        const next = client.auto_renew ? 0 : 1;
+        db.prepare('UPDATE clients SET auto_renew = ? WHERE id = ?').run(next, client.id);
+        await ctx.answerCallbackQuery(next ? '✅ Автопродление включено' : 'Автопродление выключено');
+        const view = cabinetView(ctx);
+        await ctx.reply(view.text, { parse_mode: 'HTML', reply_markup: view.kb, disable_web_page_preview: true });
     });
 
     bot.callbackQuery(/^renewpay:(\d+):(\d+)(?::(web|mtproto|both))?$/, async (ctx) => {
@@ -1211,4 +1234,4 @@ function getBotSettings() {
 /** Работает ли бот сейчас. */
 const isRunning = () => bot !== null;
 
-module.exports = { start, stop, isRunning, getBotSettings, issueAccessFor, notifyDeposit, sendMessageTo, broadcastNewLinks };
+module.exports = { start, stop, isRunning, getBotSettings, issueAccessFor, notifyDeposit, sendMessageTo, broadcastNewLinks, sendFileTo, totalBalance, deductBalance };
