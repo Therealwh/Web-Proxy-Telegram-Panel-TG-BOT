@@ -148,3 +148,15 @@ export function formatDate(iso) {
         hour: '2-digit', minute: '2-digit',
     });
 }
+
+/** ќпределение устройства по User-Agent (web-сессии Telemt). MTProto UA не имеет. */
+export function deviceInfo(ua) {
+    if (!ua) return { icon: '??', label: 'Ч' };
+    const s = String(ua).toLowerCase();
+    if (s.includes('iphone') || s.includes('ipad')) return { icon: '??', label: 'iOS' };
+    if (s.includes('android')) return { icon: '??', label: 'Android' };
+    if (s.includes('mac os') || s.includes('macintosh')) return { icon: '', label: 'macOS' };
+    if (s.includes('windows')) return { icon: '???', label: 'Windows' };
+    if (s.includes('linux') || s.includes('x11')) return { icon: '??', label: 'Linux' };
+    return { icon: '??', label: 'ƒр.' };
+}

@@ -4,7 +4,7 @@ import { Download, Pause, Play } from 'lucide-react';
 import { get } from '../api';
 import { useAuthStore, toast } from '../store';
 import { connectLive } from '../ws';
-import { Card, formatDate } from '../components/ui';
+import { Card, formatDate, deviceInfo } from '../components/ui';
 
 const STATUS_BADGE = {
     ok: ['badge-green', '✅ успех'],
@@ -97,24 +97,29 @@ export default function Logs() {
                                     <th className="px-3 py-2">Время</th>
                                     <th className="px-3 py-2">Клиент</th>
                                     <th className="px-3 py-2">IP</th>
+                                    <th className="px-3 py-2">Устройство</th>
                                     <th className="px-3 py-2">Протокол</th>
                                     <th className="px-3 py-2">Статус</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                {logs.map((log, i) => (
-                                    <tr key={log.id ?? i} className="border-t border-slate-100 dark:border-slate-800">
-                                        <td className="px-3 py-1.5 text-slate-500 whitespace-nowrap">{formatDate(log.created_at)}</td>
-                                        <td className="px-3 py-1.5">{log.username || '—'}</td>
-                                        <td className="px-3 py-1.5">{log.ip || '—'}</td>
-                                        <td className="px-3 py-1.5">{log.protocol === 'web' ? '🌐 web' : '🔌 mtproto'}</td>
-                                        <td className="px-3 py-1.5">
-                                            <span className={STATUS_BADGE[log.status]?.[0] || 'badge-blue'}>
-                                                {STATUS_BADGE[log.status]?.[1] || log.status}
-                                            </span>
-                                        </td>
-                                    </tr>
-                                ))}
+                                {logs.map((log, i) => {
+                                    const dev = deviceInfo(log.user_agent);
+                                    return (
+                                        <tr key={log.id ?? i} className="border-t border-slate-100 dark:border-slate-800">
+                                            <td className="px-3 py-1.5 text-slate-500 whitespace-nowrap">{formatDate(log.created_at)}</td>
+                                            <td className="px-3 py-1.5">{log.username || '—'}</td>
+                                            <td className="px-3 py-1.5">{log.ip || '—'}</td>
+                                            <td className="px-3 py-1.5 whitespace-nowrap" title={log.user_agent || ''}>{dev.icon} {dev.label}</td>
+                                            <td className="px-3 py-1.5">{log.protocol === 'web' ? '🌐 web' : '🔌 mtproto'}</td>
+                                            <td className="px-3 py-1.5">
+                                                <span className={STATUS_BADGE[log.status]?.[0] || 'badge-blue'}>
+                                                    {STATUS_BADGE[log.status]?.[1] || log.status}
+                                                </span>
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
                             </tbody>
                         </table>
                     )}

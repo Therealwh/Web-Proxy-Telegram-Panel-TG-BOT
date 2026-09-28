@@ -130,22 +130,22 @@ router.get('/active', async (req, res, next) => {
             }
         } catch { /* Telemt недоступен — покажем только WEB */ }
 
-        // WEB: активные сессии
+        // WEB: активные сессии (IP клиента в Telemt — client_ip)
         let webSessionCount = 0;
         try {
             const sessions = await telemt.getWebSessions({ limit: 200 });
             const list = Array.isArray(sessions) ? sessions : sessions?.sessions || [];
             webSessionCount = list.length;
             for (const s of list) {
-                if (s.ip) {
-                    rows.push({
-                        username: s.user || '—',
-                        ip: s.ip,
-                        protocol: 'web',
-                        carrier: s.carrier || null,
-                        user_agent: s.user_agent || null,
-                    });
-                }
+                const ip = s.client_ip || s.ip;
+                if (!ip) continue;
+                rows.push({
+                    username: s.user || '—',
+                    ip,
+                    protocol: 'web',
+                    carrier: s.carrier || null,
+                    user_agent: s.user_agent || null,
+                });
             }
         } catch { /* WEB-рантайм недоступен */ }
 

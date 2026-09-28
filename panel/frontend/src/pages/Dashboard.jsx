@@ -5,7 +5,7 @@ import { Users, Link2, Wifi, HardDrive, Cpu, MemoryStick, RefreshCw } from 'luci
 import { get, post } from '../api';
 import { useAuthStore, toast } from '../store';
 import { connectLive } from '../ws';
-import { Card, StatusDot, Skeleton, formatBytes } from '../components/ui';
+import { Card, StatusDot, Skeleton, formatBytes, deviceInfo } from '../components/ui';
 
 const COLORS = ['#0088cc', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316'];
 
@@ -274,18 +274,23 @@ export default function Dashboard() {
                                 <th className="py-2 pr-4 font-medium">Клиент</th>
                                 <th className="py-2 pr-4 font-medium">IP-адрес</th>
                                 <th className="py-2 pr-4 font-medium">Страна</th>
+                                <th className="py-2 pr-4 font-medium">Устройство</th>
                                 <th className="py-2 font-medium">Протокол</th>
                             </tr>
                         </thead>
                         <tbody>
-                            {active.connections.map((c, i) => (
-                                <tr key={`${c.username}-${c.ip}-${i}`} className="border-b border-slate-100 dark:border-slate-800">
-                                    <td className="py-2 pr-4 font-medium">{c.username}</td>
-                                    <td className="py-2 pr-4 font-mono text-xs">{c.ip}</td>
-                                    <td className="py-2 pr-4">{c.country}</td>
-                                    <td className="py-2">{c.protocol === 'web' ? '🌐 Web' : '🔌 MTProto'}</td>
-                                </tr>
-                            ))}
+                            {active.connections.map((c, i) => {
+                                const dev = deviceInfo(c.user_agent);
+                                return (
+                                    <tr key={`${c.username}-${c.ip}-${i}`} className="border-b border-slate-100 dark:border-slate-800">
+                                        <td className="py-2 pr-4 font-medium">{c.username}</td>
+                                        <td className="py-2 pr-4 font-mono text-xs">{c.ip}</td>
+                                        <td className="py-2 pr-4">{c.country}</td>
+                                        <td className="py-2 pr-4 whitespace-nowrap" title={c.user_agent || ''}>{dev.icon} {dev.label}</td>
+                                        <td className="py-2">{c.protocol === 'web' ? '🌐 Web' : '🔌 MTProto'}</td>
+                                    </tr>
+                                );
+                            })}
                         </tbody>
                     </table>
                 )}
