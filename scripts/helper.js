@@ -26,6 +26,7 @@ const SCRIPTS = {
     panel: path.join(SCRIPTS_DIR, 'update-panel.sh'),
     telemt: path.join(SCRIPTS_DIR, 'update-telemt.sh'),
     check: path.join(SCRIPTS_DIR, 'check-updates.sh'),
+    domain: path.join(SCRIPTS_DIR, 'change-domain.sh'),
 };
 
 /** Секрет из install.env (генерируется установщиком/install-helper.sh). */
@@ -96,6 +97,23 @@ const server = http.createServer((req, res) => {
             const line = parsed.frequency === 'off' ? '' : `${cronMap[parsed.frequency]} root ${SCRIPTS.check} >/dev/null 2>&1\n`;
             fs.writeFileSync('/etc/cron.d/tggate-updates', line);
             log(`Cron обновлён: ${parsed.frequency}`);
+            return res.end(JSON.stringify({ ok: true }));
+        }
+
+        // Смена домена: аргумент — строго валидный домен (execFile, без shell)
+        if (parsed.key === 'domain') {
+            const d = String(parsed.domain || '').toLowerCase().trim();
+            const DOMAIN_RE = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/;
+            if (!DOMAIN_RE.test(d) || d.length > 253) {
+                res.statusCode = 400;
+                return res.end(JSON.stringify({ ok: false, error: 'bad domain' }));
+            }
+            busy = true;
+            log(`Смена домена → ${d}`);
+            execFile('bash', [script, d], { timeout: 180000 }, (err, stdout, stderr) => {
+                busy = false;
+                log(`Смена домена завершена: ${err ? 'ОШИБКА: ' + (stderr || err.message).slice(0, 500) : 'успех'}`);
+            });
             return res.end(JSON.stringify({ ok: true }));
         }
 

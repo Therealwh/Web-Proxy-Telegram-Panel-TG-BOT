@@ -6,9 +6,15 @@
 
 const express = require('express');
 const { z } = require('zod');
+const dns = require('dns').promises;
 const db = require('../db');
+const config = require('../config');
+const logger = require('../utils/logger');
+const { httpError } = require('../middleware/errorHandler');
 
 const router = express.Router();
+
+const DOMAIN_RE = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/;
 
 // Дефолтные значения всех настроек с описанием категорий
 const DEFAULTS = {
@@ -102,6 +108,65 @@ router.put('/', (req, res, next) => {
             }
         }
         res.json({ ok: true, settings: all });
+    } catch (err) {
+        next(err);
+    }
+});
+
+// --- Текущий домен панели ---
+router.get('/domain', (req, res) => {
+    res.json({ domain: config.domain });
+});
+
+// --- Смена домена (через root-Helper, без переустановки) ---
+router.post('/domain', async (req, res, next) => {
+    try {
+        const schema = z.object({ domain: z.string().min(4).max(253).regex(DOMAIN_RE, 'Некорректный домен') });
+        const { domain } = schema.parse(req.body);
+        const newDomain = domain.toLowerCase().trim();
+
+        if (newDomain === config.domain) throw httpError(400, 'Этот домен уже установлен');
+
+        // DNS-проверка: без A-записи смена отрежет доступ к панели
+        let ips = [];
+        try { ips = await dns.resolve4(newDomain); } catch { /* DNS ещё не обновился */ }
+        if (ips.length === 0 && !req.body?.force) {
+            return res.status(400).json({
+                error: 'Домен ещё не указывает на сервер (A-запись не найдена). Обновите DNS у регистратора и повторите через 5–30 минут, либо включите «Принудительно».',
+            });
+        }
+
+        if (!config.helperUrl || !config.helperSecret) {
+            throw httpError(500, 'Хелпер не настроен. Выполните на сервере: bash /opt/tggate/scripts/install-helper.sh');
+        }
+
+        const hres = await fetch(`${config.helperUrl}/run`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ secret: config.helperSecret, key: 'domain', domain: newDomain }),
+            signal: AbortSignal.timeout(10000),
+        });
+        if (!hres.ok) {
+            const text = await hres.text().catch(() => '');
+            throw httpError(502, `Хелпер отклонил запрос: HTTP ${hres.status} ${text.slice(0, 100)}`);
+        }
+
+        logger.info('Смена домена запущена через хелпер', { from: config.domain, to: newDomain });
+        res.json({
+            ok: true,
+            message: 'Смена домена запущена. Панель перезапустится через несколько секунд — обновите страницу через 30–60 секунд.',
+        });
+    } catch (err) {
+        next(err);
+    }
+});
+
+// --- Рассылка новых ссылок активным клиентам (после смены домена) ---
+router.post('/domain/notify', async (req, res, next) => {
+    try {
+        const bot = require('../services/bot');
+        const result = await bot.broadcastNewLinks();
+        res.json({ ok: true, ...result });
     } catch (err) {
         next(err);
     }

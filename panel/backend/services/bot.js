@@ -336,6 +336,45 @@ async function sendMessageTo(tgId, text) {
         .catch((e) => { throw new Error(`Telegram: ${e.message}`); });
 }
 
+/**
+ * Рассылка свежих ссылок всем активным клиентам (после смены домена).
+ * Группируем по telegram_id: одно сообщение со всеми прокси пользователя.
+ * @returns {Promise<{sent: number, failed: number, total: number}>}
+ */
+async function broadcastNewLinks() {
+    if (!bot) throw new Error('Бот не запущен — включите его в настройках');
+    const clients = db.prepare(
+        "SELECT * FROM clients WHERE telegram_id IS NOT NULL AND status = 'active' ORDER BY telegram_id"
+    ).all();
+    const maskDomain = getAll().mask_domain;
+
+    const byUser = new Map();
+    for (const c of clients) {
+        if (!byUser.has(c.telegram_id)) byUser.set(c.telegram_id, []);
+        byUser.get(c.telegram_id).push(c);
+    }
+
+    let sent = 0, failed = 0;
+    for (const [tgId, list] of byUser) {
+        let text = '🔄 <b>Домен обновлён — подключитесь заново:</b>\n';
+        for (const c of list) {
+            const links = clientLinks(c, maskDomain);
+            const until = c.expires_at ? fmtMSK(c.expires_at, false) : '∞';
+            text += `\n📦 <b>${c.username}</b> — до ${until}\n`;
+            if (links.web_https) text += `🌐 Web: ${links.web_https}\n`;
+            if (links.mtproto_https) text += `🔌 MTProto: ${links.mtproto_https}\n`;
+        }
+        text += '\nСтарые ссылки работать перестанут — нажмите свою кнопку, и Telegram переподключится сам.';
+        try {
+            await bot.api.sendMessage(tgId, text, { parse_mode: 'HTML', disable_web_page_preview: true });
+            sent++;
+        } catch { failed++; } // заблокировали бота / нет чата
+        await new Promise((r) => setTimeout(r, 80)); // лимиты Telegram API
+    }
+    logger.info('Рассылка новых ссылок завершена', { sent, failed, total: byUser.size });
+    return { sent, failed, total: byUser.size };
+}
+
 /** Проверка подписки на обязательный канал. */
 async function checkSubscription(ctx) {
     const s = getBotSettings();
@@ -1172,4 +1211,4 @@ function getBotSettings() {
 /** Работает ли бот сейчас. */
 const isRunning = () => bot !== null;
 
-module.exports = { start, stop, isRunning, getBotSettings, issueAccessFor, notifyDeposit, sendMessageTo };
+module.exports = { start, stop, isRunning, getBotSettings, issueAccessFor, notifyDeposit, sendMessageTo, broadcastNewLinks };

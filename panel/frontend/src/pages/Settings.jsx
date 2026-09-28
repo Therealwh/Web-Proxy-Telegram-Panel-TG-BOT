@@ -1,7 +1,7 @@
 // Настройки панели с категориями
 import React, { useEffect, useRef, useState } from 'react';
 import { Save } from 'lucide-react';
-import { get, put } from '../api';
+import { get, post, put } from '../api';
 import { toast } from '../store';
 import { Card, Field, Toggle, Skeleton } from '../components/ui';
 
@@ -76,6 +76,9 @@ export default function Settings() {
                     <Save size={16} /> {saving ? 'Сохранение...' : 'Сохранить'}
                 </button>
             </div>
+
+            {/* Смена домена без переустановки */}
+            <DomainCard />
 
             {CATEGORIES.map((cat) => (
                 <Card key={cat.id} title={`${cat.icon} ${cat.title}`}>
@@ -181,6 +184,82 @@ function BackupCard() {
                 В бэкап входят: администраторы, клиенты, тарифы, платежи, настройки (включая токены),
                 промокоды, API-ключи, вебхуки, тикеты. Схема базы обновляется автоматически.
             </p>
+        </Card>
+    );
+}
+
+/** Карточка смены домена: новый домен через Helper без переустановки панели */
+function DomainCard() {
+    const [info, setInfo] = useState(null);
+    const [newDomain, setNewDomain] = useState('');
+    const [force, setForce] = useState(false);
+    const [busy, setBusy] = useState(false);
+    const [changed, setChanged] = useState(false);
+
+    useEffect(() => {
+        get('/settings/domain').then(setInfo).catch(() => {});
+    }, []);
+
+    const changeDomain = async () => {
+        const d = newDomain.trim().toLowerCase();
+        if (!confirm(`Сменить домен ${info?.domain} → ${d}?\n\nСтарые ссылки клиентов перестанут работать — после смены разошлите новые ссылки.`)) return;
+        setBusy(true);
+        try {
+            await post('/settings/domain', { domain: d, force });
+            toast.success('Смена домена запущена — панель перезапустится');
+            setChanged(true);
+            // Панель перезапустится: через 20 сек пробуем перезагрузить страницу
+            setTimeout(() => window.location.reload(), 20000);
+        } catch (e) {
+            toast.error(e.message);
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    const notifyClients = async () => {
+        if (!confirm('Разослать новые ссылки всем активным клиентам в боте?')) return;
+        setBusy(true);
+        try {
+            const r = await post('/settings/domain/notify', {});
+            toast.success(`Отправлено: ${r.sent} из ${r.total} (не доставлено: ${r.failed})`);
+        } catch (e) {
+            toast.error(e.message);
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    return (
+        <Card title="🌐 Домен панели"
+              subtitle={`Текущий: ${info?.domain ?? '...'}`}>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
+                <Field label="Новый домен"
+                       hint="Сначала поменяйте A-запись домена на IP этого сервера (DNS обновится за 5–30 минут)">
+                    <input className="input font-mono" placeholder="proxy2.example.com"
+                           value={newDomain}
+                           onChange={(e) => setNewDomain(e.target.value)} />
+                </Field>
+                <div className="space-y-3">
+                    <Toggle label="Принудительно (даже если DNS не проверился)"
+                            checked={force}
+                            onChange={setForce} />
+                    <button className="btn-primary w-full" disabled={busy || !newDomain.trim()} onClick={changeDomain}>
+                        Сменить домен
+                    </button>
+                </div>
+            </div>
+            {changed && (
+                <div className="mt-4 p-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
+                    <p className="text-sm">
+                        ⏳ Панель перезапускается с новым доменом. Обновите страницу через 30–60 секунд,
+                        затем разошлите клиентам новые ссылки — старые перестанут работать.
+                    </p>
+                    <button className="btn-secondary mt-2 text-sm" disabled={busy} onClick={notifyClients}>
+                        📣 Разослать новые ссылки активным клиентам
+                    </button>
+                </div>
+            )}
         </Card>
     );
 }

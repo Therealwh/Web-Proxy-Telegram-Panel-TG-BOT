@@ -131,3 +131,5 @@ log_history "panel" "success" "обновлено до ${NEW_VERSION} (бэка�
 
 info "Готово! Перезапускаю панель..."
 systemctl restart tggate-panel
+# Helper code (helper.js) is updated with the repo - restart it too
+systemctl restart tggate-helper 2>/dev/null || true
