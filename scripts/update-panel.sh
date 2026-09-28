@@ -164,6 +164,8 @@ log_history "panel" "success" "обновлено до ${NEW_VERSION} (бэка�
 
 info "Готово! Перезапускаю панель..."
 systemctl restart tggate-panel
+# Успех пишем ДО рестарта хелпера: скрипт запущен хелпером, и рестарт хелпера
+# убьёт этот скрипт (cgroup) — запись после него просто не выполнится
+set_status 6 6 "Обновлено до ${NEW_VERSION}" success
 # Helper code (helper.js) is updated with the repo - restart it too
 systemctl restart tggate-helper 2>/dev/null || true
-set_status 6 6 "Обновлено до ${NEW_VERSION}" success

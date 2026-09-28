@@ -139,11 +139,15 @@ export default function Updates() {
         return () => { stop = true; clearInterval(timer); };
     }, []);
 
-    // По завершении обновления — обновляем версии и историю
+    // По завершении обновления — тост, обновляем версии и перезагружаем страницу
     useEffect(() => {
         const st = progress?.status || '';
         if ((st === 'success' || st === 'failed') && prevProgressStatus.current === 'running') {
             load();
+            if (st === 'success') {
+                toast.success('Панель обновлена! Обновляю страницу...');
+                setTimeout(() => window.location.reload(), 2500);
+            }
         }
         prevProgressStatus.current = st;
     }, [progress?.status]);
