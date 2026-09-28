@@ -129,6 +129,25 @@ router.get('/history', (req, res) => {
     res.json({ history });
 });
 
+// --- Живой прогресс обновления (статус-файл от root-скриптов) ---
+router.get('/progress', (req, res) => {
+    try {
+        const data = JSON.parse(fs.readFileSync('/var/lib/tggate/update-status.json', 'utf8'));
+        // Защита от зависшего статуса: running без сигналов дольше 15 минут —
+        // считаем сорванным (скрипт умер без финальной записи)
+        if (data.status === 'running') {
+            const age = Date.now() - new Date(data.updated_at).getTime();
+            if (!Number.isFinite(age) || age > 15 * 60 * 1000) {
+                data.status = 'failed';
+                data.message = 'Скрипт обновления перестал отвечать — смотрите историю и journalctl';
+            }
+        }
+        res.json({ progress: data });
+    } catch {
+        res.json({ progress: null }); // файла нет — обновление не запускалось
+    }
+});
+
 // --- Запустить обновление (опционально на конкретную версию) ---
 router.post('/check', async (req, res, next) => {
     try {

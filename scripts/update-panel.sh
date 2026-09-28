@@ -19,6 +19,20 @@ readonly DB_PATH="${DATA_DIR}/tggate.db"
 
 info() { echo "[update] $*"; }
 
+# Живой статус для статус-бара панели (атомарная запись в /var/lib/tggate)
+STATUS_FILE="/var/lib/tggate/update-status.json"
+STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+set_status() {
+    local step="$1" total="$2" message="$3" status="$4"
+    local tmp="${STATUS_FILE}.$$"
+    mkdir -p /var/lib/tggate 2>/dev/null || true
+    printf '{"component":"panel","step":%s,"total":%s,"message":"%s","status":"%s","updated_at":"%s","started_at":"%s"}\n' \
+        "${step}" "${total}" "${message//\"/\\\"}" "${status}" \
+        "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${STARTED_AT}" > "${tmp}"
+    mv -f "${tmp}" "${STATUS_FILE}"
+    chmod 644 "${STATUS_FILE}" 2>/dev/null || true
+}
+
 fail_missing_tag() {
     echo "[update] ФАТАЛЬНО: тег не найден в репозитории" >&2
     log_history "panel" "failed" "тег не найден"
@@ -48,6 +62,7 @@ rollback() {
     cp -a "${BACKUP_PATH}/etc-tggate/." "${CONFIG_DIR}/" 2>/dev/null || true
     [[ -f "${BACKUP_PATH}/VERSION" ]] && cp -a "${BACKUP_PATH}/VERSION" "${INSTALL_DIR}/VERSION"
     log_history "panel" "failed" "упала команда: ${failed_cmd} (бэкап: ${BACKUP_PATH})"
+    set_status 0 6 "Ошибка: выполнен откат из бэкапа" failed
     systemctl restart tggate-panel 2>/dev/null || true
     echo "[update] Откат выполнен, панель перезапущена." >&2
     exit 1
@@ -58,6 +73,7 @@ trap rollback ERR
 # 1. Бэкап перед обновлением
 # ---------------------------------------------------------------------------
 info "Создаю бэкап: ${BACKUP_PATH}"
+set_status 1 6 "Создание бэкапа..." running
 mkdir -p "${BACKUP_PATH}"
 cp -a "${INSTALL_DIR}/panel" "${BACKUP_PATH}/panel"
 cp -a "${INSTALL_DIR}/VERSION" "${BACKUP_PATH}/VERSION" 2>/dev/null || true
@@ -72,6 +88,7 @@ cp -a "${DB_PATH}" "${BACKUP_PATH}/tggate.db" 2>/dev/null || true
 # Панель продолжает работать во время обновления — не останавливаем её!
 # ---------------------------------------------------------------------------
 TARGET="${1:-}"
+set_status 2 6 "Загрузка релиза из GitHub..." running
 info "Загружаю ${TARGET:-последнюю версию} из ${PANEL_REPO}..."
 cd "${INSTALL_DIR}"
 if [[ -d .git ]]; then
@@ -102,9 +119,11 @@ info "Новая версия: ${NEW_VERSION}"
 git config --global --add safe.directory "${INSTALL_DIR}" 2>/dev/null || true
 
 cd "${INSTALL_DIR}/panel/backend"
+set_status 3 6 "Установка зависимостей backend..." running
 npm install --omit=dev --no-audit --no-fund
 
 cd "${INSTALL_DIR}/panel/frontend"
+set_status 4 6 "Установка зависимостей и сборка фронтенда..." running
 npm install --no-audit --no-fund
 # Сборка Vite на малых VPS: ограничиваем память Node, чтобы OOM-killer не убил сборку
 export NODE_OPTIONS="--max-old-space-size=768"
@@ -123,6 +142,7 @@ info "Готово! Перезапускаю панель..."
 #  поэтому всё важное должно быть сделано выше!)
 # ---------------------------------------------------------------------------
 sed -i "s|^PANEL_VERSION=.*|PANEL_VERSION=\"${NEW_VERSION}\"|" /etc/tggate/install.env
+set_status 5 6 "Перезапуск панели..." running
 
 # Владелец базы: любые sqlite3-записи от root ломают доступ панели
 chown tggate:tggate "${DB_PATH}" "${DB_PATH}-wal" "${DB_PATH}-shm" 2>/dev/null || true
@@ -133,3 +153,4 @@ info "Готово! Перезапускаю панель..."
 systemctl restart tggate-panel
 # Helper code (helper.js) is updated with the repo - restart it too
 systemctl restart tggate-helper 2>/dev/null || true
+set_status 6 6 "Обновлено до ${NEW_VERSION}" success

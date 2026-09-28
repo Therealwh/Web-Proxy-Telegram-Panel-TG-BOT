@@ -1,9 +1,55 @@
 // Страница обновлений: версии списком, выбор цели, настройки автопроверки
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { RefreshCw, Download, ShieldCheck, ChevronDown } from 'lucide-react';
 import { get, post, put } from '../api';
 import { toast } from '../store';
 import { Card, Field, Skeleton, formatDate } from '../components/ui';
+
+/** Живой статус-бар обновления (данные из /updates/progress) */
+function ProgressCard({ progress }) {
+    if (!progress) return null;
+    const running = progress.status === 'running';
+    const failed = progress.status === 'failed';
+    // Завершённые обновления показываем 12 часов, потом скрываем
+    if (!running && !failed) {
+        const age = Date.now() - new Date(progress.updated_at).getTime();
+        if (!Number.isFinite(age) || age > 12 * 3600 * 1000) return null;
+    }
+    const percent = progress.total
+        ? Math.min(100, Math.round((progress.step / progress.total) * 100))
+        : (running ? 10 : 100);
+    const started = progress.started_at ? new Date(progress.started_at).getTime() : NaN;
+    const mins = Number.isFinite(started) ? Math.max(0, Math.round((Date.now() - started) / 60000)) : null;
+    const title = failed ? '❌ Обновление прервано'
+        : running ? `⏳ Обновление ${progress.component === 'panel' ? 'панели' : 'Telemt'}`
+        : '✅ Обновление завершено';
+
+    return (
+        <Card className={`border ${failed ? 'border-red-500/60' : running ? 'border-blue-500/60' : 'border-emerald-500/60'}`}>
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                <div className="font-medium">
+                    {title}
+                    {progress.step && progress.total ? (
+                        <span className="text-slate-400 text-sm font-normal"> — шаг {progress.step} из {progress.total}</span>
+                    ) : ''}
+                </div>
+                {running && mins !== null && <span className="text-xs text-slate-400">{mins} мин</span>}
+            </div>
+            <div className="w-full h-2 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
+                <div className={`h-full rounded-full transition-all duration-500 ${failed ? 'bg-red-500' : running ? 'bg-blue-500' : 'bg-emerald-500'}`}
+                     style={{ width: `${percent}%` }} />
+            </div>
+            <div className={`mt-2 text-sm ${failed ? 'text-red-400' : 'text-slate-500 dark:text-slate-400'}`}>
+                {progress.message}
+            </div>
+            {running && (
+                <div className="mt-1 text-xs text-slate-400">
+                    Страницу можно закрыть — прогресс сохранится и панель достроится после перезапуска.
+                </div>
+            )}
+        </Card>
+    );
+}
 
 /** Карточка компонента с выбором версии из списка релизов */
 function UpdateCard({ title, current, latest, releases, loading, busy, onUpdate }) {
@@ -73,12 +119,34 @@ export default function Updates() {
     const [releases, setReleases] = useState({ panel: [], telemt: [] });
     const [busy, setBusy] = useState('');
     const [relLoading, setRelLoading] = useState(false);
+    const [progress, setProgress] = useState(null);
+    const prevProgressStatus = useRef('');
 
     const load = () => {
         get('/updates/status').then(setStatus).catch((e) => toast.error(e.message));
         get('/updates/history').then((d) => setHistory(d.history)).catch(() => {});
     };
     useEffect(load, []);
+
+    // Живой прогресс: опрос каждые 2.5 секунды
+    useEffect(() => {
+        let stop = false;
+        const tick = () => get('/updates/progress')
+            .then((d) => { if (!stop) setProgress(d.progress); })
+            .catch(() => {});
+        tick();
+        const timer = setInterval(tick, 2500);
+        return () => { stop = true; clearInterval(timer); };
+    }, []);
+
+    // По завершении обновления — обновляем версии и историю
+    useEffect(() => {
+        const st = progress?.status || '';
+        if ((st === 'success' || st === 'failed') && prevProgressStatus.current === 'running') {
+            load();
+        }
+        prevProgressStatus.current = st;
+    }, [progress?.status]);
 
     const loadReleases = () => {
         setRelLoading(true);
@@ -131,6 +199,8 @@ export default function Updates() {
                     <RefreshCw size={16} /> Проверить сейчас
                 </button>
             </div>
+
+            <ProgressCard progress={progress} />
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                 <UpdateCard
