@@ -70,12 +70,25 @@ rollback() {
 trap rollback ERR
 
 # ---------------------------------------------------------------------------
-# 1. Бэкап перед обновлением
+# 1. Ротация старых бэкапов (иначе диск забивается: каждый бэкап — вся панель)
+# ---------------------------------------------------------------------------
+info "Ротация бэкапов: оставляю последние 3"
+ls -1dt "${BACKUP_DIR}"/pre-update-* 2>/dev/null | tail -n +4 | xargs -r rm -rf
+
+# ---------------------------------------------------------------------------
+# 1.5 Бэкап перед обновлением
 # ---------------------------------------------------------------------------
 info "Создаю бэкап: ${BACKUP_PATH}"
 set_status 1 6 "Создание бэкапа..." running
 mkdir -p "${BACKUP_PATH}"
-cp -a "${INSTALL_DIR}/panel" "${BACKUP_PATH}/panel"
+# Панель копируем БЕЗ node_modules и dist (сотни МБ, пересоздаются npm) —
+# бэкап занимает мегабайты вместо гигабайтов
+mkdir -p "${BACKUP_PATH}/panel"
+tar -C "${INSTALL_DIR}" \
+    --exclude='panel/backend/node_modules' \
+    --exclude='panel/frontend/node_modules' \
+    --exclude='panel/frontend/dist' \
+    -cf - panel | tar -C "${BACKUP_PATH}" -xf -
 cp -a "${INSTALL_DIR}/VERSION" "${BACKUP_PATH}/VERSION" 2>/dev/null || true
 cp -a "${CONFIG_DIR}" "${BACKUP_PATH}/etc-tggate"
 cp -a "${DATA_DIR}/website" "${BACKUP_PATH}/website" 2>/dev/null || true
