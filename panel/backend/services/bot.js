@@ -783,12 +783,36 @@ async function start() {
         await ctx.reply(tariffDescription(t), { parse_mode: 'HTML', reply_markup: kb });
     });
 
-    // Покупка: выбор способа (баланс / платёжка / карта админа)
+    // Покупка: web-only тариф — сначала предупреждение про iOS
     bot.callbackQuery(/^buy:(\d+)$/, async (ctx) => {
         const tariff = db.prepare('SELECT * FROM tariffs WHERE id = ? AND enabled = 1').get(Number(ctx.match[1]));
         if (!tariff) return ctx.answerCallbackQuery('Тариф недоступен');
-        await ctx.answerCallbackQuery();
 
+        if (tariff.protocols === 'web') {
+            const kb = new InlineKeyboard()
+                .text('✅ Да, понимаю, продолжить', `buyok:${tariff.id}`).row()
+                .text('⬅️ Выбрать другой тариф', 'tariffs');
+            return ctx.reply(
+                `${tariffDescription(tariff)}\n\n` +
+                `⚠️ <b>Внимание:</b> Web Proxy пока <b>не поддерживается на iPhone (iOS)</b>.\n` +
+                `Если у вас iPhone — выберите тариф с MTProto.\n\nПродолжить?`,
+                { parse_mode: 'HTML', reply_markup: kb }
+            );
+        }
+        await ctx.answerCallbackQuery();
+        return showPurchaseMethods(ctx, tariff);
+    });
+
+    // Подтверждение покупки web-only тарифа
+    bot.callbackQuery(/^buyok:(\d+)$/, async (ctx) => {
+        const tariff = db.prepare('SELECT * FROM tariffs WHERE id = ? AND enabled = 1').get(Number(ctx.match[1]));
+        if (!tariff) return ctx.answerCallbackQuery('Тариф недоступен');
+        await ctx.answerCallbackQuery();
+        return showPurchaseMethods(ctx, tariff);
+    });
+
+    /** Экран выбора способа оплаты для покупки тарифа. */
+    async function showPurchaseMethods(ctx, tariff) {
         const settings = getBotSettings();
         const providerConfigured = !!(settings.cryptobot_token || (settings.yookassa_shop_id && settings.yookassa_secret_key));
 
@@ -820,7 +844,7 @@ async function start() {
             `${tariffDescription(tariff)}\n\n🧾 Заказ #${paymentId}\n\n💳 <b>Выберите способ оплаты:</b>`,
             { parse_mode: 'HTML', reply_markup: kb }
         );
-    });
+    }
 
     // Покупка с баланса: списание + выдача нового прокси
     bot.callbackQuery(/^paybal:(\d+):(\d+)$/, async (ctx) => {
