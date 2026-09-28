@@ -151,6 +151,8 @@ router.get('/progress', (req, res) => {
 // --- Запустить обновление (опционально на конкретную версию) ---
 router.post('/check', async (req, res, next) => {
     try {
+        // Сбрасываем кэш GitHub, иначе «проверить» покажет старые версии ещё 10 минут
+        db.prepare("DELETE FROM settings WHERE key = 'gh_cache'").run();
         await runUpdateScript('check', null, res);
     } catch (err) { next(err); }
 });
