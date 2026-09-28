@@ -43,6 +43,8 @@ export default function Clients() {
     const [search, setSearch] = useState('');
     const [statusFilter, setStatusFilter] = useState('');
     const [modal, setModal] = useState(null); // null | 'create' | client-объект
+    const [selected, setSelected] = useState([]);
+    const [bulkBusy, setBulkBusy] = useState(false);
     const [qrClient, setQrClient] = useState(null);
     const [connClient, setConnClient] = useState(null); // просмотр подключений клиента
     const [activeMap, setActiveMap] = useState({}); // username -> подключения[]
@@ -154,6 +156,30 @@ export default function Clients() {
         }
     };
 
+    const toggleSelect = (id) => {
+        setSelected((s) => s.includes(id) ? s.filter((x) => x !== id) : [...s, id]);
+    };
+
+    const bulk = async (action) => {
+        let days;
+        if (action === 'renew') {
+            days = parseInt(prompt('На сколько дней продлить выбранных?', '30'), 10);
+            if (!days || days < 1) return;
+        }
+        if (action !== 'renew' && !confirm(`Выбрано ${selected.length} шт. Действие: ${action}. Продолжить?`)) return;
+        setBulkBusy(true);
+        try {
+            const r = await post('/clients/bulk', { ids: selected, action, days });
+            toast.success(`Выполнено для ${r.processed} из ${r.total}`);
+            setSelected([]);
+            load();
+        } catch (e) {
+            toast.error(e.message);
+        } finally {
+            setBulkBusy(false);
+        }
+    };
+
     return (
         <div className="space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -191,6 +217,23 @@ export default function Clients() {
 
             {/* Таблица */}
             <Card className="!p-0 overflow-x-auto">
+                {selected.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-2 p-3 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50">
+                        <span className="text-sm font-medium">Выбрано: {selected.length}</span>
+                        <button className="btn-secondary !min-h-0 !py-1.5 text-xs" disabled={bulkBusy} onClick={() => bulk('renew')}>
+                            ♻️ Продлить
+                        </button>
+                        <button className="btn-secondary !min-h-0 !py-1.5 text-xs" disabled={bulkBusy} onClick={() => bulk('unblock')}>
+                            ✅ Включить
+                        </button>
+                        <button className="btn-danger !min-h-0 !py-1.5 text-xs" disabled={bulkBusy} onClick={() => bulk('block')}>
+                            ⛔ Выключить
+                        </button>
+                        <button className="btn-ghost !min-h-0 !py-1.5 text-xs" onClick={() => setSelected([])}>
+                            Снять выделение
+                        </button>
+                    </div>
+                )}
                 {!clients ? (
                     <div className="p-5 space-y-3">{[...Array(5)].map((_, i) => <Skeleton key={i} className="h-12" />)}</div>
                 ) : clients.length === 0 ? (
@@ -199,6 +242,11 @@ export default function Clients() {
                     <table className="w-full text-sm">
                         <thead>
                             <tr className="text-left text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-700">
+                                <th className="px-4 py-3">
+                                    <input type="checkbox" className="cursor-pointer"
+                                           checked={clients.length > 0 && selected.length === clients.length}
+                                           onChange={(e) => setSelected(e.target.checked ? clients.map((c) => c.id) : [])} />
+                                </th>
                                 <th className="px-4 py-3 font-medium">Пользователь</th>
                                 <th className="px-4 py-3 font-medium">Статус</th>
                                 <th className="px-4 py-3 font-medium">IP сейчас</th>
@@ -213,6 +261,11 @@ export default function Clients() {
                                 const conns = activeMap[c.username] || [];
                                 return (
                                 <tr key={c.id} className="border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                                    <td className="px-4 py-3">
+                                        <input type="checkbox" className="cursor-pointer"
+                                               checked={selected.includes(c.id)}
+                                               onChange={() => toggleSelect(c.id)} />
+                                    </td>
                                     <td className="px-4 py-3">
                                         <button className="font-medium hover:text-primary transition-colors text-left"
                                                 onClick={() => setConnClient(c)}

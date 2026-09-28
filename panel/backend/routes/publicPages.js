@@ -47,6 +47,10 @@ function page(title, body) {
                 text-decoration: none; font-size: 0.9rem; word-break: break-all; }
         .muted { color: #64748b; font-size: 0.8rem; margin-top: 1.5rem; }
         .ok { color: #10b981; } .bad { color: #ef4444; }
+        .sel { width: 100%; padding: 0.6rem; border-radius: 0.5rem; background: #0f172a;
+               color: #e2e8f0; border: 1px solid #334155; margin-bottom: 0.75rem; }
+        .btn.wide { width: 100%; }
+        a { color: #38bdf8; }
     </style>
 </head>
 <body><div class="card">${body}</div></body>
@@ -142,6 +146,85 @@ router.get('/status', publicLimiter, (req, res) => {
         ${line('api', '⚙️ Сервисы')}
         <p class="muted">Проверяется автоматически · обновлено: ${new Date().toLocaleString('ru-RU')}</p>
         <meta http-equiv="refresh" content="60">
+    `));
+});
+
+// --- Веб-кабинет: просмотр и продление без бота (по QR-токену) ---
+router.get('/p/:token([0-9a-f]{16})', publicLimiter, (req, res) => {
+    const client = getClientByToken(req.params.token);
+    if (!client) {
+        return res.status(404).send(page('Не найдено', '<h1>Ссылка недействительна</h1><p class="muted">Обратитесь к администратору</p>'));
+    }
+    const settings = getAll();
+    const links = clientLinks(client, settings.mask_domain);
+    const until = client.expires_at
+        ? new Date(client.expires_at).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' }) + ' МСК'
+        : '∞';
+    const status = client.status === 'active' ? '🟢 активен' : '🔴 не активен';
+
+    let body = `<h1>📦 ${client.username}</h1>
+        <p class="muted">${status} · до ${until}</p>`;
+    if (links.web_https) body += `<p><a class="btn" href="${links.web_https}">🌐 Подключить Web Proxy</a></p>`;
+    if (links.mtproto_https) body += `<p><a class="btn" href="${links.mtproto_https}">🔌 Подключить MTProto</a></p>`;
+
+    const tariffs = db.prepare('SELECT * FROM tariffs WHERE enabled = 1 ORDER BY days').all();
+    if (tariffs.length > 0) {
+        const options = tariffs
+            .map((t) => `<option value="${t.id}">${t.name} — ${t.days} дн. — ${t.price} ${t.currency === 'RUB' ? '₽' : t.currency}</option>`)
+            .join('');
+        body += `
+        <div class="qr-block" style="margin-top:1.5rem">
+            <h3>♻️ Продлить доступ</h3>
+            <form method="POST" action="/p/${req.params.token}/renew">
+                <select name="tariff" class="sel">${options}</select><br>
+                <button class="btn wide" type="submit">Оплатить и продлить</button>
+            </form>
+        </div>`;
+    }
+    body += `<p class="muted"><a href="/status" style="color:inherit">🟢 Статус сервиса</a> · Оплата: CryptoBot / ЮKassa / карта</p>`;
+    res.send(page('Мой прокси', body));
+});
+
+// Оплата продления из веб-кабинета: создаём платёж и уводим на оплату
+router.post('/p/:token([0-9a-f]{16})/renew', publicLimiter, express.urlencoded({ extended: false }), async (req, res) => {
+    const client = getClientByToken(req.params.token);
+    if (!client) return res.status(404).send(page('Не найдено', '<h1>Ссылка недействительна</h1>'));
+
+    const tariff = db.prepare('SELECT * FROM tariffs WHERE id = ? AND enabled = 1').get(Number(req.body?.tariff));
+    if (!tariff) return res.status(400).send(page('Ошибка', '<h1>Тариф недоступен</h1><p class="muted"><a href="javascript:history.back()">← Назад</a></p>'));
+
+    const paymentId = db.prepare(
+        "INSERT INTO payments (tariff_id, amount, currency, provider, status, client_id) VALUES (?, ?, ?, 'manual', 'pending', ?)"
+    ).run(tariff.id, tariff.price, tariff.currency, client.id).lastInsertRowid;
+
+    const settings = getAll();
+    const paymentsService = require('../services/payments');
+
+    try {
+        const pay = await paymentsService.createPaymentUrl({
+            paymentId,
+            tariff: { name: `${tariff.name} (продление ${client.username})`, price: tariff.price, currency: tariff.currency },
+            settings: settings.bot_settings || {},
+        });
+        if (pay?.url) {
+            db.prepare('UPDATE payments SET provider = ? WHERE id = ?').run(pay.provider, paymentId);
+            return res.redirect(pay.url);
+        }
+    } catch (err) {
+        // платёжка недоступна — покажем реквизиты для ручной оплаты
+    }
+
+    // Ручная оплата картой администратора
+    const rows = [];
+    if (settings.pay_card) rows.push(`💳 Карта: <b>${settings.pay_card}</b>`);
+    if (settings.pay_phone) rows.push(`📱 СБП: <b>${settings.pay_phone}</b>`);
+    if (settings.pay_bank) rows.push(`🏦 Банк: <b>${settings.pay_bank}</b>`);
+    res.send(page(`Счёт #${paymentId}`, `
+        <h1>Счёт #${paymentId}</h1>
+        <p>Продление <b>${client.username}</b> — <b>${tariff.price} ${tariff.currency}</b></p>
+        <p>${rows.length ? rows.join('<br>') : '⚠️ Реквизиты не настроены'}</p>
+        <p class="muted">После перевода администратор подтвердит оплату — доступ продлится автоматически.</p>
+        <a class="btn" href="/p/${req.params.token}">⬅️ Назад</a>
     `));
 });
 

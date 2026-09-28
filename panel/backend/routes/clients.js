@@ -375,4 +375,49 @@ router.get('/export/csv', (req, res) => {
     res.send([header, ...lines].join('\n'));
 });
 
+// --- Массовые действия: block / unblock / renew ---
+router.post('/bulk', async (req, res, next) => {
+    try {
+        const schema = z.object({
+            ids: z.array(z.number().int()).min(1).max(500),
+            action: z.enum(['block', 'unblock', 'renew']),
+            days: z.number().int().min(1).max(3650).optional(),
+        });
+        const { ids, action, days } = schema.parse(req.body);
+        let processed = 0;
+
+        for (const id of ids) {
+            const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(id);
+            if (!client) continue;
+            try {
+                if (action === 'block') {
+                    await telemt.disableUser(client.username).catch(() => {});
+                    db.prepare("UPDATE clients SET status = 'blocked' WHERE id = ?").run(id);
+                    processed += 1;
+                } else if (action === 'unblock') {
+                    await telemt.enableUser(client.username).catch(() => {});
+                    // Разблокируем только если доступ ещё не истёк
+                    const expired = client.expires_at && new Date(client.expires_at) < new Date();
+                    db.prepare('UPDATE clients SET status = ? WHERE id = ?').run(expired ? 'expired' : 'active', id);
+                    processed += 1;
+                } else if (action === 'renew' && days) {
+                    const base = client.expires_at && new Date(client.expires_at) > new Date()
+                        ? new Date(client.expires_at) : new Date();
+                    const newExpiry = new Date(base.getTime() + days * 86400000).toISOString();
+                    await telemt.patchUser(client.username, { expiration_rfc3339: newExpiry }).catch(() => {});
+                    db.prepare("UPDATE clients SET expires_at = ?, status = 'active' WHERE id = ?").run(newExpiry, id);
+                    processed += 1;
+                }
+            } catch (e) {
+                logger.warn('Массовое действие не удалось', { id, action, error: e.message });
+            }
+        }
+
+        logger.info('Массовое действие выполнено', { action, processed, total: ids.length });
+        res.json({ ok: true, processed, total: ids.length });
+    } catch (err) {
+        next(err);
+    }
+});
+
 module.exports = router;
