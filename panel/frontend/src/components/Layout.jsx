@@ -56,7 +56,10 @@ export default function Layout() {
                 parts.push(`🔌 Telemt: ${s.telemt.latest} (у вас ${s.telemt.current})`);
             }
             if (parts.length) {
-                toast.info(`Доступно обновление: ${parts.join(' · ')} — раздел «Обновления»`);
+                toast.info(`Доступно обновление: ${parts.join(' · ')}`, {
+                    duration: 10000,
+                    onClick: () => navigate('/updates'),
+                });
             }
         }).catch(() => {});
     }, []);

@@ -122,7 +122,9 @@ export function Toasts() {
         <div className="fixed bottom-4 right-4 z-[100] flex flex-col gap-2 max-w-sm">
             {toasts.map((t) => (
                 <div key={t.id}
-                     className="card !p-3 flex items-center gap-2 shadow-lg animate-[slideIn_0.2s_ease-out]">
+                     className={`card !p-3 flex items-center gap-2 shadow-lg animate-[slideIn_0.2s_ease-out] ${t.onClick ? 'cursor-pointer hover:brightness-110' : ''}`}
+                     onClick={t.onClick}
+                     title={t.onClick ? 'Нажмите, чтобы перейти' : undefined}>
                     {icons[t.type]}
                     <span className="text-sm">{t.message}</span>
                 </div>

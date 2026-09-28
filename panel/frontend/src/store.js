@@ -37,19 +37,19 @@ export const useThemeStore = create((set) => ({
 let toastId = 0;
 export const useToastStore = create((set) => ({
     toasts: [],
-    /** Показать уведомление. type: success | error | info */
-    push: (type, message) => {
+    /** Показ уведомления. type: success | error | info; opts: { duration, onClick } */
+    push: (type, message, opts = {}) => {
         const id = ++toastId;
-        set((s) => ({ toasts: [...s.toasts, { id, type, message }] }));
+        set((s) => ({ toasts: [...s.toasts, { id, type, message, onClick: opts.onClick }] }));
         setTimeout(() => {
             set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) }));
-        }, 4000);
+        }, opts.duration || 4000);
     },
 }));
 
-/** Короткие хелперы для тостов */
+/** Хелпер для тостов: type | message | opts */
 export const toast = {
-    success: (msg) => useToastStore.getState().push('success', msg),
-    error: (msg) => useToastStore.getState().push('error', msg),
-    info: (msg) => useToastStore.getState().push('info', msg),
+    success: (msg, opts) => useToastStore.getState().push('success', msg, opts),
+    error: (msg, opts) => useToastStore.getState().push('error', msg, opts),
+    info: (msg, opts) => useToastStore.getState().push('info', msg, opts),
 };
