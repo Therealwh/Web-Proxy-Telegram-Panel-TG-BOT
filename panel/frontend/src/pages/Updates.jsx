@@ -6,14 +6,17 @@ import { toast } from '../store';
 import { Card, Field, Skeleton, formatDate } from '../components/ui';
 
 /** Живой статус-бар обновления (данные из /updates/progress) */
-function ProgressCard({ progress }) {
+function ProgressCard({ progress, seenRunning }) {
     if (!progress) return null;
     const running = progress.status === 'running';
     const failed = progress.status === 'failed';
-    // Завершённые обновления показываем 12 часов, потом скрываем
-    if (!running && !failed) {
-        const age = Date.now() - new Date(progress.updated_at).getTime();
-        if (!Number.isFinite(age) || age > 12 * 3600 * 1000) return null;
+    // Успешное обновление показываем только если оно происходило при открытой
+    // странице (итог уже был в тосте) — иначе плашка висит после F5.
+    // Неудавшееся — показываем в течение часа, чтобы пользователь не пропустил.
+    if (!running && !seenRunning) {
+        if (!failed) return null;
+        const fAge = Date.now() - new Date(progress.updated_at).getTime();
+        if (!Number.isFinite(fAge) || fAge > 60 * 60 * 1000) return null;
     }
     const percent = progress.total
         ? Math.min(100, Math.round((progress.step / progress.total) * 100))
@@ -120,6 +123,7 @@ export default function Updates() {
     const [busy, setBusy] = useState('');
     const [relLoading, setRelLoading] = useState(false);
     const [progress, setProgress] = useState(null);
+    const [sawRunning, setSawRunning] = useState(false);
     const prevProgressStatus = useRef('');
 
     const load = () => {
@@ -132,7 +136,11 @@ export default function Updates() {
     useEffect(() => {
         let stop = false;
         const tick = () => get('/updates/progress')
-            .then((d) => { if (!stop) setProgress(d.progress); })
+            .then((d) => {
+                if (stop) return;
+                setProgress(d.progress);
+                if (d.progress?.status === 'running') setSawRunning(true);
+            })
             .catch(() => {});
         tick();
         const timer = setInterval(tick, 2500);
@@ -204,7 +212,7 @@ export default function Updates() {
                 </button>
             </div>
 
-            <ProgressCard progress={progress} />
+            <ProgressCard progress={progress} seenRunning={sawRunning} />
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                 <UpdateCard

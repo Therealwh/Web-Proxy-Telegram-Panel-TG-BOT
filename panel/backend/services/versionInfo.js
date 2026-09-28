@@ -191,4 +191,10 @@ async function getAvailableReleases(component) {
     return getReleases(apiUrl, 10);
 }
 
-module.exports = { getStatus, getAvailableReleases, getPanelVersion };
+/** Сброс кэша статуса (вызывается при «Проверить сейчас»). */
+function clearStatusCache() {
+    cache = null;
+    cacheTime = 0;
+}
+
+module.exports = { getStatus, getAvailableReleases, getPanelVersion, clearStatusCache };
