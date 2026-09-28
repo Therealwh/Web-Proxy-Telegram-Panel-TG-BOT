@@ -110,6 +110,7 @@ router.get('/qrimg/:token([0-9a-f]{16})/:type.png', publicLimiter, async (req, r
 
 // --- Публичная страница статуса ---
 router.get('/status', publicLimiter, (req, res) => {
+    // Аптайм за 30 дней по каждому сервису
     const rows = db.prepare(
         `SELECT service, COUNT(*) AS total, SUM(ok) AS ok_count
          FROM uptime_checks WHERE created_at >= datetime('now', '-30 days') GROUP BY service`
@@ -123,30 +124,115 @@ router.get('/status', publicLimiter, (req, res) => {
         if (!(r.service in last)) last[r.service] = r.ok;
     }
 
-    const line = (service, label) => {
+    // Полоски аптайма по дням (30 дней, все сервисы вместе)
+    const daily = db.prepare(
+        `SELECT date(created_at) AS d, ROUND(100.0 * SUM(ok) / COUNT(*)) AS pct
+         FROM uptime_checks WHERE created_at >= datetime('now', '-30 days')
+         GROUP BY d ORDER BY d`
+    ).all();
+    const pctColor = (p) => (p >= 99 ? '#10b981' : p >= 95 ? '#f59e0b' : '#ef4444');
+    const pctText = (p) => (p >= 99 ? 'отлично' : p >= 95 ? 'нормально' : 'со сбоями');
+    const bars = daily.map((d) =>
+        `<div title="${d.d}: ${d.pct}%" style="flex:1;height:34px;border-radius:3px;background:${pctColor(d.pct)};min-width:3px"></div>`
+    ).join('');
+
+    const serviceRow = (service, label) => {
         const row = rows.find((r) => r.service === service);
-        if (!row || row.total === 0) return `<p>${label}: <span class="muted">нет данных</span></p>`;
-        const pct = Math.round((row.ok_count / row.total) * 100);
         const now = last[service];
-        const nowCls = now === undefined ? 'muted' : now ? 'ok' : 'bad';
-        const nowText = now === undefined ? '…' : now ? '🟢 работает' : '🔴 сбой';
-        const cls = pct >= 99 ? 'ok' : 'bad';
-        return `<p>${label}: ${nowText} <span class="muted">·</span> <span class="${cls}">${pct}% за 30 дней</span></p>`;
+        const up = now === 1;
+        let right = '<span style="color:#64748b">нет данных</span>';
+        if (row && row.total > 0) {
+            const pct = Math.round((row.ok_count / row.total) * 100);
+            right = `<span style="color:${pctColor(pct)};font-weight:600">${pct}%</span> <span style="color:#64748b">аптайм 30 дней</span>`;
+        }
+        const dot = now === undefined ? '#64748b' : up ? '#10b981' : '#ef4444';
+        const state = now === undefined ? '…' : up ? '<span style="color:#10b981">Работает</span>' : '<span style="color:#ef4444">Сбой</span>';
+        return `<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 0;border-bottom:1px solid #1e293b">
+            <div style="display:flex;align-items:center;gap:10px"><span style="width:10px;height:10px;border-radius:50%;background:${dot};display:inline-block"></span><b>${label}</b></div>
+            <div style="display:flex;align-items:center;gap:10px;font-size:0.9rem">${state}<span style="color:#475569">·</span>${right}</div>
+        </div>`;
     };
 
     const allOk = ['web', 'mtproto'].every((s) => last[s] === 1) || Object.keys(last).length === 0;
     const headline = allOk
-        ? '<h1><span class="ok">🟢 Все системы работают</span></h1>'
-        : '<h1><span class="bad">🔴 Наблюдаются сбои</span></h1>';
+        ? '<span style="color:#10b981">🟢 Все системы работают</span>'
+        : '<span style="color:#ef4444">🔴 Наблюдаются сбои</span>';
 
-    res.send(page('Статус сервиса', `
-        ${headline}
-        ${line('web', '🌐 Web Proxy')}
-        ${line('mtproto', '🔌 MTProto')}
-        ${line('api', '⚙️ Сервисы')}
-        <p class="muted">Проверяется автоматически · обновлено: ${new Date().toLocaleString('ru-RU')}</p>
-        <meta http-equiv="refresh" content="60">
-    `));
+    // Информация о посетителе
+    const ip = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.ip || '—';
+    let country = '—';
+    try {
+        const geo = require('../services/geo');
+        const g = geo.lookupMany([ip]);
+        country = g[ip]?.country || '—';
+    } catch { /* geo недоступен */ }
+    const ua = String(req.headers['user-agent'] || '');
+    const s = ua.toLowerCase();
+    const os = s.includes('iphone') || s.includes('ipad') ? 'iOS'
+        : s.includes('android') ? 'Android'
+        : s.includes('mac os') || s.includes('macintosh') ? 'macOS'
+        : s.includes('windows') ? 'Windows'
+        : s.includes('linux') ? 'Linux' : '—';
+    const browser = s.includes('edg/') ? 'Edge' : s.includes('opr/') || s.includes('opera') ? 'Opera'
+        : s.includes('chrome') ? 'Chrome' : s.includes('firefox') ? 'Firefox'
+        : s.includes('safari') ? 'Safari' : '—';
+
+    const updated = new Date().toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' });
+
+    res.send(`<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex, nofollow">
+    <meta http-equiv="refresh" content="60">
+    <title>Статус сервиса</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { min-height: 100vh; font-family: 'Segoe UI', system-ui, sans-serif;
+               background: linear-gradient(160deg, #0b1220, #0f172a 60%, #131c2e);
+               color: #e2e8f0; display: flex; align-items: center; justify-content: center; padding: 24px 16px; }
+        .wrap { width: 100%; max-width: 640px; }
+        .hero { text-align: center; margin-bottom: 28px; }
+        .hero h1 { font-size: 1.6rem; margin-bottom: 6px; }
+        .hero p { color: #64748b; font-size: 0.85rem; }
+        .card { background: #101a2c; border: 1px solid #1e293b; border-radius: 16px; padding: 22px; margin-bottom: 18px; }
+        .card h3 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.08em; color: #64748b; margin-bottom: 8px; }
+        .bars { display: flex; gap: 3px; align-items: flex-end; margin-top: 10px; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 18px; font-size: 0.95rem; }
+        .grid div { color: #94a3b8; } .grid b { color: #e2e8f0; font-weight: 600; }
+        code.ip { background: #0b1220; padding: 3px 10px; border-radius: 6px; user-select: all; font-size: 0.9rem; }
+        .foot { text-align: center; color: #475569; font-size: 0.78rem; margin-top: 16px; }
+    </style>
+</head>
+<body><div class="wrap">
+    <div class="hero">
+        <h1>${headline}</h1>
+        <p>Проверяется автоматически каждые 5 минут · обновлено: ${updated}</p>
+    </div>
+
+    <div class="card">
+        <h3>Сервисы</h3>
+        ${serviceRow('web', '🌐 Web Proxy')}
+        ${serviceRow('mtproto', '🔌 MTProto')}
+        ${serviceRow('api', '⚙️ Инфраструктура')}
+        <h3 style="margin-top:18px">Аптайм за 30 дней</h3>
+        <div class="bars">${bars || '<span style="color:#64748b;font-size:0.85rem">Данные собираются…</span>'}</div>
+    </div>
+
+    <div class="card">
+        <h3>Ваше подключение</h3>
+        <div class="grid">
+            <div>IP-адрес</div><div><code class="ip">${ip}</code></div>
+            <div>Страна</div><div><b>${country}</b></div>
+            <div>Устройство</div><div><b>${os}</b></div>
+            <div>Браузер</div><div><b>${browser}</b></div>
+        </div>
+    </div>
+
+    <div class="foot">Страница обновляется автоматически каждую минуту</div>
+</div></body>
+</html>`);
 });
 
 // --- Веб-кабинет: просмотр и продление без бота (по QR-токену) ---
