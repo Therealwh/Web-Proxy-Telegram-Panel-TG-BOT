@@ -215,15 +215,16 @@ router.post('/p/:token([0-9a-f]{16})/renew', publicLimiter, express.urlencoded({
     }
 
     // Ручная оплата картой администратора
+    const code = (v) => `<code style="background:#0f172a;padding:2px 8px;border-radius:6px;user-select:all">${v}</code>`;
     const rows = [];
-    if (settings.pay_card) rows.push(`💳 Карта: <b>${settings.pay_card}</b>`);
-    if (settings.pay_phone) rows.push(`📱 СБП: <b>${settings.pay_phone}</b>`);
-    if (settings.pay_bank) rows.push(`🏦 Банк: <b>${settings.pay_bank}</b>`);
+    if (settings.pay_card) rows.push(`💳 Карта: ${code(settings.pay_card)}`);
+    if (settings.pay_phone) rows.push(`📱 СБП: ${code(settings.pay_phone)}`);
+    if (settings.pay_bank) rows.push(`🏦 Банк: ${code(settings.pay_bank)}`);
     res.send(page(`Счёт #${paymentId}`, `
         <h1>Счёт #${paymentId}</h1>
         <p>Продление <b>${client.username}</b> — <b>${tariff.price} ${tariff.currency}</b></p>
         <p>${rows.length ? rows.join('<br>') : '⚠️ Реквизиты не настроены'}</p>
-        <p class="muted">После перевода администратор подтвердит оплату — доступ продлится автоматически.</p>
+        <p class="muted">Нажмите на реквизиты, чтобы скопировать. После перевода администратор подтвердит оплату — доступ продлится автоматически.</p>
         <a class="btn" href="/p/${req.params.token}">⬅️ Назад</a>
     `));
 });

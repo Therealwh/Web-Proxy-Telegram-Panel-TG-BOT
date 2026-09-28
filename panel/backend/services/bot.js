@@ -426,14 +426,15 @@ function subscribeScreen() {
 async function sendManualInstructions(ctx, paymentId, amountText) {
     const s = getBotSettings();
     const rows = [];
-    if (s.pay_card) rows.push(`💳 Карта: <b>${s.pay_card}</b>`);
-    if (s.pay_phone) rows.push(`📱 Телефон (СБП): <b>${s.pay_phone}</b>`);
-    if (s.pay_bank) rows.push(`🏦 Банк: <b>${s.pay_bank}</b>`);
-    const requisites = rows.length > 0
-        ? rows.join('\n')
-        : '⚠️ Реквизиты не заданы — заполните их в панели (Платёжные системы).';
+    if (s.pay_card) rows.push(`💳 Карта: <code>${s.pay_card}</code>`);
+    if (s.pay_phone) rows.push(`📱 Телефон (СБП): <code>${s.pay_phone}</code>`);
+    if (s.pay_bank) rows.push(`🏦 Банк: <code>${s.pay_bank}</code>`);
 
     const kb = new InlineKeyboard().text('✅ Я оплатил', `paid:${paymentId}`);
+    const requisites = rows.length > 0
+        ? rows.join('\n') + '\n\n<i>(нажмите на реквизиты — скопируются)</i>'
+        : '⚠️ Реквизиты не заданы — заполните их в панели (Платёжные системы).';
+
     const text =
         `🏦 <b>Оплата напрямую администратору</b>\n\n` +
         `🧾 Заказ: <b>#${paymentId}</b>${amountText ? `\n💵 Сумма: <b>${amountText}</b>` : ''}\n\n` +
@@ -464,8 +465,11 @@ async function createAndSendDeposit(ctx, amount) {
         });
 
         if (pay) {
+            const label = pay.provider === 'cryptobot'
+                ? '🪙 Оплатить CryptoBot (криптовалюта)'
+                : '💳 Оплатить ЮKassa';
             const kb = new InlineKeyboard()
-                .url('💳 Оплатить онлайн', pay.url).row()
+                .url(label, pay.url).row()
                 .text('🏦 Карта админа', `manualpay:${paymentId}`);
             await ctx.reply(`🧾 Счёт #${paymentId} на ${amount} ${currencySign(settings.currency)}.\nВыберите способ оплаты:`, { reply_markup: kb });
         } else {
