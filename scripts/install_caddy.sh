@@ -43,16 +43,3 @@ systemctl reload caddy
 
 echo "[Caddy] Конфигурация применена"
 
-# Дополнительный домен статус-страницы (опционально: STATUS_DOMAIN в install.env)
-if [[ -n "${STATUS_DOMAIN:-}" ]]; then
-    cat >> /etc/caddy/Caddyfile <<STATUSBLOCK
-
-${STATUS_DOMAIN} {
-	reverse_proxy 127.0.0.1:${PANEL_PORT}
-	log {
-		level ERROR
-	}
-}
-STATUSBLOCK
-    echo "[Caddy] Добавлен статус-домен: ${STATUS_DOMAIN}"
-fi
