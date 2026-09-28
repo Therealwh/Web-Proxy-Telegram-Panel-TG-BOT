@@ -23,12 +23,31 @@ let prevKeys = new Set();
 async function pollOnce() {
     const snapshot = new Map(); // key -> record
 
-    // MTProto: активные source-IP по пользователям
+    // WEB: активные сессии (поле клиента в Telemt — client_ip)
+    const webPairs = new Set(); // "user|ip" — чтобы не дублировать как mtproto
+    try {
+        const sessions = await telemt.getWebSessions({ limit: 200 });
+        const list = Array.isArray(sessions) ? sessions : sessions?.sessions || [];
+        for (const s of list) {
+            const ip = s.client_ip || s.ip;
+            if (!ip || !s.user) continue;
+            webPairs.add(`${s.user}|${ip}`);
+            snapshot.set(`${s.user}|${ip}|web`, {
+                username: s.user, ip, protocol: 'web',
+                status: 'ok', user_agent: s.user_agent || null,
+                created_at: new Date().toISOString(),
+            });
+        }
+    } catch { /* WEB-рантайм недоступен */ }
+
+    // MTProto: активные source-IP по пользователям (эндпоинт не различает
+    // транспорт — IP, уже виденные как web-сессии, помечаем только web)
     try {
         const users = await telemt.getUsersActiveIps().catch(() => []);
         const list = Array.isArray(users) ? users : users?.users || [];
         for (const u of list) {
             for (const ip of u.active_ips || []) {
+                if (webPairs.has(`${u.username}|${ip}`)) continue;
                 snapshot.set(`${u.username}|${ip}|mtproto`, {
                     username: u.username, ip, protocol: 'mtproto',
                     status: 'ok', user_agent: null,
@@ -37,20 +56,6 @@ async function pollOnce() {
             }
         }
     } catch { /* Telemt недоступен */ }
-
-    // WEB: активные сессии
-    try {
-        const sessions = await telemt.getWebSessions({ limit: 200 });
-        const list = Array.isArray(sessions) ? sessions : sessions?.sessions || [];
-        for (const s of list) {
-            if (!s.ip || !s.user) continue;
-            snapshot.set(`${s.user}|${s.ip}|web`, {
-                username: s.user, ip: s.ip, protocol: 'web',
-                status: 'ok', user_agent: s.user_agent || null,
-                created_at: new Date().toISOString(),
-            });
-        }
-    } catch { /* WEB-рантайм недоступен */ }
 
     // Дельта: новые ключи = новые подключения
     const insert = db.prepare(
