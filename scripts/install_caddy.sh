@@ -38,6 +38,9 @@ fi
 # Проверка корректности Caddyfile перед применением
 caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
 
+# Применяем конфиг: без этого Caddy продолжит работать по старому
+systemctl reload caddy
+
 echo "[Caddy] Конфигурация применена"
 
 # Дополнительный домен статус-страницы (опционально: STATUS_DOMAIN в install.env)
