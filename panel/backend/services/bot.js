@@ -276,6 +276,9 @@ async function issueAccessFor(tgId, tariff, paymentId) {
         `📦 Прокси: <b>${username}</b>\n📅 Действует до: <b>${fmtMSK(expires)}</b>\n\n`;
     if (links.web_https) text += `🌐 <b>Web Proxy</b> (нажми — подключится сам):\n${links.web_https}\n\n`;
     if (links.mtproto_https) text += `🔌 <b>MTProto</b>:\n${links.mtproto_https}\n\n`;
+    if (links.web_https) {
+        text += `⚠️ <b>Важно:</b> Web Proxy на iPhone (iOS) пока может не подключаться — на Apple-устройствах используйте MTProto-ссылку.\n\n`;
+    }
 
     // Веб-кабинет: просмотр и продление без бота (ссылка постоянная)
     try {
