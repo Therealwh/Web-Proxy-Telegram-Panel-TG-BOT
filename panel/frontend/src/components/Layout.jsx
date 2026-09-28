@@ -6,7 +6,8 @@ import {
     KeyRound, Bot, RefreshCw, Code2, Moon, Sun, LogOut, Menu, X,
 } from 'lucide-react';
 import { useAuthStore, useThemeStore } from '../store';
-import { post } from '../api';
+import { get, post } from '../api';
+import { toast } from '../store';
 import { Toasts } from './ui';
 
 // Пункты меню
@@ -33,6 +34,31 @@ export default function Layout() {
     // Версия панели из API (всегда актуальная)
     useEffect(() => {
         fetch('/api/health').then((r) => r.json()).then((d) => setVersion(d.version || '')).catch(() => {});
+    }, []);
+
+    // Уведомление о доступных обновлениях при входе в панель
+    useEffect(() => {
+        const newer = (latest, current) => {
+            if (!latest || !current) return false;
+            const p = (s) => String(s).replace(/^v/, '').split('.').map((n) => parseInt(n, 10) || 0);
+            for (let i = 0; i < 3; i++) {
+                if ((p(latest)[i] || 0) > (p(current)[i] || 0)) return true;
+                if ((p(latest)[i] || 0) < (p(current)[i] || 0)) return false;
+            }
+            return false;
+        };
+        get('/updates/status').then((s) => {
+            const parts = [];
+            if (newer(s.panel?.latest, s.panel?.current)) {
+                parts.push(`🖥️ Панель: ${s.panel.latest} (у вас ${s.panel.current})`);
+            }
+            if (newer(s.telemt?.latest, s.telemt?.current)) {
+                parts.push(`🔌 Telemt: ${s.telemt.latest} (у вас ${s.telemt.current})`);
+            }
+            if (parts.length) {
+                toast.info(`Доступно обновление: ${parts.join(' · ')} — раздел «Обновления»`);
+            }
+        }).catch(() => {});
     }, []);
 
     const logout = async () => {
