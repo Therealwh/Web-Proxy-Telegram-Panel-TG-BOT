@@ -108,22 +108,40 @@ router.get('/qrimg/:token([0-9a-f]{16})/:type.png', publicLimiter, async (req, r
 router.get('/status', publicLimiter, (req, res) => {
     const rows = db.prepare(
         `SELECT service, COUNT(*) AS total, SUM(ok) AS ok_count
-         FROM uptime_checks WHERE created_at >= datetime('now', '-1 day') GROUP BY service`
+         FROM uptime_checks WHERE created_at >= datetime('now', '-30 days') GROUP BY service`
     ).all();
+
+    // Текущее состояние: последняя проверка по каждому сервису
+    const last = {};
+    for (const r of db.prepare(
+        'SELECT service, ok FROM uptime_checks ORDER BY id DESC LIMIT 12'
+    ).all()) {
+        if (!(r.service in last)) last[r.service] = r.ok;
+    }
 
     const line = (service, label) => {
         const row = rows.find((r) => r.service === service);
         if (!row || row.total === 0) return `<p>${label}: <span class="muted">нет данных</span></p>`;
         const pct = Math.round((row.ok_count / row.total) * 100);
+        const now = last[service];
+        const nowCls = now === undefined ? 'muted' : now ? 'ok' : 'bad';
+        const nowText = now === undefined ? '…' : now ? '🟢 работает' : '🔴 сбой';
         const cls = pct >= 99 ? 'ok' : 'bad';
-        return `<p>${label}: <span class="${cls}">${pct}% доступности (24ч)</span></p>`;
+        return `<p>${label}: ${nowText} <span class="muted">·</span> <span class="${cls}">${pct}% за 30 дней</span></p>`;
     };
 
+    const allOk = ['web', 'mtproto'].every((s) => last[s] === 1) || Object.keys(last).length === 0;
+    const headline = allOk
+        ? '<h1><span class="ok">🟢 Все системы работают</span></h1>'
+        : '<h1><span class="bad">🔴 Наблюдаются сбои</span></h1>';
+
     res.send(page('Статус сервиса', `
-        <h1>Статус сервиса</h1>
+        ${headline}
         ${line('web', '🌐 Web Proxy')}
         ${line('mtproto', '🔌 MTProto')}
-        <p class="muted">Обновлено: ${new Date().toLocaleString('ru-RU')}</p>
+        ${line('api', '⚙️ Сервисы')}
+        <p class="muted">Проверяется автоматически · обновлено: ${new Date().toLocaleString('ru-RU')}</p>
+        <meta http-equiv="refresh" content="60">
     `));
 });
 

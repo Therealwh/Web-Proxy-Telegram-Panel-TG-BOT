@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import {
-    LayoutDashboard, Users, ScrollText, Settings, QrCode, Globe,
+    LayoutDashboard, Users, BarChart3, ScrollText, Settings, QrCode, Globe,
     KeyRound, Bot, RefreshCw, Code2, Moon, Sun, LogOut, Menu, X,
 } from 'lucide-react';
 import { useAuthStore, useThemeStore } from '../store';
@@ -14,6 +14,7 @@ import { Toasts } from './ui';
 const NAV = [
     { to: '/', icon: LayoutDashboard, label: 'Дашборд' },
     { to: '/clients', icon: Users, label: 'Клиенты' },
+    { to: '/sales', icon: BarChart3, label: 'Продажи' },
     { to: '/logs', icon: ScrollText, label: 'Живые логи' },
     { to: '/qr', icon: QrCode, label: 'QR-коды' },
     { to: '/website', icon: Globe, label: 'Сайт-заглушка' },

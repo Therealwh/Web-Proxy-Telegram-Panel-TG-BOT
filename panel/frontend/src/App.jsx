@@ -9,6 +9,7 @@ import { Skeleton } from './components/ui';
 // Ленивая загрузка страниц (code splitting)
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const Clients = lazy(() => import('./pages/Clients'));
+const Sales = lazy(() => import('./pages/Sales'));
 const Logs = lazy(() => import('./pages/Logs'));
 const Settings = lazy(() => import('./pages/Settings'));
 const QRGenerator = lazy(() => import('./pages/QRGenerator'));
@@ -40,6 +41,7 @@ export default function App() {
             <Route element={<Protected><Layout /></Protected>}>
                 <Route index element={<Suspense fallback={PageLoader}><Dashboard /></Suspense>} />
                 <Route path="clients" element={<Suspense fallback={PageLoader}><Clients /></Suspense>} />
+                <Route path="sales" element={<Suspense fallback={PageLoader}><Sales /></Suspense>} />
                 <Route path="logs" element={<Suspense fallback={PageLoader}><Logs /></Suspense>} />
                 <Route path="qr" element={<Suspense fallback={PageLoader}><QRGenerator /></Suspense>} />
                 <Route path="website" element={<Suspense fallback={PageLoader}><Website /></Suspense>} />

@@ -36,6 +36,7 @@ const apiKeysModule = require('./routes/apiKeys');
 const apiV1Router = require('./routes/apiV1');
 const paymentsRouter = require('./routes/payments');
 const updatesRouter = require('./routes/updates');
+const salesRouter = require('./routes/sales');
 const publicPagesRouter = require('./routes/publicPages');
 const openapiSpec = require('./public-api/docs/openapi');
 
@@ -115,6 +116,7 @@ app.use('/api/website', requireAuth, csrfProtection, audit(db), websiteRouter);
 app.use('/api/bot', requireAuth, csrfProtection, audit(db), botRouter);
 app.use('/api/api-keys', requireAuth, csrfProtection, audit(db), apiKeysModule.router);
 app.use('/api/updates', requireAuth, csrfProtection, audit(db), updatesRouter);
+app.use('/api/sales', requireAuth, salesRouter);
 app.use('/api/payments', paymentsRouter.router); // внутри: вебхуки публичны, админское — JWT
 
 // Публичный API v1 (по API-ключам). Префикс /panel-api — потому что
