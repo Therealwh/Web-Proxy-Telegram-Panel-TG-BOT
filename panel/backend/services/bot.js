@@ -535,9 +535,31 @@ async function start() {
 
     bot = new Bot(botSettings.bot_token);
 
-    // ═══ 0. УЧЁТ ПОЛЬЗОВАТЕЛЕЙ — раньше всех (в том числе без подписки) ═══
+    // ═══ 0. УЧЁТ ПОЛЬЗОВАТЕЛЕЙ + ЗАХВАТ РЕФЕРАЛОВ — раньше всех (до гейта подписки!) ═══
     bot.use(async (ctx, next) => {
         const from = ctx.from;
+
+        // Реферальный переход: ловим ?start=ref_XXXX до гейта подписки,
+        // иначе метка терялась у неподписанных новичков
+        try {
+            if (ctx.payload && String(ctx.payload).startsWith('ref_') && from && !from.is_bot) {
+                const refTgId = Number(String(ctx.payload).slice(4));
+                if (refTgId && refTgId !== from.id && !refPending.has(from.id)) {
+                    const referrer = db.prepare('SELECT id FROM clients WHERE telegram_id = ?').get(refTgId);
+                    if (referrer) {
+                        refPending.set(from.id, referrer.id);
+                        db.prepare(
+                            'INSERT INTO referral_pending (telegram_id, referrer_id) VALUES (?, ?) ' +
+                            'ON CONFLICT(telegram_id) DO UPDATE SET referrer_id = excluded.referrer_id'
+                        ).run(from.id, referrer.id);
+                        logger.info('Реферал: переход зафиксирован', { tgId: from.id, referrer: referrer.id });
+                    }
+                }
+            }
+        } catch (e) {
+            logger.warn('Реферал: ошибка захвата перехода', { error: e.message });
+        }
+
         if (from && !from.is_bot) {
             try {
                 db.prepare(
