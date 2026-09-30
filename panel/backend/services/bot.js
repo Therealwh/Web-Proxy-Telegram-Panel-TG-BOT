@@ -93,6 +93,7 @@ function tariffsKeyboard() {
     }
     kb.text('📱 Мой доступ', 'my').row();
     kb.text('💬 Поддержка', 'support').row();
+    if (settings.status_url) kb.url('🟢 Статус сервиса', settings.status_url).row();
     for (const b of settings.custom_buttons || []) {
         if (b.enabled !== false && b.name && b.url) kb.url(b.name.slice(0, 64), b.url).row();
     }
@@ -287,6 +288,8 @@ async function issueAccessFor(tgId, tariff, paymentId) {
         const wToken = qrTokens.ensureQrToken(client.id);
         if (wToken) text += `🌐 <b>Личный кабинет в вебе</b> (работает всегда):\nhttps://${config.domain}/p/${wToken}\n\n`;
     } catch { /* не критично */ }
+
+    if (settings.status_url) text += `🟢 Статус сервиса: ${settings.status_url}\n`;
 
     text += `💡 Управление прокси — в разделе «📱 Личный кабинет».`;
 
@@ -662,9 +665,11 @@ async function start() {
         );
     });
 
-    bot.hears('🛟 Поддержка', (ctx) =>
-        ctx.reply(`🛟 <b>Поддержка</b>\n\nПо любым вопросам пишите:\n👤 ${SUPPORT_USERNAME}`, { parse_mode: 'HTML' })
-    );
+    bot.hears('🛟 Поддержка', (ctx) => {
+        const statusUrl = getBotSettings().status_url;
+        const statusLine = statusUrl ? `\n\n🟢 <a href="${statusUrl}">Проверить, работает ли сервис</a>` : '';
+        ctx.reply(`🛟 <b>Поддержка</b>\n\nПо любым вопросам пишите:\n👤 ${SUPPORT_USERNAME}${statusLine}`, { parse_mode: 'HTML' });
+    });
 
     bot.hears('👑 Админ-панель', async (ctx) => {
         if (!isAdmin(ctx)) {

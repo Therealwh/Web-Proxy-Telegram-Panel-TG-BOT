@@ -39,6 +39,8 @@ router.put('/settings', async (req, res, next) => {
             // Обязательная подписка на канал
             channel_username: z.string().max(64).regex(/^@?[A-Za-z0-9_]{4,64}$/, 'Юзернейм канала: @name').nullable().optional(),
             channel_required: z.boolean().optional(),
+            // Ссылка на статус-страницу (кнопка в боте)
+            status_url: z.string().max(256).nullable().optional(),
             // Кастомные кнопки в боте
             custom_buttons: z.array(z.object({
                 name: z.string().min(1).max(64),

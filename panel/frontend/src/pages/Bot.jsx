@@ -311,6 +311,12 @@ export default function Bot() {
                         <textarea className="input min-h-[100px]" value={settings.welcome_text ?? ''}
                                   onChange={(e) => setSettings({ ...settings, welcome_text: e.target.value })} />
                     </Field>
+                    <Field label="🟢 Ссылка на статус-страницу"
+                           hint="Кнопка «Статус сервиса» в боте: меню тарифов, поддержка, сообщение после покупки. Пусто — кнопки нет">
+                        <input className="input font-mono" placeholder="https://status.vpstg.run/status"
+                               value={settings.status_url ?? ''}
+                               onChange={(e) => setSettings({ ...settings, status_url: e.target.value })} />
+                    </Field>
                     <div className="space-y-3">
                         <Toggle label="Бот включён" checked={!!settings.enabled}
                                 onChange={(v) => setSettings({ ...settings, enabled: v })} />
