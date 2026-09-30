@@ -142,12 +142,23 @@ async function cleanupTestClients() {
         try {
             await telemt.deleteUser(client.username).catch(async (e) => {
                 // Пользователя могли удалить вручную из Telemt — тогда просто чистим базу
-                if (!/not found|404/i.test(e.message)) throw e;
+                if (/404|not found|not_found|no such/i.test(e.message)) return;
+                // Возможно, мешает выключенное состояние — включаем и удаляем повторно
+                await telemt.enableUser(client.username).catch(() => {});
+                return telemt.deleteUser(client.username);
             });
             db.prepare('DELETE FROM clients WHERE id = ?').run(client.id);
             logger.info('Тестовый клиент удалён', { username: client.username });
         } catch (err) {
-            logger.warn('Не удалось удалить тестового клиента', { username: client.username });
+            // Telemt недоступен/упёрлось — повторим в следующий час;
+            // старше 7 дней — удаляем из базы принудительно (в Telemt срок всё равно истёк)
+            const ageDays = (Date.now() - new Date(client.expires_at).getTime()) / 86400000;
+            if (ageDays > 7) {
+                db.prepare('DELETE FROM clients WHERE id = ?').run(client.id);
+                logger.warn('Тестовый клиент удалён из базы принудительно', { username: client.username, error: err.message });
+            } else {
+                logger.warn('Не удалось удалить тестового клиента — повторю через час', { username: client.username, error: err.message });
+            }
         }
     }
 }
