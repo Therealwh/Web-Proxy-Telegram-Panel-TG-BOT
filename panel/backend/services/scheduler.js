@@ -138,15 +138,21 @@ async function cleanupTestClients() {
            AND expires_at < datetime('now', '-24 hours')`
     ).all();
     const telemt = require('./telemtApi');
+    const { syncWebProfiles } = require('./webProfiles');
     for (const client of rows) {
         try {
+            // 1. Убираем WEB-профиль ДО удаления пользователя в Telemt,
+            //    иначе Telemt отклонит удаление (profile references unknown user)
+            await syncWebProfiles(client.username).catch(() => {});
+
+            // 2. Удаляем в Telemt (с повтором через enable при отказе)
             await telemt.deleteUser(client.username).catch(async (e) => {
                 // Пользователя могли удалить вручную из Telemt — тогда просто чистим базу
                 if (/404|not found|not_found|no such/i.test(e.message)) return;
-                // Возможно, мешает выключенное состояние — включаем и удаляем повторно
                 await telemt.enableUser(client.username).catch(() => {});
                 return telemt.deleteUser(client.username);
             });
+            // 3. Удаляем из БД панели
             db.prepare('DELETE FROM clients WHERE id = ?').run(client.id);
             logger.info('Тестовый клиент удалён', { username: client.username });
         } catch (err) {
@@ -240,11 +246,16 @@ async function backupToTelegram() {
         throw new Error('Не настроены Токен бота и Chat ID администратора (Настройки → Уведомления)');
     }
     db.pragma('wal_checkpoint(TRUNCATE)');
-    const filename = `tggate-backup-${new Date().toISOString().slice(0, 10)}.db`;
+    const filename = `tggate-backup-${new Date().toISOString().slice(0, 10)}.db.gz`;
+    // Telegram принимает документы до 50 МБ — сжимаем (SQLite жмётся в разы)
+    const gz = require('zlib').gzipSync(fs.readFileSync(config.dbPath), { level: 9 });
+    if (gz.length > 45 * 1024 * 1024) {
+        throw new Error('Бэкап слишком велик для Telegram — скачайте его в разделе «Резервное копирование»');
+    }
     await notifier.sendDocument(
         settings.tg_bot_token,
         settings.tg_admin_chat_id,
-        fs.readFileSync(config.dbPath),
+        gz,
         filename
     );
     logger.info('Бэкап отправлен админу в Telegram', { filename });
