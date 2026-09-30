@@ -230,6 +230,27 @@ async function autoRenew() {
     }
 }
 
+/** Бэкап базы файлом админу в Telegram (через технического бота уведомлений). @returns {Promise<string>} имя файла */
+async function backupToTelegram() {
+    const settings = getAll();
+    if (!settings.backup_tg_enabled) {
+        throw new Error('Отправка бэкапа выключена в настройках панели');
+    }
+    if (!settings.tg_bot_token || !settings.tg_admin_chat_id) {
+        throw new Error('Не настроены Токен бота и Chat ID администратора (Настройки → Уведомления)');
+    }
+    db.pragma('wal_checkpoint(TRUNCATE)');
+    const filename = `tggate-backup-${new Date().toISOString().slice(0, 10)}.db`;
+    await notifier.sendDocument(
+        settings.tg_bot_token,
+        settings.tg_admin_chat_id,
+        fs.readFileSync(config.dbPath),
+        filename
+    );
+    logger.info('Бэкап отправлен админу в Telegram', { filename });
+    return filename;
+}
+
 /** Ежедневный автобэкап + ротация старых. */
 async function autoBackup() {
     const settings = getAll();
@@ -251,19 +272,9 @@ async function autoBackup() {
         logger.info('Автобэкап создан', { dest });
 
         // Копия бэкапа админу в Telegram: хранится в мессенджере, место на диске не тратит
-        if (settings.backup_tg_enabled && settings.tg_bot_token && settings.tg_admin_chat_id) {
+        if (settings.backup_tg_enabled && settings.tg_admin_chat_id) {
             try {
-                const bot = require('./bot');
-                if (bot.isRunning()) {
-                    await bot.sendFileTo(
-                        settings.tg_admin_chat_id,
-                        fs.readFileSync(dest),
-                        `tggate-backup-${new Date().toISOString().slice(0, 10)}.db`
-                    );
-                    logger.info('Бэкап отправлен админу в Telegram');
-                } else {
-                    logger.warn('Бэкап в Telegram не отправлен — бот не запущен');
-                }
+                await backupToTelegram();
             } catch (err) {
                 logger.warn('Бэкап в Telegram не отправлен', { error: err.message });
                 notifier.notifyAdmin(settings, `⚠️ Не удалось отправить автобэкап в Telegram: ${err.message}`);
@@ -322,4 +333,4 @@ function start() {
     logger.info('Планировщик фоновых задач запущен');
 }
 
-module.exports = { start };
+module.exports = { start, autoBackup, backupToTelegram };

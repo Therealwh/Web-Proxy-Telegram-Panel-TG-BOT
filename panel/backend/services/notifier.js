@@ -50,6 +50,28 @@ async function sendPhoto(token, chatId, photo, caption) {
 }
 
 /**
+ * Отправляет файл (документ) через Bot API.
+ * @param {string} token
+ * @param {number|string} chatId
+ * @param {Buffer} buffer - содержимое файла
+ * @param {string} filename
+ */
+async function sendDocument(token, chatId, buffer, filename) {
+    const form = new FormData();
+    form.append('chat_id', String(chatId));
+    form.append('document', new Blob([buffer]), filename);
+    const res = await fetch(`https://api.telegram.org/bot${token}/sendDocument`, {
+        method: 'POST',
+        body: form,
+        signal: AbortSignal.timeout(60000),
+    });
+    if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(`Telegram API: ${body.description || res.status}`);
+    }
+}
+
+/**
  * Уведомление админу (настройки: tg_bot_token + tg_admin_chat_id).
  * Тихо игнорируется, если не настроено.
  * @param {object} settings - настройки панели
@@ -87,4 +109,4 @@ async function sendQrToClient(client, maskDomain) {
     }
 }
 
-module.exports = { sendMessage, sendPhoto, notifyAdmin, sendQrToClient };
+module.exports = { sendMessage, sendPhoto, sendDocument, notifyAdmin, sendQrToClient };

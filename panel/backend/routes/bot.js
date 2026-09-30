@@ -7,10 +7,21 @@ const express = require('express');
 const { z } = require('zod');
 const db = require('../db');
 const botService = require('../services/bot');
+const scheduler = require('../services/scheduler');
 const { httpError } = require('../middleware/errorHandler');
 const logger = require('../utils/logger');
 
 const router = express.Router();
+
+// --- Отправить бэкап базы админу в Telegram (кнопка «Отправить сейчас») ---
+router.post('/backup-tg', async (req, res, next) => {
+    try {
+        const filename = await scheduler.backupToTelegram();
+        res.json({ ok: true, filename });
+    } catch (err) {
+        next(err);
+    }
+});
 
 // --- Статус бота ---
 router.get('/status', (req, res) => {

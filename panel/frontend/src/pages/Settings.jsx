@@ -26,7 +26,7 @@ const CATEGORIES = [
             { key: 'notify_new_client', label: 'Новый клиент', type: 'toggle' },
             { key: 'notify_quota', label: 'Превышение квоты', type: 'toggle' },
             { key: 'auto_renew_enabled', label: '♻️ Автопродление с баланса (вкл. в боте клиентом)', type: 'toggle' },
-            { key: 'backup_tg_enabled', label: '📤 Присылать бэкап базы ботом в Telegram', type: 'toggle' },
+            { key: 'backup_tg_enabled', label: '📤 Присылать бэкап базы ботом в Telegram', type: 'toggle', backupNow: true },
         ],
     },
     {
@@ -88,9 +88,23 @@ export default function Settings() {
                         {cat.fields.map((f) => {
                             if (f.type === 'toggle') {
                                 return (
-                                    <Toggle key={f.key} label={f.label}
-                                            checked={!!settings[f.key]}
-                                            onChange={(v) => setValue(f.key, v)} />
+                                    <div key={f.key}>
+                                        <Toggle label={f.label}
+                                                checked={!!settings[f.key]}
+                                                onChange={(v) => setValue(f.key, v)} />
+                                        {f.backupNow && (
+                                            <button className="btn-secondary !min-h-0 !py-1.5 text-xs mt-2"
+                                                    onClick={async () => {
+                                                        if (!settings[f.key]) return toast.error('Сначала включите отправку и сохраните настройки');
+                                                        try {
+                                                            const r = await post('/bot/backup-tg', {});
+                                                            toast.success(`Бэкап отправлен: ${r.filename}`);
+                                                        } catch (e) { toast.error(e.message); }
+                                                    }}>
+                                                📤 Отправить бэкап сейчас
+                                            </button>
+                                        )}
+                                    </div>
                                 );
                             }
                             if (f.type === 'select') {
