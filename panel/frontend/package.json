@@ -1,6 +1,6 @@
 {
   "name": "tggate-frontend",
-  "version": "1.5.18",
+  "version": "1.5.19",
   "description": "TGGATE — веб-интерфейс панели управления Telegram-прокси",
   "private": true,
   "type": "module",

@@ -10,27 +10,19 @@ const express = require('express');
 const db = require('../db');
 const logger = require('../utils/logger');
 const { requireAuth } = require('../middleware/auth');
+const { TABLES, buildDump } = require('../services/backupExport');
 
 const router = express.Router();
 
-// Таблицы для переноса (порядок важен для FK при удалении/вставке)
-const TABLES = [
-    'ticket_messages', 'tickets', 'payments', 'referral_pending', 'clients',
-    'api_keys', 'webhooks', 'promo_codes', 'tariffs', 'admins', 'settings',
-];
-
 /**
- * Экспорт: JSON-файл со всеми данными.
+ * Экспорт: JSON-дамп всех данных панели.
  */
 router.get('/export', requireAuth, (req, res) => {
-    const dump = { _tggate_backup: true, exported_at: new Date().toISOString(), data: {} };
-    for (const table of TABLES) {
-        dump.data[table] = db.prepare(`SELECT * FROM ${table}`).all();
-    }
+    const dump = buildDump();
     const filename = `tggate-backup-${new Date().toISOString().slice(0, 10)}.json`;
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    logger.info('Экспорт бэкапа', { tables: TABLES.length, by: req.admin?.login });
+    logger.info('Экспорт базы выполнен', { tables: TABLES.length, by: req.admin?.login });
     res.send(JSON.stringify(dump));
 });
 

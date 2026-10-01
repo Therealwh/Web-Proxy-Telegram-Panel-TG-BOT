@@ -246,9 +246,13 @@ async function backupToTelegram() {
         throw new Error('Не настроены Токен бота и Chat ID администратора (Настройки → Уведомления)');
     }
     db.pragma('wal_checkpoint(TRUNCATE)');
-    const filename = `tggate-backup-${new Date().toISOString().slice(0, 10)}.db.gz`;
-    // Telegram принимает документы до 50 МБ — сжимаем (SQLite жмётся в разы)
-    const gz = require('zlib').gzipSync(fs.readFileSync(config.dbPath), { level: 9 });
+    // Тот же переносимый JSON-формат, что и «Скачать бэкап» в панели:
+    // восстановление в один клик через «Восстановить из файла»
+    const { buildDump } = require('./backupExport');
+    const json = JSON.stringify(buildDump());
+    const filename = `tggate-backup-${new Date().toISOString().slice(0, 10)}.json.gz`;
+    // Telegram принимает документы до 50 МБ — сжимаем (JSON жмётся в разы)
+    const gz = require('zlib').gzipSync(Buffer.from(json, 'utf8'), { level: 9 });
     if (gz.length > 45 * 1024 * 1024) {
         throw new Error('Бэкап слишком велик для Telegram — скачайте его в разделе «Резервное копирование»');
     }
