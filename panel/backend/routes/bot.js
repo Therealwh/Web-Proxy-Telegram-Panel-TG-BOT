@@ -8,6 +8,9 @@ const { z } = require('zod');
 const db = require('../db');
 const botService = require('../services/bot');
 const scheduler = require('../services/scheduler');
+const telemt = require('../services/telemtApi');
+const { clientLinks } = require('../services/links');
+const { getAll } = require('./settings');
 const { httpError } = require('../middleware/errorHandler');
 const logger = require('../utils/logger');
 
@@ -192,7 +195,7 @@ router.get('/users', (req, res) => {
 
     // Все, кто писал/нажимал боту (даже без прокси)
     for (const b of db.prepare(
-        'SELECT telegram_id, username, first_name, last_name, seen_at FROM bot_users'
+        'SELECT telegram_id, username, first_name, last_name, seen_at, balance FROM bot_users'
     ).all()) {
         users.set(b.telegram_id, {
             telegram_id: b.telegram_id,
@@ -201,7 +204,7 @@ router.get('/users', (req, res) => {
             last_name: b.last_name || null,
             seen_at: b.seen_at,
             proxies: [],
-            balance: 0,
+            balance: b.balance || 0,
             active: 0,
         });
     }
@@ -236,7 +239,78 @@ router.get('/users', (req, res) => {
     res.json({ users: list });
 });
 
+// --- Выдать прокси пользователю (создание в Telemt + привязка к telegram_id) ---
+router.post('/users/:tgId/issue', async (req, res, next) => {
+    try {
+        const schema = z.object({
+            days: z.number().int().min(1).max(3650),
+            protocols: z.enum(['web', 'mtproto', 'both']).default('both'),
+            max_ips: z.number().int().min(1).max(100).nullable().optional(),
+            quota_gb: z.number().positive().nullable().optional(),
+        });
+        const p = schema.parse(req.body);
+        const tgId = Number(req.params.tgId);
+
+        const known = db.prepare('SELECT telegram_id FROM bot_users WHERE telegram_id = ?').get(tgId)
+            || db.prepare('SELECT telegram_id FROM clients WHERE telegram_id = ?').get(tgId);
+        if (!known) throw httpError(404, 'Пользователь не найден');
+
+        const count = db.prepare('SELECT COUNT(*) AS c FROM clients WHERE telegram_id = ?').get(tgId).c;
+        const username = `tg${tgId}x${count + 1}`;
+        const expires = new Date(Date.now() + p.days * 86400000).toISOString();
+
+        const created = await telemt.createUser({
+            username,
+            expiration_rfc3339: expires,
+            ...(p.max_ips ? { max_unique_ips: p.max_ips } : {}),
+            ...(p.quota_gb ? { data_quota_bytes: Math.round(p.quota_gb * 1024 ** 3) } : {}),
+        });
+
+        db.prepare(
+            `INSERT INTO clients (username, secret, expires_at, telegram_id, web_enabled, mtproto_enabled)
+             VALUES (?, ?, ?, ?, ?, ?)`
+        ).run(
+            username, created.secret, expires, tgId,
+            ['web', 'both'].includes(p.protocols) ? 1 : 0,
+            ['mtproto', 'both'].includes(p.protocols) ? 1 : 0
+        );
+
+        // Предоплаченный баланс (выданный админом до покупки) переносим на новый прокси
+        let transferred = 0;
+        const bu = db.prepare('SELECT balance FROM bot_users WHERE telegram_id = ?').get(tgId);
+        if (bu && bu.balance > 0) {
+            db.prepare('UPDATE clients SET balance = balance + ? WHERE username = ?').run(bu.balance, username);
+            db.prepare('UPDATE bot_users SET balance = 0 WHERE telegram_id = ?').run(tgId);
+            transferred = bu.balance;
+        }
+
+        // Уведомляем пользователя в боте (ошибка отправки не откатывает выдачу)
+        let notified = true;
+        try {
+            const client = db.prepare('SELECT * FROM clients WHERE username = ?').get(username);
+            const links = clientLinks(client, getAll().mask_domain);
+            const until = new Date(expires).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' }) + ' МСК';
+            let text = `🎁 <b>Администратор выдал вам прокси!</b>\n\n📦 Прокси: <b>${username}</b>\n📅 Действует до: <b>${until}</b>\n\n`;
+            if (links.web_https) text += `🌐 <b>Web Proxy</b> (нажми — подключится сам):\n${links.web_https}\n\n`;
+            if (links.mtproto_https) text += `🔌 <b>MTProto</b>:\n${links.mtproto_https}\n\n`;
+            if (transferred > 0) text += `💰 На счету прокси: ${transferred.toFixed(2)} (перенос баланса)\n\n`;
+            text += `💡 Управление — в разделе «📱 Личный кабинет».`;
+            await botService.sendMessageTo(tgId, text);
+        } catch (e) {
+            notified = false;
+            logger.warn('Не удалось уведомить пользователя о выданном прокси', { tgId, error: e.message });
+        }
+
+        logger.info('Прокси выдан администратором', { tgId, username, days: p.days, protocols: p.protocols });
+        res.json({ ok: true, username, notified, transferred });
+    } catch (err) {
+        next(err);
+    }
+});
+
 // --- Изменить баланс пользователю (выдать/списать) ---
+// Если у пользователя ещё нет прокси — баланс хранится в bot_users
+// и автоматически переносится на прокси при первой покупке.
 router.post('/users/:tgId/balance', (req, res, next) => {
     try {
         const schema = z.object({
@@ -245,16 +319,20 @@ router.post('/users/:tgId/balance', (req, res, next) => {
         const { amount } = schema.parse(req.body);
 
         const clients = db.prepare('SELECT id FROM clients WHERE telegram_id = ?').all(req.params.tgId);
-        if (clients.length === 0) throw httpError(404, 'Пользователь не найден');
+        const bu = db.prepare('SELECT telegram_id FROM bot_users WHERE telegram_id = ?').get(req.params.tgId);
+        if (clients.length === 0 && !bu) throw httpError(404, 'Пользователь не найден');
 
-        const update = db.prepare(
-            'UPDATE clients SET balance = MAX(0, balance + ?) WHERE id = ?'
-        );
-        db.transaction(() => {
-            for (const c of clients) update.run(amount, c.id);
-        })();
+        if (clients.length > 0) {
+            const update = db.prepare('UPDATE clients SET balance = MAX(0, balance + ?) WHERE id = ?');
+            db.transaction(() => {
+                for (const c of clients) update.run(amount, c.id);
+            })();
+        } else {
+            db.prepare('UPDATE bot_users SET balance = MAX(0, balance + ?) WHERE telegram_id = ?')
+                .run(amount, req.params.tgId);
+        }
 
-        logger.info('Баланс изменён администратором', { tgId: req.params.tgId, amount });
+        logger.info('Баланс изменён администратором', { tgId: req.params.tgId, amount, via: clients.length ? 'clients' : 'bot_users' });
         res.json({ ok: true });
     } catch (err) {
         next(err);

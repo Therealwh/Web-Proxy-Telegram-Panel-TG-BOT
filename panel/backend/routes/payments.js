@@ -79,12 +79,14 @@ async function completePayment(paymentId) {
         if (client) {
             db.prepare('UPDATE clients SET balance = balance + ? WHERE id = ?')
                 .run(payment.amount, client.id);
-            db.prepare("UPDATE payments SET status = 'success', paid_at = datetime('now') WHERE id = ?").run(paymentId);
-            const bot = require('../services/bot');
-            await bot.notifyDeposit(payment.telegram_id, payment.amount).catch(() => {});
         } else {
-            db.prepare("UPDATE payments SET status = 'success', paid_at = datetime('now') WHERE id = ?").run(paymentId);
+            // Прокси ещё нет — баланс хранится в bot_users до первой покупки
+            db.prepare('UPDATE bot_users SET balance = balance + ? WHERE telegram_id = ?')
+                .run(payment.amount, payment.telegram_id);
         }
+        db.prepare("UPDATE payments SET status = 'success', paid_at = datetime('now') WHERE id = ?").run(paymentId);
+        const bot = require('../services/bot');
+        await bot.notifyDeposit(payment.telegram_id, payment.amount).catch(() => {});
         fireWebhook('payment.success', { payment_id: paymentId, amount: payment.amount, currency: payment.currency, kind: 'deposit' });
         logger.info('Баланс пополнен', { paymentId, amount: payment.amount });
         return payment;

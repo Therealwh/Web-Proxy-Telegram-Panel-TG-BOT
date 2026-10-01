@@ -13,6 +13,8 @@ export default function Bot() {
     const [users, setUsers] = useState(null);
     const [balanceModal, setBalanceModal] = useState(null); // {tgId, name}
     const [balanceAmount, setBalanceAmount] = useState('');
+    const [issueModal, setIssueModal] = useState(null);     // {telegram_id, days, protocols, max_ips, quota_gb}
+    const [issueBusy, setIssueBusy] = useState(false);
     const [msgModal, setMsgModal] = useState(null); // {tgId, name}
     const [msgText, setMsgText] = useState('');
     const [expanded, setExpanded] = useState(null); // раскрытый tgId
@@ -155,6 +157,11 @@ export default function Bot() {
                                         <td className="py-2 pr-4">
                                             <div className="flex justify-end gap-1">
                                                 <button className="btn-secondary !min-h-0 !px-2 !py-1.5 text-xs"
+                                                        title="Выдать прокси с настройками"
+                                                        onClick={() => setIssueModal({ telegram_id: u.telegram_id, days: 30, protocols: 'both', max_ips: '', quota_gb: '' })}>
+                                                    🌐 Выдать прокси
+                                                </button>
+                                                <button className="btn-secondary !min-h-0 !px-2 !py-1.5 text-xs"
                                                         title="Выдать баланс"
                                                         onClick={() => { setBalanceModal(u); setBalanceAmount(''); }}>
                                                     <Wallet size={14} /> Баланс
@@ -202,6 +209,58 @@ export default function Bot() {
             </Card>
 
             {/* Модал: выдать/списать баланс */}
+            {/* Модал: выдать прокси пользователю */}
+            <Modal open={!!issueModal} onClose={() => setIssueModal(null)}
+                   title={`Выдать прокси: ${issueModal?.telegram_id}`}>
+                <div className="grid grid-cols-2 gap-3">
+                    <Field label="Срок (дней)">
+                        <input className="input" type="number" min="1" value={issueModal?.days ?? 30}
+                               onChange={(e) => setIssueModal((m) => ({ ...m, days: e.target.value }))} />
+                    </Field>
+                    <Field label="Протоколы">
+                        <select className="input" value={issueModal?.protocols ?? 'both'}
+                                onChange={(e) => setIssueModal((m) => ({ ...m, protocols: e.target.value }))}>
+                            <option value="both">Оба (Web + MTProto)</option>
+                            <option value="web">Только Web Proxy</option>
+                            <option value="mtproto">Только MTProto</option>
+                        </select>
+                    </Field>
+                    <Field label="Макс. IP" hint="Пусто = без лимита">
+                        <input className="input" type="number" min="1" placeholder="∞" value={issueModal?.max_ips ?? ''}
+                               onChange={(e) => setIssueModal((m) => ({ ...m, max_ips: e.target.value }))} />
+                    </Field>
+                    <Field label="Трафик, ГБ" hint="Пусто = без лимита">
+                        <input className="input" type="number" min="0" placeholder="∞" value={issueModal?.quota_gb ?? ''}
+                               onChange={(e) => setIssueModal((m) => ({ ...m, quota_gb: e.target.value }))} />
+                    </Field>
+                </div>
+                <p className="text-xs text-slate-400 mt-3">
+                    Прокси создастся в Telemt и привяжется к telegram_id пользователя — он сразу получит
+                    ссылки в боте. Выданный ранее баланс перенесётся на новый прокси.
+                </p>
+                <div className="flex justify-end gap-2 mt-4">
+                    <button className="btn-secondary" onClick={() => setIssueModal(null)}>Отмена</button>
+                    <button className="btn-primary" disabled={issueBusy}
+                            onClick={async () => {
+                                setIssueBusy(true);
+                                try {
+                                    const r = await post(`/bot/users/${issueModal.telegram_id}/issue`, {
+                                        days: Number(issueModal.days),
+                                        protocols: issueModal.protocols,
+                                        max_ips: issueModal.max_ips === '' ? null : Number(issueModal.max_ips),
+                                        quota_gb: issueModal.quota_gb === '' ? null : Number(issueModal.quota_gb),
+                                    });
+                                    toast.success(`Прокси ${r.username} выдан${r.notified ? ' — уведомлён' : ' (бот не смог написать)'}`);
+                                    setIssueModal(null);
+                                    load();
+                                } catch (e) { toast.error(e.message); }
+                                finally { setIssueBusy(false); }
+                            }}>
+                        🌐 Выдать прокси
+                    </button>
+                </div>
+            </Modal>
+
             <Modal open={!!balanceModal} onClose={() => setBalanceModal(null)}
                    title={`Баланс: ${balanceModal?.telegram_id}`}>
                 <Field label="Сумма" hint="Положительная — начислить, отрицательная — списать">

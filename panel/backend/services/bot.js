@@ -267,6 +267,19 @@ async function issueAccessFor(tgId, tariff, paymentId) {
     refPending.delete(tgId);
     db.prepare('DELETE FROM referral_pending WHERE telegram_id = ?').run(tgId);
 
+    // Предоплаченный баланс (выданный админом / пополненный до первой покупки)
+    // переносим на новый прокси
+    try {
+        const bu = db.prepare('SELECT balance FROM bot_users WHERE telegram_id = ?').get(tgId);
+        if (bu && bu.balance > 0) {
+            db.prepare('UPDATE clients SET balance = balance + ? WHERE id = ?').run(bu.balance, client.id);
+            db.prepare('UPDATE bot_users SET balance = 0 WHERE telegram_id = ?').run(tgId);
+            logger.info('Баланс перенесён на новый прокси', { tgId, username, amount: bu.balance });
+        }
+    } catch (e) {
+        logger.warn('Не удалось перенести предоплаченный баланс', { error: e.message });
+    }
+
     if (paymentId) {
         db.prepare("UPDATE payments SET status = 'success', paid_at = datetime('now') WHERE id = ?").run(paymentId);
     }
