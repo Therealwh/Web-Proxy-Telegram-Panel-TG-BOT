@@ -372,7 +372,7 @@ export default function Bot() {
                     </Field>
                     <Field label="🟢 Ссылка на статус-страницу"
                            hint="Кнопка «Статус сервиса» в боте: меню тарифов, поддержка, сообщение после покупки. Пусто — кнопки нет">
-                        <input className="input font-mono" placeholder="https://status.vpstg.run/status"
+                        <input className="input font-mono" placeholder="https://status.ваш-домен.com/status"
                                value={settings.status_url ?? ''}
                                onChange={(e) => setSettings({ ...settings, status_url: e.target.value })} />
                     </Field>
