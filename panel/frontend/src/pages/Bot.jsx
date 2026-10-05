@@ -1,6 +1,6 @@
 // Настройка Telegram-бота продаж: админка (пользователи, баланс), тарифы, платежки
 import React, { useEffect, useState } from 'react';
-import { Plus, Save, Trash2, Power, Wallet, MessageSquare, ChevronDown } from 'lucide-react';
+import { Plus, Save, Trash2, Power, Wallet, MessageSquare, ChevronDown, Pencil } from 'lucide-react';
 import { get, post, put, del } from '../api';
 import { toast } from '../store';
 import { Card, Field, Toggle, Skeleton, Modal, StatusBadge, formatDate } from '../components/ui';
@@ -15,6 +15,15 @@ export default function Bot() {
     const [balanceAmount, setBalanceAmount] = useState('');
     const [issueModal, setIssueModal] = useState(null);     // {telegram_id, days, protocols, max_ips, quota_gb}
     const [issueBusy, setIssueBusy] = useState(false);
+    const [tariffModal, setTariffModal] = useState(null);   // редактирование тарифа (null = закрыто)
+
+    const toggleTariff = async (t, v) => {
+        if (!t.id) return;
+        try {
+            await put(`/bot/tariffs/${t.id}`, { ...t, enabled: v ? 1 : 0 });
+            load();
+        } catch (e) { toast.error(e.message); }
+    };
     const [msgModal, setMsgModal] = useState(null); // {tgId, name}
     const [msgText, setMsgText] = useState('');
     const [expanded, setExpanded] = useState(null); // раскрытый tgId
@@ -462,76 +471,45 @@ export default function Bot() {
                 </p>
             </Card>
 
-            {/* Тарифы */}
+            {/* Тарифы: компактный список + модалка редактирования */}
             <Card title="💰 Тарифы" actions={
                 <button className="btn-secondary !min-h-0 !px-3 !py-1.5 text-sm"
-                        onClick={() => setTariffs([...tariffs, { name: '', days: 30, price: 100, protocols: 'both', max_ips: null, quota_gb: null, enabled: 1 }])}>
+                        onClick={() => setTariffModal({ name: '', days: 30, price: 100, protocols: 'both', max_ips: null, quota_gb: null, enabled: 1 })}>
                     <Plus size={14} /> Добавить
                 </button>
             }>
-                <div className="space-y-3">
-                    {tariffs.map((t, i) => {
+                <div className="space-y-2">
+                    {tariffs.map((t) => {
                         const cur = settings.currency ?? 'RUB';
                         const sign = cur === 'RUB' ? '₽' : cur === 'USD' ? '$' : cur === 'USDT' ? '₮' : cur;
-                        const protoLabel = t.protocols === 'web' ? 'Web Proxy'
-                            : t.protocols === 'mtproto' ? 'MTProto' : 'Web Proxy + MTProto';
+                        const protoLabel = t.protocols === 'web' ? '🌐 Web Proxy'
+                            : t.protocols === 'mtproto' ? '🔌 MTProto' : '🌐 Web + 🔌 MTProto';
+                        const limits = `${t.max_ips ? `${t.max_ips} IP` : 'IP ∞'} · ${t.quota_gb ? `${t.quota_gb} ГБ` : 'трафик ∞'}`;
+                        const accent = !t.enabled ? 'border-slate-600'
+                            : t.protocols === 'web' ? 'border-sky-500'
+                            : t.protocols === 'mtproto' ? 'border-violet-500' : 'border-emerald-500';
                         return (
-                            <div key={t.id ?? i} className="p-3 rounded-lg bg-slate-50 dark:bg-slate-800/50 space-y-3">
-                                <div className="flex flex-wrap items-end gap-3">
-                                    <div className="flex-1 min-w-[200px]">
-                                        <Field label="Название" hint="Можно со смайлами 🚀💎🔥">
-                                            <input className="input" value={t.name}
-                                                   onChange={(e) => setTariffs(tariffs.map((x, j) => j === i ? { ...x, name: e.target.value } : x))} />
-                                        </Field>
-                                    </div>
-                                    <div className="w-20">
-                                        <Field label="Дней">
-                                            <input className="input" type="number" min="1" value={t.days}
-                                                   onChange={(e) => setTariffs(tariffs.map((x, j) => j === i ? { ...x, days: Number(e.target.value) } : x))} />
-                                        </Field>
-                                    </div>
-                                    <div className="w-28">
-                                        <Field label={`Цена, ${sign}`}>
-                                            <input className="input" type="number" min="0" value={t.price}
-                                                   onChange={(e) => setTariffs(tariffs.map((x, j) => j === i ? { ...x, price: Number(e.target.value) } : x))} />
-                                        </Field>
-                                    </div>
-                                    <div className="w-48">
-                                        <Field label="Протоколы">
-                                            <select className="input" value={t.protocols}
-                                                    onChange={(e) => setTariffs(tariffs.map((x, j) => j === i ? { ...x, protocols: e.target.value } : x))}>
-                                                <option value="both">Оба</option>
-                                                <option value="web">Web Proxy</option>
-                                                <option value="mtproto">MTProto</option>
-                                            </select>
-                                        </Field>
-                                    </div>
-                                    <div className="pb-1">
-                                        <Toggle label="Включён" checked={!!t.enabled}
-                                                onChange={(v) => setTariffs(tariffs.map((x, j) => j === i ? { ...x, enabled: v ? 1 : 0 } : x))} />
-                                    </div>
-                                    <div className="flex gap-1 ml-auto pb-1">
-                                        <button className="btn-primary !min-h-0 !px-3 !py-2 text-sm" title="Сохранить тариф" onClick={() => saveTariff(t)}><Save size={14} /></button>
-                                        {t.id && <button className="btn-danger !min-h-0 !px-3 !py-2 text-sm" title="Удалить тариф" onClick={() => deleteTariff(t.id)}><Trash2 size={14} /></button>}
+                            <div key={t.id ?? t.name}
+                                 className={`flex flex-wrap items-center gap-3 p-3 rounded-xl border-l-4 ${accent} bg-slate-50 dark:bg-slate-800/50 ${t.enabled ? '' : 'opacity-60'}`}>
+                                <div className="flex-1 min-w-[180px]">
+                                    <div className="font-medium">{t.name || 'Без названия'}</div>
+                                    <div className="text-xs text-slate-400">
+                                        {t.days} дн. · <b className="text-slate-200">{t.price} {sign}</b> · {protoLabel} · {limits}
                                     </div>
                                 </div>
-                                <div className="flex flex-wrap items-end gap-3">
-                                    <div className="w-28">
-                                        <Field label="Макс. IP" hint="Пусто = ∞">
-                                            <input className="input" type="number" min="1" value={t.max_ips ?? ''}
-                                                   onChange={(e) => setTariffs(tariffs.map((x, j) => j === i ? { ...x, max_ips: e.target.value === '' ? null : Number(e.target.value) } : x))} />
-                                        </Field>
-                                    </div>
-                                    <div className="w-28">
-                                        <Field label="Трафик, ГБ" hint="Пусто = ∞">
-                                            <input className="input" type="number" min="0" value={t.quota_gb ?? ''}
-                                                   onChange={(e) => setTariffs(tariffs.map((x, j) => j === i ? { ...x, quota_gb: e.target.value === '' ? null : Number(e.target.value) } : x))} />
-                                        </Field>
-                                    </div>
-                                    <div className="text-xs text-slate-400 pb-2">
-                                        👁 Клиент увидит: <b className="text-slate-200">{t.name || '—'} — {t.days} дн. — {t.price} {sign}</b>
-                                        {' · '}{protoLabel}
-                                    </div>
+                                <Toggle label="Вкл" checked={!!t.enabled}
+                                        onChange={(v) => toggleTariff(t, v)} />
+                                <div className="flex gap-1">
+                                    <button className="btn-ghost !min-h-0 !p-2" title="Редактировать"
+                                            onClick={() => setTariffModal({ ...t })}>
+                                        <Pencil size={16} />
+                                    </button>
+                                    {t.id && (
+                                        <button className="btn-ghost !min-h-0 !p-2 text-red-500" title="Удалить"
+                                                onClick={() => deleteTariff(t.id)}>
+                                            <Trash2 size={16} />
+                                        </button>
+                                    )}
                                 </div>
                             </div>
                         );
@@ -539,6 +517,71 @@ export default function Bot() {
                     {tariffs.length === 0 && <p className="text-sm text-slate-500 text-center py-4">Тарифов нет — добавьте первый</p>}
                 </div>
             </Card>
+
+            {/* Модал: создание/редактирование тарифа */}
+            <Modal open={!!tariffModal} onClose={() => setTariffModal(null)}
+                   title={tariffModal?.id ? 'Редактировать тариф' : 'Новый тариф'}>
+                {tariffModal && (() => {
+                    const cur = settings.currency ?? 'RUB';
+                    const sign = cur === 'RUB' ? '₽' : cur === 'USD' ? '$' : cur === 'USDT' ? '₮' : cur;
+                    const protoLabel = tariffModal.protocols === 'web' ? 'Web Proxy'
+                        : tariffModal.protocols === 'mtproto' ? 'MTProto' : 'Web Proxy + MTProto';
+                    const upd = (patch) => setTariffModal((m) => ({ ...m, ...patch }));
+                    return (
+                        <>
+                            <div className="grid grid-cols-2 gap-3">
+                                <Field label="Название" hint="Можно со смайлами 🚀💎🔥" className="col-span-2">
+                                    <input className="input" value={tariffModal.name ?? ''}
+                                           onChange={(e) => upd({ name: e.target.value })} />
+                                </Field>
+                                <Field label="Срок (дней)">
+                                    <input className="input" type="number" min="1" value={tariffModal.days ?? 30}
+                                           onChange={(e) => upd({ days: Number(e.target.value) })} />
+                                </Field>
+                                <Field label={`Цена, ${sign}`}>
+                                    <input className="input" type="number" min="0" value={tariffModal.price ?? 0}
+                                           onChange={(e) => upd({ price: Number(e.target.value) })} />
+                                </Field>
+                                <Field label="Протоколы">
+                                    <select className="input" value={tariffModal.protocols ?? 'both'}
+                                            onChange={(e) => upd({ protocols: e.target.value })}>
+                                        <option value="both">Оба</option>
+                                        <option value="web">Web Proxy</option>
+                                        <option value="mtproto">MTProto</option>
+                                    </select>
+                                </Field>
+                                <Field label="Макс. IP" hint="Пусто = ∞">
+                                    <input className="input" type="number" min="1" value={tariffModal.max_ips ?? ''}
+                                           onChange={(e) => upd({ max_ips: e.target.value === '' ? null : Number(e.target.value) })} />
+                                </Field>
+                                <Field label="Трафик, ГБ" hint="Пусто = ∞">
+                                    <input className="input" type="number" min="0" value={tariffModal.quota_gb ?? ''}
+                                           onChange={(e) => upd({ quota_gb: e.target.value === '' ? null : Number(e.target.value) })} />
+                                </Field>
+                                <div className="flex items-end pb-1">
+                                    <Toggle label="Включён" checked={!!tariffModal.enabled}
+                                            onChange={(v) => upd({ enabled: v ? 1 : 0 })} />
+                                </div>
+                            </div>
+                            <p className="text-xs text-slate-400 mt-3">
+                                👁 Клиент увидит: <b className="text-slate-200">{tariffModal.name || '—'} — {tariffModal.days} дн. — {tariffModal.price} {sign}</b> · {protoLabel}
+                            </p>
+                            <div className="flex justify-end gap-2 mt-4">
+                                <button className="btn-secondary" onClick={() => setTariffModal(null)}>Отмена</button>
+                                <button className="btn-primary"
+                                        onClick={async () => {
+                                            try {
+                                                await saveTariff(tariffModal);
+                                                setTariffModal(null);
+                                            } catch { /* ошибка уже показана тостом */ }
+                                        }}>
+                                    <Save size={14} /> Сохранить
+                                </button>
+                            </div>
+                        </>
+                    );
+                })()}
+            </Modal>
         </div>
     );
 }
