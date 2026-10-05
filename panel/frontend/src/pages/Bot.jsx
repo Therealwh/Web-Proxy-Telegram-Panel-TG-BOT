@@ -470,44 +470,72 @@ export default function Bot() {
                 </button>
             }>
                 <div className="space-y-3">
-                    {tariffs.map((t, i) => (
-                        <div key={t.id ?? i} className="grid grid-cols-2 md:grid-cols-8 gap-2 items-end p-3 rounded-lg bg-slate-50 dark:bg-slate-800/50">
-                            <Field label="Название" hint="Можно со смайлами 🚀💎🔥">
-                                <input className="input" value={t.name}
-                                       onChange={(e) => setTariffs(tariffs.map((x, j) => j === i ? { ...x, name: e.target.value } : x))} />
-                            </Field>
-                            <Field label="Дней">
-                                <input className="input" type="number" min="1" value={t.days}
-                                       onChange={(e) => setTariffs(tariffs.map((x, j) => j === i ? { ...x, days: Number(e.target.value) } : x))} />
-                            </Field>
-                            <Field label="Цена">
-                                <input className="input" type="number" min="0" value={t.price}
-                                       onChange={(e) => setTariffs(tariffs.map((x, j) => j === i ? { ...x, price: Number(e.target.value) } : x))} />
-                            </Field>
-                            <Field label="Макс. IP" hint="Пусто = ∞">
-                                <input className="input" type="number" min="1" value={t.max_ips ?? ''}
-                                       onChange={(e) => setTariffs(tariffs.map((x, j) => j === i ? { ...x, max_ips: e.target.value === '' ? null : Number(e.target.value) } : x))} />
-                            </Field>
-                            <Field label="Трафик, ГБ" hint="Пусто = ∞">
-                                <input className="input" type="number" min="0" value={t.quota_gb ?? ''}
-                                       onChange={(e) => setTariffs(tariffs.map((x, j) => j === i ? { ...x, quota_gb: e.target.value === '' ? null : Number(e.target.value) } : x))} />
-                            </Field>
-                            <Field label="Протоколы">
-                                <select className="input" value={t.protocols}
-                                        onChange={(e) => setTariffs(tariffs.map((x, j) => j === i ? { ...x, protocols: e.target.value } : x))}>
-                                    <option value="both">Оба</option>
-                                    <option value="web">Web Proxy</option>
-                                    <option value="mtproto">MTProto</option>
-                                </select>
-                            </Field>
-                            <Toggle label="Включён" checked={!!t.enabled}
-                                    onChange={(v) => setTariffs(tariffs.map((x, j) => j === i ? { ...x, enabled: v ? 1 : 0 } : x))} />
-                            <div className="flex gap-1">
-                                <button className="btn-primary !min-h-0 !px-3 !py-2 text-sm" onClick={() => saveTariff(t)}><Save size={14} /></button>
-                                {t.id && <button className="btn-danger !min-h-0 !px-3 !py-2 text-sm" onClick={() => deleteTariff(t.id)}><Trash2 size={14} /></button>}
+                    {tariffs.map((t, i) => {
+                        const cur = settings.currency ?? 'RUB';
+                        const sign = cur === 'RUB' ? '₽' : cur === 'USD' ? '$' : cur === 'USDT' ? '₮' : cur;
+                        const protoLabel = t.protocols === 'web' ? 'Web Proxy'
+                            : t.protocols === 'mtproto' ? 'MTProto' : 'Web Proxy + MTProto';
+                        return (
+                            <div key={t.id ?? i} className="p-3 rounded-lg bg-slate-50 dark:bg-slate-800/50 space-y-3">
+                                <div className="flex flex-wrap items-end gap-3">
+                                    <div className="flex-1 min-w-[200px]">
+                                        <Field label="Название" hint="Можно со смайлами 🚀💎🔥">
+                                            <input className="input" value={t.name}
+                                                   onChange={(e) => setTariffs(tariffs.map((x, j) => j === i ? { ...x, name: e.target.value } : x))} />
+                                        </Field>
+                                    </div>
+                                    <div className="w-20">
+                                        <Field label="Дней">
+                                            <input className="input" type="number" min="1" value={t.days}
+                                                   onChange={(e) => setTariffs(tariffs.map((x, j) => j === i ? { ...x, days: Number(e.target.value) } : x))} />
+                                        </Field>
+                                    </div>
+                                    <div className="w-28">
+                                        <Field label={`Цена, ${sign}`}>
+                                            <input className="input" type="number" min="0" value={t.price}
+                                                   onChange={(e) => setTariffs(tariffs.map((x, j) => j === i ? { ...x, price: Number(e.target.value) } : x))} />
+                                        </Field>
+                                    </div>
+                                    <div className="w-48">
+                                        <Field label="Протоколы">
+                                            <select className="input" value={t.protocols}
+                                                    onChange={(e) => setTariffs(tariffs.map((x, j) => j === i ? { ...x, protocols: e.target.value } : x))}>
+                                                <option value="both">Оба</option>
+                                                <option value="web">Web Proxy</option>
+                                                <option value="mtproto">MTProto</option>
+                                            </select>
+                                        </Field>
+                                    </div>
+                                    <div className="pb-1">
+                                        <Toggle label="Включён" checked={!!t.enabled}
+                                                onChange={(v) => setTariffs(tariffs.map((x, j) => j === i ? { ...x, enabled: v ? 1 : 0 } : x))} />
+                                    </div>
+                                    <div className="flex gap-1 ml-auto pb-1">
+                                        <button className="btn-primary !min-h-0 !px-3 !py-2 text-sm" title="Сохранить тариф" onClick={() => saveTariff(t)}><Save size={14} /></button>
+                                        {t.id && <button className="btn-danger !min-h-0 !px-3 !py-2 text-sm" title="Удалить тариф" onClick={() => deleteTariff(t.id)}><Trash2 size={14} /></button>}
+                                    </div>
+                                </div>
+                                <div className="flex flex-wrap items-end gap-3">
+                                    <div className="w-28">
+                                        <Field label="Макс. IP" hint="Пусто = ∞">
+                                            <input className="input" type="number" min="1" value={t.max_ips ?? ''}
+                                                   onChange={(e) => setTariffs(tariffs.map((x, j) => j === i ? { ...x, max_ips: e.target.value === '' ? null : Number(e.target.value) } : x))} />
+                                        </Field>
+                                    </div>
+                                    <div className="w-28">
+                                        <Field label="Трафик, ГБ" hint="Пусто = ∞">
+                                            <input className="input" type="number" min="0" value={t.quota_gb ?? ''}
+                                                   onChange={(e) => setTariffs(tariffs.map((x, j) => j === i ? { ...x, quota_gb: e.target.value === '' ? null : Number(e.target.value) } : x))} />
+                                        </Field>
+                                    </div>
+                                    <div className="text-xs text-slate-400 pb-2">
+                                        👁 Клиент увидит: <b className="text-slate-200">{t.name || '—'} — {t.days} дн. — {t.price} {sign}</b>
+                                        {' · '}{protoLabel}
+                                    </div>
+                                </div>
                             </div>
-                        </div>
-                    ))}
+                        );
+                    })}
                     {tariffs.length === 0 && <p className="text-sm text-slate-500 text-center py-4">Тарифов нет — добавьте первый</p>}
                 </div>
             </Card>
