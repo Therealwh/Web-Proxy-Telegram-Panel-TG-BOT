@@ -1,9 +1,9 @@
 // Настройки панели с категориями
 import React, { useEffect, useRef, useState } from 'react';
-import { Save } from 'lucide-react';
+import { Save, Pencil } from 'lucide-react';
 import { get, post, put } from '../api';
 import { toast } from '../store';
-import { Card, Field, Toggle, Skeleton } from '../components/ui';
+import { Card, Field, Toggle, Skeleton, Modal } from '../components/ui';
 
 // Описание категорий и их полей (подписи на русском)
 const CATEGORIES = [
@@ -49,6 +49,7 @@ const CATEGORIES = [
 export default function Settings() {
     const [settings, setSettings] = useState(null);
     const [saving, setSaving] = useState(false);
+    const [editingCat, setEditingCat] = useState(null); // id категории в модалке
 
     useEffect(() => {
         get('/settings').then((d) => setSettings(d.settings)).catch((e) => toast.error(e.message));
@@ -68,67 +69,107 @@ export default function Settings() {
         }
     };
 
+    // Отображение текущего значения поля в сводке
+    const displayValue = (f) => {
+        const v = settings[f.key];
+        if (f.type === 'toggle') return v ? '✅ Да' : '❌ Нет';
+        if (f.type === 'select') {
+            const opt = (f.options || []).find(([ov]) => String(ov) === String(v ?? ''));
+            return (opt && opt[1]) || v || '—';
+        }
+        if (f.type === 'number') return v ?? '—';
+        const s = String(v ?? '');
+        return s === '' ? '—' : (s.length > 80 ? `${s.slice(0, 80)}…` : s);
+    };
+
+    // Форма редактирования категории (в модалке)
+    const renderCatFields = (cat) => (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {cat.fields.map((f) => {
+                if (f.type === 'toggle') {
+                    return (
+                        <div key={f.key}>
+                            <Toggle label={f.label}
+                                    checked={!!settings[f.key]}
+                                    onChange={(v) => setValue(f.key, v)} />
+                            {f.backupNow && (
+                                <button className="btn-secondary !min-h-0 !py-1.5 text-xs mt-2"
+                                        onClick={async () => {
+                                            if (!settings[f.key]) return toast.error('Сначала включите отправку и сохраните настройки');
+                                            try {
+                                                const r = await post('/bot/backup-tg', {});
+                                                toast.success(`Бэкап отправлен: ${r.filename}`);
+                                            } catch (e) { toast.error(e.message); }
+                                        }}>
+                                    📤 Отправить бэкап сейчас
+                                </button>
+                            )}
+                        </div>
+                    );
+                }
+                if (f.type === 'select') {
+                    return (
+                        <Field key={f.key} label={f.label} hint={f.hint}>
+                            <select className="input" value={settings[f.key] ?? ''}
+                                    onChange={(e) => setValue(f.key, e.target.value)}>
+                                {f.options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                            </select>
+                        </Field>
+                    );
+                }
+                return (
+                    <Field key={f.key} label={f.label} hint={f.hint}>
+                        <input className="input"
+                               type={f.type === 'number' ? 'number' : 'text'}
+                               value={settings[f.key] ?? ''}
+                               onChange={(e) => setValue(f.key, f.type === 'number' ? Number(e.target.value) : e.target.value)} />
+                    </Field>
+                );
+            })}
+        </div>
+    );
+
     if (!settings) return <div className="space-y-4">{[...Array(3)].map((_, i) => <Skeleton key={i} className="h-48" />)}</div>;
 
     return (
         <div className="space-y-6">
             <div className="flex items-center justify-between">
                 <h1 className="text-2xl font-bold">Настройки</h1>
-                <button className="btn-primary" onClick={save} disabled={saving}>
-                    <Save size={16} /> {saving ? 'Сохранение...' : 'Сохранить'}
-                </button>
             </div>
 
             {/* Смена домена без переустановки */}
             <DomainCard />
 
             {CATEGORIES.map((cat) => (
-                <Card key={cat.id} title={`${cat.icon} ${cat.title}`}>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {cat.fields.map((f) => {
-                            if (f.type === 'toggle') {
-                                return (
-                                    <div key={f.key}>
-                                        <Toggle label={f.label}
-                                                checked={!!settings[f.key]}
-                                                onChange={(v) => setValue(f.key, v)} />
-                                        {f.backupNow && (
-                                            <button className="btn-secondary !min-h-0 !py-1.5 text-xs mt-2"
-                                                    onClick={async () => {
-                                                        if (!settings[f.key]) return toast.error('Сначала включите отправку и сохраните настройки');
-                                                        try {
-                                                            const r = await post('/bot/backup-tg', {});
-                                                            toast.success(`Бэкап отправлен: ${r.filename}`);
-                                                        } catch (e) { toast.error(e.message); }
-                                                    }}>
-                                                📤 Отправить бэкап сейчас
-                                            </button>
-                                        )}
-                                    </div>
-                                );
-                            }
-                            if (f.type === 'select') {
-                                return (
-                                    <Field key={f.key} label={f.label} hint={f.hint}>
-                                        <select className="input" value={settings[f.key] ?? ''}
-                                                onChange={(e) => setValue(f.key, e.target.value)}>
-                                            {f.options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                                        </select>
-                                    </Field>
-                                );
-                            }
-                            return (
-                                <Field key={f.key} label={f.label} hint={f.hint}>
-                                    <input className="input"
-                                           type={f.type === 'number' ? 'number' : 'text'}
-                                           value={settings[f.key] ?? ''}
-                                           onChange={(e) => setValue(f.key, f.type === 'number' ? Number(e.target.value) : e.target.value)} />
-                                </Field>
-                            );
-                        })}
+                <Card key={cat.id} title={`${cat.icon} ${cat.title}`} actions={
+                    <button className="btn-ghost !min-h-0 !p-2" title="Изменить"
+                            onClick={() => setEditingCat(cat.id)}>
+                        <Pencil size={16} />
+                    </button>
+                }>
+                    <div>
+                        {cat.fields.map((f) => (
+                            <div key={f.key} className="flex flex-wrap items-baseline justify-between gap-2 py-1.5 border-b border-slate-100 dark:border-slate-800/60 last:border-0">
+                                <span className="text-sm text-slate-500 dark:text-slate-400">{f.label}</span>
+                                <span className="text-sm font-medium text-right break-all max-w-[60%]">{displayValue(f)}</span>
+                            </div>
+                        ))}
                     </div>
                 </Card>
             ))}
+
+            {/* Модал редактирования категории */}
+            <Modal open={!!editingCat} onClose={() => setEditingCat(null)} wide
+                   title={(() => { const c = CATEGORIES.find((x) => x.id === editingCat); return c ? `${c.icon} ${c.title}` : ''; })()}>
+                {(() => { const c = CATEGORIES.find((x) => x.id === editingCat); return c ? renderCatFields(c) : null; })()}
+                <div className="flex justify-end gap-2 mt-4">
+                    <button className="btn-secondary" onClick={() => setEditingCat(null)}>Отмена</button>
+                    <button className="btn-primary" disabled={saving}
+                            onClick={async () => { await save(); setEditingCat(null); }}>
+                        <Save size={14} /> {saving ? 'Сохранение...' : 'Сохранить'}
+                    </button>
+                </div>
+            </Modal>
 
             {/* Резервное копирование: экспорт/импорт всех данных */}
             <BackupCard />

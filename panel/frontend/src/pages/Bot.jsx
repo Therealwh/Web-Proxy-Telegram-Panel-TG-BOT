@@ -5,6 +5,16 @@ import { get, post, put, del } from '../api';
 import { toast } from '../store';
 import { Card, Field, Toggle, Skeleton, Modal, StatusBadge, formatDate } from '../components/ui';
 
+/** Строка «настройка → значение» для сводного вида карточек */
+function settingRow(label, value) {
+    return (
+        <div key={label} className="flex flex-wrap items-baseline justify-between gap-2 py-1.5 border-b border-slate-100 dark:border-slate-800/60 last:border-0">
+            <span className="text-sm text-slate-500 dark:text-slate-400">{label}</span>
+            <span className="text-sm font-medium text-right break-all">{value || '—'}</span>
+        </div>
+    );
+}
+
 export default function Bot() {
     const [settings, setSettings] = useState(null);
     const [tariffs, setTariffs] = useState(null);
@@ -15,6 +25,7 @@ export default function Bot() {
     const [balanceAmount, setBalanceAmount] = useState('');
     const [issueModal, setIssueModal] = useState(null);     // {telegram_id, days, protocols, max_ips, quota_gb}
     const [issueBusy, setIssueBusy] = useState(false);
+    const [editCard, setEditCard] = useState(null);     // 'buttons' | 'basic' | 'sub' | 'pay' — модалка настроек
     const [tariffModal, setTariffModal] = useState(null);   // редактирование тарифа (null = закрыто)
 
     const toggleTariff = async (t, v) => {
@@ -270,6 +281,173 @@ export default function Bot() {
                 </div>
             </Modal>
 
+            {/* Модал: настройки (кастомные кнопки / основные / подписка / платежи) */}
+            <Modal open={!!editCard} onClose={() => setEditCard(null)} wide
+                   title={editCard === 'buttons' ? '🔗 Кастомные кнопки в боте'
+                       : editCard === 'basic' ? '🤖 Основные настройки'
+                       : editCard === 'sub' ? '📢 Обязательная подписка на канал'
+                       : '💳 Платёжные системы'}>
+                {editCard === 'buttons' && (
+                    <div className="space-y-2">
+                        {(settings.custom_buttons || []).map((b, i) => (
+                            <div key={i} className="flex flex-wrap items-center gap-2 p-2 rounded-lg bg-slate-50 dark:bg-slate-800/50">
+                                <input className="input !w-44" placeholder="НАЗВАНИЕ КНОПКИ"
+                                       value={b.name}
+                                       onChange={(e) => setSettings((s) => ({
+                                           ...s,
+                                           custom_buttons: s.custom_buttons.map((x, j) => j === i ? { ...x, name: e.target.value } : x),
+                                       }))} />
+                                <input className="input flex-1 min-w-[200px] font-mono text-xs" placeholder="https://t.me/channel"
+                                       value={b.url}
+                                       onChange={(e) => setSettings((s) => ({
+                                           ...s,
+                                           custom_buttons: s.custom_buttons.map((x, j) => j === i ? { ...x, url: e.target.value } : x),
+                                       }))} />
+                                <Toggle label="Вкл" checked={b.enabled !== false}
+                                        onChange={(v) => setSettings((s) => ({
+                                            ...s,
+                                            custom_buttons: s.custom_buttons.map((x, j) => j === i ? { ...x, enabled: v } : x),
+                                        }))} />
+                                <button className="btn-ghost !min-h-0 !p-2 text-red-500"
+                                        onClick={() => setSettings((s) => ({
+                                            ...s,
+                                            custom_buttons: s.custom_buttons.filter((_, j) => j !== i),
+                                        }))}>
+                                    <Trash2 size={14} />
+                                </button>
+                            </div>
+                        ))}
+                        {!(settings.custom_buttons && settings.custom_buttons.length >= 8) && (
+                            <button className="btn-secondary text-sm"
+                                    onClick={() => setSettings((s) => ({
+                                        ...s,
+                                        custom_buttons: [...(s.custom_buttons || []), { name: '', url: 'https://', enabled: true }],
+                                    }))}>
+                                <Plus size={14} /> Добавить кнопку
+                            </button>
+                        )}
+                    </div>
+                )}
+
+                {editCard === 'basic' && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <Field label="Bot Token" hint="Получите у @BotFather в Telegram">
+                            <input className="input font-mono" value={settings.bot_token ?? ''}
+                                   onChange={(e) => setSettings({ ...settings, bot_token: e.target.value })} />
+                        </Field>
+                        <Field label="Валюта цен">
+                            <select className="input" value={settings.currency ?? 'RUB'}
+                                    onChange={(e) => setSettings({ ...settings, currency: e.target.value })}>
+                                <option value="RUB">₽ Рубли</option>
+                                <option value="USD">$ Доллары</option>
+                                <option value="USDT">₮ USDT</option>
+                            </select>
+                        </Field>
+                        <Field label="Приветственное сообщение" hint="Переменные: {имя}, {ссылка}, {дата}. Пусто — встроенное красивое приветствие">
+                            <textarea className="input min-h-[100px]" value={settings.welcome_text ?? ''}
+                                      onChange={(e) => setSettings({ ...settings, welcome_text: e.target.value })} />
+                        </Field>
+                        <Field label="🟢 Ссылка на статус-страницу"
+                               hint="Кнопка «Статус сервиса» в боте: меню тарифов, поддержка, сообщение после покупки. Пусто — кнопки нет">
+                            <input className="input font-mono" placeholder="https://status.ваш-домен.com/status"
+                                   value={settings.status_url ?? ''}
+                                   onChange={(e) => setSettings({ ...settings, status_url: e.target.value })} />
+                        </Field>
+                        <div className="space-y-3 md:col-span-2">
+                            <Toggle label="Бот включён" checked={!!settings.enabled}
+                                    onChange={(v) => setSettings({ ...settings, enabled: v })} />
+                            <Toggle label="Уведомлять админа о покупках" checked={!!settings.notify_admin}
+                                    onChange={(v) => setSettings({ ...settings, notify_admin: v })} />
+                        </div>
+                    </div>
+                )}
+
+                {editCard === 'sub' && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <Field label="Юзернейм канала" hint="Например: @my_proxy_channel (бот должен быть админом канала)">
+                            <input className="input font-mono" placeholder="@my_proxy_channel"
+                                   value={settings.channel_username ?? ''}
+                                   onChange={(e) => setSettings({ ...settings, channel_username: e.target.value })} />
+                        </Field>
+                        <div className="flex items-end pb-2">
+                            <Toggle label="Требовать подписку для пользования ботом"
+                                    checked={!!settings.channel_required}
+                                    onChange={(v) => setSettings({ ...settings, channel_required: v })} />
+                        </div>
+                        <p className="text-xs text-slate-400 md:col-span-2">
+                            ⚠️ Добавьте бота администратором в канал, иначе проверка подписи работать не будет
+                            (при недоступности канала проверка автоматически отключается).
+                        </p>
+                    </div>
+                )}
+
+                {editCard === 'pay' && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <Field label="🪙 CryptoBot (CryptoCloud) — токен" hint="Из @CryptoBot → Crypto Pay → Create App">
+                            <input className="input font-mono" value={settings.cryptobot_token ?? ''}
+                                   onChange={(e) => setSettings({ ...settings, cryptobot_token: e.target.value })} />
+                        </Field>
+                        <div />
+                        <Field label="🏦 ЮKassa — shopId">
+                            <input className="input font-mono" value={settings.yookassa_shop_id ?? ''}
+                                   onChange={(e) => setSettings({ ...settings, yookassa_shop_id: e.target.value })} />
+                        </Field>
+                        <Field label="🏦 ЮKassa — секретный ключ">
+                            <input className="input font-mono" type="password" value={settings.yookassa_secret_key ?? ''}
+                                   onChange={(e) => setSettings({ ...settings, yookassa_secret_key: e.target.value })} />
+                        </Field>
+                        <Field label="💳 Карта для ручной оплаты" hint="Показывается в боте при оплате напрямую">
+                            <input className="input font-mono" value={settings.pay_card ?? ''}
+                                   onChange={(e) => setSettings({ ...settings, pay_card: e.target.value })} />
+                        </Field>
+                        <Field label="📱 Телефон для СБП">
+                            <input className="input font-mono" value={settings.pay_phone ?? ''}
+                                   onChange={(e) => setSettings({ ...settings, pay_phone: e.target.value })} />
+                        </Field>
+                        <Field label="🏦 Название банка">
+                            <input className="input" value={settings.pay_bank ?? ''}
+                                   onChange={(e) => setSettings({ ...settings, pay_bank: e.target.value })} />
+                        </Field>
+                        <Field label="📝 Инструкция для ручной оплаты" hint="Показывается в боте, если ни одна платёжка не подключена (пусто — покажем карту/СБП)" className="md:col-span-2">
+                            <textarea className="input min-h-[70px]" value={settings.payment_instructions ?? ''}
+                                      onChange={(e) => setSettings({ ...settings, payment_instructions: e.target.value })} />
+                        </Field>
+                        <div className="flex items-end pb-2">
+                            <Toggle label="⭐ Telegram Stars (оплата звёздами)"
+                                    checked={!!settings.stars_enabled}
+                                    onChange={(v) => setSettings({ ...settings, stars_enabled: v })} />
+                        </div>
+                        <div />
+                        <Field label="⭐ Курс: 1 звезда = ₽" hint="Для тарифов в рублях. Звёзды = цена / курс, округление вверх">
+                            <input className="input" type="number" step="0.01" min="0.01" value={settings.stars_rate_rub ?? 2}
+                                   onChange={(e) => setSettings({ ...settings, stars_rate_rub: Number(e.target.value) })} />
+                        </Field>
+                        <Field label="⭐ Курс: 1 звезда = $" hint="Для тарифов в $ и USDT">
+                            <input className="input" type="number" step="0.001" min="0.001" value={settings.stars_rate_usd ?? 0.02}
+                                   onChange={(e) => setSettings({ ...settings, stars_rate_usd: Number(e.target.value) })} />
+                        </Field>
+                        <p className="text-xs text-slate-400 md:col-span-2">
+                            Вебхук CryptoBot: <code className="font-mono">https://ваш-домен/api/payments/webhook/cryptobot</code>
+                            (вставьте в @CryptoBot → Webhooks). ЮKassa → <code className="font-mono">/api/payments/webhook/yookassa</code>.
+                            Если счёт не создаётся — проверьте с VPS: <code className="font-mono">curl -I https://pay.crypt.bot</code> (домен должен быть доступен).
+                        </p>
+                    </div>
+                )}
+
+                <div className="flex justify-end gap-2 mt-4">
+                    <button className="btn-secondary" onClick={() => setEditCard(null)}>Отмена</button>
+                    <button className="btn-primary"
+                            onClick={async () => {
+                                try {
+                                    await saveSettings();
+                                    setEditCard(null);
+                                } catch { /* ошибка уже показана тостом */ }
+                            }}>
+                        <Save size={14} /> Сохранить
+                    </button>
+                </div>
+            </Modal>
+
             <Modal open={!!balanceModal} onClose={() => setBalanceModal(null)}
                    title={`Баланс: ${balanceModal?.telegram_id}`}>
                 <Field label="Сумма" hint="Положительная — начислить, отрицательная — списать">
@@ -314,161 +492,81 @@ export default function Bot() {
                 </div>
             </Modal>
 
-            {/* Кастомные кнопки в боте */}
+            {/* Кастомные кнопки в боте: сводка + модалка */}
             <Card title="🔗 Кастомные кнопки в боте"
-                  subtitle="Появятся в меню тарифов — ссылки на каналы, ботов, сайты">
-                {!settings ? <Skeleton className="h-20" /> : (
+                  subtitle="Появятся в меню тарифов — ссылки на каналы, ботов, сайты"
+                  actions={
+                      <button className="btn-ghost !min-h-0 !p-2" title="Изменить кнопки"
+                              onClick={() => setEditCard('buttons')}>
+                          <Pencil size={16} />
+                      </button>
+                  }>
+                {!settings ? <Skeleton className="h-20" /> : (settings.custom_buttons || []).length === 0 ? (
+                    <p className="text-sm text-slate-500 py-2">Кнопок нет — нажмите ✏️, чтобы добавить</p>
+                ) : (
                     <div className="space-y-2">
                         {(settings.custom_buttons || []).map((b, i) => (
                             <div key={i} className="flex flex-wrap items-center gap-2 p-2 rounded-lg bg-slate-50 dark:bg-slate-800/50">
-                                <input className="input !w-44" placeholder="НАЗВАНИЕ КНОПКИ"
-                                       value={b.name}
-                                       onChange={(e) => setSettings((s) => ({
-                                           ...s,
-                                           custom_buttons: s.custom_buttons.map((x, j) => j === i ? { ...x, name: e.target.value } : x),
-                                       }))} />
-                                <input className="input flex-1 min-w-[200px] font-mono text-xs" placeholder="https://t.me/channel"
-                                       value={b.url}
-                                       onChange={(e) => setSettings((s) => ({
-                                           ...s,
-                                           custom_buttons: s.custom_buttons.map((x, j) => j === i ? { ...x, url: e.target.value } : x),
-                                       }))} />
-                                <Toggle label="Вкл" checked={b.enabled !== false}
-                                        onChange={(v) => setSettings((s) => ({
-                                            ...s,
-                                            custom_buttons: s.custom_buttons.map((x, j) => j === i ? { ...x, enabled: v } : x),
-                                        }))} />
-                                <button className="btn-ghost !min-h-0 !p-2 text-red-500"
-                                        onClick={() => setSettings((s) => ({
-                                            ...s,
-                                            custom_buttons: s.custom_buttons.filter((_, j) => j !== i),
-                                        }))}>
-                                    <Trash2 size={14} />
-                                </button>
+                                <span className="font-medium text-sm">{b.name || 'Без названия'}</span>
+                                <span className="font-mono text-xs text-slate-400 break-all">{b.url}</span>
+                                <span className={b.enabled !== false ? 'badge-green' : 'badge-red'}>
+                                    {b.enabled !== false ? 'Вкл' : 'Выкл'}
+                                </span>
                             </div>
                         ))}
-                        {!(settings.custom_buttons && settings.custom_buttons.length >= 8) && (
-                            <button className="btn-secondary text-sm"
-                                    onClick={() => setSettings((s) => ({
-                                        ...s,
-                                        custom_buttons: [...(s.custom_buttons || []), { name: '', url: 'https://', enabled: true }],
-                                    }))}>
-                                <Plus size={14} /> Добавить кнопку
-                            </button>
-                        )}
-                        </div>
-                    )}
-                </Card>
-
-            {/* Основные настройки */}
-            <Card title="🤖 Основные настройки" actions={<button className="btn-primary !min-h-0 !px-3 !py-1.5 text-sm" onClick={saveSettings}><Save size={14} /> Сохранить</button>}>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <Field label="Bot Token" hint="Получите у @BotFather в Telegram">
-                        <input className="input font-mono" value={settings.bot_token ?? ''}
-                               onChange={(e) => setSettings({ ...settings, bot_token: e.target.value })} />
-                    </Field>
-                    <Field label="Валюта цен">
-                        <select className="input" value={settings.currency ?? 'RUB'}
-                                onChange={(e) => setSettings({ ...settings, currency: e.target.value })}>
-                            <option value="RUB">₽ Рубли</option>
-                            <option value="USD">$ Доллары</option>
-                            <option value="USDT">₮ USDT</option>
-                        </select>
-                    </Field>
-                    <Field label="Приветственное сообщение" hint="Переменные: {имя}, {ссылка}, {дата}. Пусто — встроенное красивое приветствие">
-                        <textarea className="input min-h-[100px]" value={settings.welcome_text ?? ''}
-                                  onChange={(e) => setSettings({ ...settings, welcome_text: e.target.value })} />
-                    </Field>
-                    <Field label="🟢 Ссылка на статус-страницу"
-                           hint="Кнопка «Статус сервиса» в боте: меню тарифов, поддержка, сообщение после покупки. Пусто — кнопки нет">
-                        <input className="input font-mono" placeholder="https://status.ваш-домен.com/status"
-                               value={settings.status_url ?? ''}
-                               onChange={(e) => setSettings({ ...settings, status_url: e.target.value })} />
-                    </Field>
-                    <div className="space-y-3">
-                        <Toggle label="Бот включён" checked={!!settings.enabled}
-                                onChange={(v) => setSettings({ ...settings, enabled: v })} />
-                        <Toggle label="Уведомлять админа о покупках" checked={!!settings.notify_admin}
-                                onChange={(v) => setSettings({ ...settings, notify_admin: v })} />
                     </div>
+                )}
+            </Card>
+
+            {/* Основные настройки: сводка + модалка */}
+            <Card title="🤖 Основные настройки" actions={
+                <button className="btn-ghost !min-h-0 !p-2" title="Изменить"
+                        onClick={() => setEditCard('basic')}>
+                    <Pencil size={16} />
+                </button>
+            }>
+                <div>
+                    {settingRow('Bot Token', settings.bot_token || 'не задан')}
+                    {settingRow('Валюта цен', { RUB: '₽ Рубли', USD: '$ Доллары', USDT: '₮ USDT' }[settings.currency] || settings.currency)}
+                    {settingRow('Приветствие', settings.welcome_text ? `${String(settings.welcome_text).slice(0, 60)}…` : 'встроенное')}
+                    {settingRow('Ссылка на статус-страницу', settings.status_url || 'нет')}
+                    {settingRow('Бот включён', settings.enabled ? '✅ Да' : '❌ Нет')}
+                    {settingRow('Уведомления админу', settings.notify_admin ? '✅ Да' : '❌ Нет')}
                 </div>
             </Card>
 
-            {/* Обязательная подписка на канал */}
+            {/* Обязательная подписка на канал: сводка + модалка */}
             <Card title="📢 Обязательная подписка на канал"
-                  subtitle="Бот не будет работать, пока пользователь не подпишется на канал">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <Field label="Юзернейм канала" hint="Например: @my_proxy_channel (бот должен быть админом канала)">
-                        <input className="input font-mono" placeholder="@my_proxy_channel"
-                               value={settings.channel_username ?? ''}
-                               onChange={(e) => setSettings({ ...settings, channel_username: e.target.value })} />
-                    </Field>
-                    <div className="flex items-end pb-2">
-                        <Toggle label="Требовать подписку для пользования ботом"
-                                checked={!!settings.channel_required}
-                                onChange={(v) => setSettings({ ...settings, channel_required: v })} />
-                    </div>
+                  subtitle="Бот не будет работать, пока пользователь не подпишется на канал"
+                  actions={
+                      <button className="btn-ghost !min-h-0 !p-2" title="Изменить"
+                              onClick={() => setEditCard('sub')}>
+                          <Pencil size={16} />
+                      </button>
+                  }>
+                <div>
+                    {settingRow('Юзернейм канала', settings.channel_username || 'не задан')}
+                    {settingRow('Требовать подписку', settings.channel_required ? '✅ Да' : '❌ Нет')}
                 </div>
-                <p className="text-xs text-slate-400 mt-3">
-                    ⚠️ Добавьте бота администратором в канал, иначе проверка подписи работать не будет
-                    (при недоступности канала проверка автоматически отключается).
-                </p>
             </Card>
 
-            {/* Платёжные системы */}
+            {/* Платёжные системы: сводка + модалка */}
             <Card title="💳 Платёжные системы"
                   subtitle="Настройте одну из них — счёт будет создаваться автоматически, доступ выдаётся после оплаты"
-                  actions={<button className="btn-primary !min-h-0 !px-3 !py-1.5 text-sm" onClick={saveSettings}><Save size={14} /> Сохранить</button>}>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <Field label="🪙 CryptoBot (CryptoCloud) — токен" hint="Из @CryptoBot → Crypto Pay → Create App">
-                        <input className="input font-mono" value={settings.cryptobot_token ?? ''}
-                               onChange={(e) => setSettings({ ...settings, cryptobot_token: e.target.value })} />
-                    </Field>
-                    <div />
-                    <Field label="🏦 ЮKassa — shopId">
-                        <input className="input font-mono" value={settings.yookassa_shop_id ?? ''}
-                               onChange={(e) => setSettings({ ...settings, yookassa_shop_id: e.target.value })} />
-                    </Field>
-                    <Field label="🏦 ЮKassa — секретный ключ">
-                        <input className="input font-mono" type="password" value={settings.yookassa_secret_key ?? ''}
-                               onChange={(e) => setSettings({ ...settings, yookassa_secret_key: e.target.value })} />
-                    </Field>
-                    <Field label="💳 Карта для ручной оплаты" hint="Показывается в боте при оплате напрямую">
-                        <input className="input font-mono" value={settings.pay_card ?? ''}
-                               onChange={(e) => setSettings({ ...settings, pay_card: e.target.value })} />
-                    </Field>
-                    <Field label="📱 Телефон для СБП">
-                        <input className="input font-mono" value={settings.pay_phone ?? ''}
-                               onChange={(e) => setSettings({ ...settings, pay_phone: e.target.value })} />
-                    </Field>
-                    <Field label="🏦 Название банка">
-                        <input className="input" value={settings.pay_bank ?? ''}
-                               onChange={(e) => setSettings({ ...settings, pay_bank: e.target.value })} />
-                    </Field>
-                    <Field label="📝 Инструкция для ручной оплаты" hint="Показывается в боте, если ни одна платёжка не подключена (пусто — покажем карту/СБП)" className="md:col-span-2">
-                        <textarea className="input min-h-[70px]" value={settings.payment_instructions ?? ''}
-                                  onChange={(e) => setSettings({ ...settings, payment_instructions: e.target.value })} />
-                    </Field>
-                    <div className="flex items-end pb-2">
-                        <Toggle label="⭐ Telegram Stars (оплата звёздами)"
-                                checked={!!settings.stars_enabled}
-                                onChange={(v) => setSettings({ ...settings, stars_enabled: v })} />
-                    </div>
-                    <div />
-                    <Field label="⭐ Курс: 1 звезда = ₽" hint="Для тарифов в рублях. Звёзды = цена / курс, округление вверх">
-                        <input className="input" type="number" step="0.01" min="0.01" value={settings.stars_rate_rub ?? 2}
-                               onChange={(e) => setSettings({ ...settings, stars_rate_rub: Number(e.target.value) })} />
-                    </Field>
-                    <Field label="⭐ Курс: 1 звезда = $" hint="Для тарифов в $ и USDT">
-                        <input className="input" type="number" step="0.001" min="0.001" value={settings.stars_rate_usd ?? 0.02}
-                               onChange={(e) => setSettings({ ...settings, stars_rate_usd: Number(e.target.value) })} />
-                    </Field>
+                  actions={
+                      <button className="btn-ghost !min-h-0 !p-2" title="Изменить"
+                              onClick={() => setEditCard('pay')}>
+                          <Pencil size={16} />
+                      </button>
+                  }>
+                <div>
+                    {settingRow('🪙 CryptoBot', settings.cryptobot_token ? 'настроен' : 'не настроен')}
+                    {settingRow('🏦 ЮKassa', (settings.yookassa_shop_id && settings.yookassa_secret_key) ? 'настроена' : 'не настроена')}
+                    {settingRow('🏦 Карта админа', settings.pay_card || 'не задана')}
+                    {settingRow('⭐ Telegram Stars', settings.stars_enabled
+                        ? `включены (${settings.stars_rate_rub ?? 2} ₽ / ${settings.stars_rate_usd ?? 0.02} $ за ⭐)`
+                        : 'выключены')}
                 </div>
-                <p className="text-xs text-slate-400 mt-3">
-                    Вебхук CryptoBot: <code className="font-mono">https://ваш-домен/api/payments/webhook/cryptobot</code>
-                    (вставьте в @CryptoBot → Webhooks). ЮKassa → <code className="font-mono">/api/payments/webhook/yookassa</code>.
-                    Если счёт не создаётся — проверьте с VPS: <code className="font-mono">curl -I https://pay.crypt.bot</code> (домен должен быть доступен).
-                </p>
             </Card>
 
             {/* Тарифы: компактный список + модалка редактирования */}
