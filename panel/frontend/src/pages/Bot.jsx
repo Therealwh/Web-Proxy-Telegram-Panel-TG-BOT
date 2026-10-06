@@ -1,9 +1,9 @@
 // Настройка Telegram-бота продаж: админка (пользователи, баланс), тарифы, платежки
 import React, { useEffect, useState } from 'react';
-import { Plus, Save, Trash2, Power, Wallet, MessageSquare, ChevronDown, Pencil } from 'lucide-react';
+import { Plus, Save, Trash2, Power, Wallet, MessageSquare, ChevronDown, Pencil, Bot as BotIcon } from 'lucide-react';
 import { get, post, put, del } from '../api';
 import { toast } from '../store';
-import { Card, Field, Toggle, Skeleton, Modal, StatusBadge, formatDate } from '../components/ui';
+import { Card, Field, Toggle, Skeleton, Modal, StatusBadge, formatDate, PageHeader } from '../components/ui';
 
 /** Строка «настройка → значение» для сводного вида карточек */
 function settingRow(label, value) {
@@ -92,12 +92,13 @@ export default function Bot() {
 
     return (
         <div className="space-y-6">
-            <div className="flex items-center justify-between">
-                <h1 className="text-2xl font-bold">Telegram бот продаж</h1>
-                <span className={botStatus?.running ? 'badge-green' : 'badge-red'}>
-                    {botStatus?.running ? '✅ Бот запущен' : '❌ Бот остановлен'}
-                </span>
-            </div>
+            <PageHeader icon={<BotIcon size={20} />} title="Telegram бот продаж"
+                        subtitle="Тарифы, платежи, пользователи и статистика продаж"
+                        actions={
+                            <span className={botStatus?.running ? 'badge-green' : 'badge-red'}>
+                                {botStatus?.running ? '✅ Бот запущен' : '❌ Бот остановлен'}
+                            </span>
+                        } />
 
             {/* Статистика продаж */}
             {stats && (
@@ -592,7 +593,7 @@ export default function Bot() {
                                 <div className="flex-1 min-w-[180px]">
                                     <div className="font-medium">{t.name || 'Без названия'}</div>
                                     <div className="text-xs text-slate-400">
-                                        {t.days} дн. · <b className="text-slate-200">{t.price} {sign}</b> · {protoLabel} · {limits}
+                                        {t.days} дн. · <b className="text-slate-700 dark:text-slate-200">{t.price} {sign}</b> · {protoLabel} · {limits}
                                     </div>
                                 </div>
                                 <Toggle label="Вкл" checked={!!t.enabled}
@@ -662,7 +663,7 @@ export default function Bot() {
                                 </div>
                             </div>
                             <p className="text-xs text-slate-400 mt-3">
-                                👁 Клиент увидит: <b className="text-slate-200">{tariffModal.name || '—'} — {tariffModal.days} дн. — {tariffModal.price} {sign}</b> · {protoLabel}
+                                👁 Клиент увидит: <b className="text-slate-700 dark:text-slate-200">{tariffModal.name || '—'} — {tariffModal.days} дн. — {tariffModal.price} {sign}</b> · {protoLabel}
                             </p>
                             <div className="flex justify-end gap-2 mt-4">
                                 <button className="btn-secondary" onClick={() => setTariffModal(null)}>Отмена</button>

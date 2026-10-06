@@ -1,9 +1,9 @@
 // Управление API-ключами для разработчиков
 import React, { useEffect, useState } from 'react';
-import { Plus, Copy, Trash2, Power } from 'lucide-react';
+import { Plus, Copy, Trash2, Power, KeyRound } from 'lucide-react';
 import { get, post, del, patch } from '../api';
 import { toast } from '../store';
-import { Card, Modal, Field, Skeleton } from '../components/ui';
+import { Card, Modal, Field, Skeleton, PageHeader } from '../components/ui';
 
 export default function ApiKeys() {
     const [keys, setKeys] = useState(null);
@@ -49,10 +49,11 @@ export default function ApiKeys() {
 
     return (
         <div className="space-y-4">
-            <div className="flex items-center justify-between">
-                <h1 className="text-2xl font-bold">API-ключи</h1>
-                <button className="btn-primary" onClick={() => setModal(true)}><Plus size={16} /> Создать ключ</button>
-            </div>
+            <PageHeader icon={<KeyRound size={20} />} title="API-ключи"
+                        subtitle="Доступ для внешних интеграций"
+                        actions={
+                            <button className="btn-primary" onClick={() => setModal(true)}><Plus size={16} /> Создать ключ</button>
+                        } />
 
             {newKey && (
                 <Card className="border-amber-300 dark:border-amber-500/50">

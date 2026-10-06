@@ -30,11 +30,39 @@ export default function Layout() {
     const { theme, toggleTheme } = useThemeStore();
     const [menuOpen, setMenuOpen] = useState(false);
     const [version, setVersion] = useState('');
+    const [badges, setBadges] = useState({ online: 0, pending: 0, updates: false });
     const navigate = useNavigate();
 
     // Версия панели из API (всегда актуальная)
     useEffect(() => {
         fetch('/api/health').then((r) => r.json()).then((d) => setVersion(d.version || '')).catch(() => {});
+    }, []);
+
+    // Бейджи меню: онлайн, ожидающие платежи, доступные обновления
+    useEffect(() => {
+        const newer = (latest, current) => {
+            if (!latest || !current) return false;
+            const p = (s) => String(s).replace(/^v/, '').split('.').map((n) => parseInt(n, 10) || 0);
+            const a = p(latest), b = p(current);
+            for (let i = 0; i < 3; i++) {
+                if ((a[i] || 0) > (b[i] || 0)) return true;
+                if ((a[i] || 0) < (b[i] || 0)) return false;
+            }
+            return false;
+        };
+        const tick = () => {
+            get('/stats/active').then((d) => setBadges((s) => ({ ...s, online: (d.connections || []).length }))).catch(() => {});
+            get('/payments').then((d) => setBadges((s) => ({
+                ...s, pending: (d.payments || []).filter((p) => p.status === 'pending').length,
+            }))).catch(() => {});
+            get('/updates/status').then((s) => setBadges((b) => ({
+                ...b,
+                updates: newer(s.panel?.latest, s.panel?.current) || newer(s.telemt?.latest, s.telemt?.current),
+            }))).catch(() => {});
+        };
+        tick();
+        const timer = setInterval(tick, 120000);
+        return () => clearInterval(timer);
     }, []);
 
     // Уведомление о доступных обновлениях при входе в панель
@@ -105,7 +133,16 @@ export default function Layout() {
                             `}
                         >
                             <Icon size={18} />
-                            {label}
+                            <span className="flex-1">{label}</span>
+                            {to === '/logs' && badges.online > 0 && (
+                                <span className="badge-green !px-1.5" title="Сейчас онлайн">{badges.online}</span>
+                            )}
+                            {to === '/sales' && badges.pending > 0 && (
+                                <span className="badge-yellow !px-1.5" title="Ожидают подтверждения">{badges.pending}</span>
+                            )}
+                            {to === '/updates' && badges.updates && (
+                                <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" title="Доступно обновление" />
+                            )}
                         </NavLink>
                     ))}
                 </nav>

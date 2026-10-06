@@ -8,43 +8,51 @@
         @apply antialiased;
     }
     body {
-        @apply bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100;
+        @apply bg-slate-100 text-slate-900 dark:bg-slate-950 dark:text-slate-100;
     }
 }
 
 @layer components {
     /* Карточка */
     .card {
-        @apply bg-white dark:bg-slate-900 rounded-xl border border-slate-200
-               dark:border-slate-800 shadow-sm p-5 transition-all duration-200;
+        @apply bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80
+               dark:border-slate-800 shadow-[0_1px_2px_rgba(15,23,42,0.05)]
+               dark:shadow-[0_4px_20px_rgba(0,0,0,0.35)] p-5 transition-all duration-200;
     }
 
     /* Кнопки */
     .btn {
-        @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2
+        @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2
                text-sm font-medium transition-all duration-200
                focus:outline-none focus:ring-2 focus:ring-primary/50
-               disabled:opacity-50 disabled:cursor-not-allowed min-h-[44px];
+               disabled:opacity-50 disabled:cursor-not-allowed min-h-[44px]
+               active:scale-[0.98];
     }
     .btn-primary {
-        @apply btn bg-primary text-white hover:bg-primary-600 active:bg-primary-700;
+        @apply btn text-white bg-gradient-to-b from-primary to-primary-600
+               shadow-sm shadow-primary/30 hover:brightness-110 hover:shadow-md hover:shadow-primary/30;
     }
     .btn-secondary {
-        @apply btn bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200
-               hover:bg-slate-200 dark:hover:bg-slate-700;
+        @apply btn bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200
+               border border-slate-200 dark:border-slate-700
+               hover:bg-slate-50 dark:hover:bg-slate-700 hover:border-slate-300 dark:hover:border-slate-600
+               hover:-translate-y-px shadow-sm;
     }
     .btn-danger {
-        @apply btn bg-red-500 text-white hover:bg-red-600;
+        @apply btn text-white bg-gradient-to-b from-red-500 to-red-600
+               shadow-sm shadow-red-500/25 hover:brightness-110;
     }
     .btn-ghost {
-        @apply btn hover:bg-slate-100 dark:hover:bg-slate-800;
+        @apply btn text-slate-600 dark:text-slate-300
+               hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-primary dark:hover:text-primary;
     }
 
     /* Поля ввода */
     .input {
-        @apply w-full rounded-lg border border-slate-300 dark:border-slate-700
+        @apply w-full rounded-xl border border-slate-300 dark:border-slate-700
                bg-white dark:bg-slate-800 px-3 py-2 text-sm
-               focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary
+               hover:border-slate-400 dark:hover:border-slate-600
+               focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary focus:shadow-sm
                placeholder:text-slate-400 transition-all duration-200;
     }
 

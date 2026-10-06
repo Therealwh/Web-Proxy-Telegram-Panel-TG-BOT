@@ -1,8 +1,9 @@
 // Страница аналитики: продажи, выручка, конверсия теста, новые клиенты
 import React, { useEffect, useState } from 'react';
 import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
+import { BarChart3 } from 'lucide-react';
 import { get } from '../api';
-import { Card, Skeleton } from '../components/ui';
+import { Card, Skeleton, PageHeader } from '../components/ui';
 
 /** Компактная карточка-метрика */
 function Metric({ value, label, accent }) {
@@ -29,15 +30,16 @@ export default function Sales() {
 
     return (
         <div className="space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-                <h1 className="text-2xl font-bold">Продажи и аналитика</h1>
-                <select className="input !w-40" value={days} onChange={(e) => setDays(Number(e.target.value))}>
-                    <option value={7}>7 дней</option>
-                    <option value={30}>30 дней</option>
-                    <option value={90}>90 дней</option>
-                    <option value={365}>Год</option>
-                </select>
-            </div>
+            <PageHeader icon={<BarChart3 size={20} />} title="Продажи и аналитика"
+                        subtitle="Выручка, конверсия теста и топ тарифов"
+                        actions={
+                            <select className="input !w-40" value={days} onChange={(e) => setDays(Number(e.target.value))}>
+                                <option value={7}>7 дней</option>
+                                <option value={30}>30 дней</option>
+                                <option value={90}>90 дней</option>
+                                <option value={365}>Год</option>
+                            </select>
+                        } />
 
             {/* Метрики */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

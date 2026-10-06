@@ -1,6 +1,7 @@
 // Документация для разработчиков: примеры использования публичного API
 import React from 'react';
-import { Card } from '../components/ui';
+import { Code2 } from 'lucide-react';
+import { Card, PageHeader } from '../components/ui';
 
 const PY_EXAMPLE = `# Пример бота на Python (aiogram 3.x)
 from aiogram import Bot, Dispatcher
@@ -59,7 +60,8 @@ function CodeBlock({ title, code }) {
 export default function Developers() {
     return (
         <div className="space-y-4">
-            <h1 className="text-2xl font-bold">Для разработчиков</h1>
+            <PageHeader icon={<Code2 size={20} />} title="Для разработчиков"
+                        subtitle="Публичный API, вебхуки и примеры кода" />
 
             <Card title="🔌 Публичный API">
                 <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">

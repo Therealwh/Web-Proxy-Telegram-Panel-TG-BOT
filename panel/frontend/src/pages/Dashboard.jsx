@@ -1,11 +1,11 @@
 // Дашборд: сводка системы в реальном времени
 import React, { useEffect, useState } from 'react';
 import { AreaChart, Area, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
-import { Users, Link2, Wifi, HardDrive, Cpu, MemoryStick, RefreshCw } from 'lucide-react';
+import { Users, Link2, Wifi, HardDrive, Cpu, MemoryStick, RefreshCw, LayoutDashboard } from 'lucide-react';
 import { get, post } from '../api';
 import { useAuthStore, toast } from '../store';
 import { connectLive } from '../ws';
-import { Card, StatusDot, Skeleton, formatBytes, deviceInfo } from '../components/ui';
+import { Card, StatusDot, Skeleton, formatBytes, deviceInfo, PageHeader } from '../components/ui';
 
 const COLORS = ['#0088cc', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316'];
 
@@ -131,7 +131,8 @@ export default function Dashboard() {
 
     return (
         <div className="space-y-6">
-            <h1 className="text-2xl font-bold">Дашборд</h1>
+            <PageHeader icon={<LayoutDashboard size={20} />} title="Дашборд"
+                        subtitle="Состояние сервера и сервисов в реальном времени" />
 
             {/* Счётчики */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

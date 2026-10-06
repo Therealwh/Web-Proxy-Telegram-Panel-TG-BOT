@@ -80,14 +80,34 @@ export function Toggle({ checked, onChange, label }) {
                 role="switch"
                 aria-checked={checked}
                 onClick={() => onChange(!checked)}
-                className={`relative w-11 h-6 rounded-full transition-colors duration-200
-                    ${checked ? 'bg-primary' : 'bg-slate-300 dark:bg-slate-600'}`}
+                className={`relative w-11 h-6 rounded-full transition-all duration-200
+                    ${checked
+                        ? 'bg-gradient-to-r from-primary to-primary-600 shadow-sm shadow-primary/40'
+                        : 'bg-slate-300 dark:bg-slate-600 hover:bg-slate-400 dark:hover:bg-slate-500'}`}
             >
-                <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow
+                <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow-md
                     transition-transform duration-200 ${checked ? 'translate-x-5' : ''}`} />
             </button>
             {label && <span className="text-sm">{label}</span>}
         </label>
+    );
+}
+
+/** Заголовок страницы: иконка + название + подзаголовок + действия */
+export function PageHeader({ icon, title, subtitle, actions }) {
+    return (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-primary to-primary-600 flex items-center justify-center text-white shadow-lg shadow-primary/25 shrink-0">
+                    {icon}
+                </div>
+                <div>
+                    <h1 className="text-2xl font-bold leading-tight">{title}</h1>
+                    {subtitle && <p className="text-sm text-slate-500 dark:text-slate-400">{subtitle}</p>}
+                </div>
+            </div>
+            {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
+        </div>
     );
 }
 

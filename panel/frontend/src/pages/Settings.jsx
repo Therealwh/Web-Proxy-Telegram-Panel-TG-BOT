@@ -1,9 +1,9 @@
 // Настройки панели с категориями
 import React, { useEffect, useRef, useState } from 'react';
-import { Save, Pencil } from 'lucide-react';
+import { Save, Pencil, Settings as SettingsIcon } from 'lucide-react';
 import { get, post, put } from '../api';
 import { toast } from '../store';
-import { Card, Field, Toggle, Skeleton, Modal } from '../components/ui';
+import { Card, Field, Toggle, Skeleton, Modal, PageHeader } from '../components/ui';
 
 // Описание категорий и их полей (подписи на русском)
 const CATEGORIES = [
@@ -133,9 +133,9 @@ export default function Settings() {
 
     return (
         <div className="space-y-6">
-            <div className="flex items-center justify-between">
-                <h1 className="text-2xl font-bold">Настройки</h1>
-            </div>
+            <PageHeader icon={<SettingsIcon size={20} />} title="Настройки"
+                        subtitle="Домен, сеть, уведомления, внешний вид и бэкапы" />
+
 
             {/* Смена домена без переустановки */}
             <DomainCard />

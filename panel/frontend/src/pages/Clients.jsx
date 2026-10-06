@@ -1,9 +1,9 @@
 // Управление клиентами: таблица, поиск, создание/редактирование, действия
 import React, { useEffect, useMemo, useState } from 'react';
-import { Plus, Search, Copy, QrCode, Power, Trash2, Pencil, CalendarPlus, KeyRound, Eraser, Download } from 'lucide-react';
+import { Plus, Search, Copy, QrCode, Power, Trash2, Pencil, CalendarPlus, KeyRound, Eraser, Download, Users } from 'lucide-react';
 import { get, post, patch, del } from '../api';
 import { toast } from '../store';
-import { Card, StatusBadge, ProgressBar, Modal, Field, Toggle, formatBytes, formatDate, Skeleton } from '../components/ui';
+import { Card, StatusBadge, ProgressBar, Modal, Field, Toggle, formatBytes, formatDate, Skeleton, PageHeader } from '../components/ui';
 
 // Пустая форма клиента
 const EMPTY_FORM = {
@@ -182,17 +182,16 @@ export default function Clients() {
 
     return (
         <div className="space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-                <h1 className="text-2xl font-bold">Клиенты</h1>
-                <div className="flex gap-2">
-                    <a href={`/api/clients/export/csv?token=${sessionStorage.getItem('tggate_token')}`} className="btn-secondary" download>
-                        <Download size={16} /> Экспорт CSV
-                    </a>
-                    <button onClick={openCreate} className="btn-primary">
-                        <Plus size={16} /> Создать клиента
-                    </button>
-                </div>
-            </div>
+            <PageHeader icon={<Users size={20} />} title="Клиенты"
+                        subtitle="Прокси, лимиты, продление и баланс"
+                        actions={<>
+                            <a href={`/api/clients/export/csv?token=${sessionStorage.getItem('tggate_token')}`} className="btn-secondary" download>
+                                <Download size={16} /> Экспорт CSV
+                            </a>
+                            <button onClick={openCreate} className="btn-primary">
+                                <Plus size={16} /> Создать клиента
+                            </button>
+                        </>} />
 
             {/* Поиск и фильтры */}
             <Card>

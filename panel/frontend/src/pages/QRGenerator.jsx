@@ -1,9 +1,9 @@
 // Страница QR-кодов: выбор клиента, типы QR, скачивание, статистика сканов
 import React, { useEffect, useState } from 'react';
-import { Download, Send } from 'lucide-react';
+import { Download, Send, QrCode } from 'lucide-react';
 import { get, post } from '../api';
 import { toast } from '../store';
-import { Card, Field, Skeleton } from '../components/ui';
+import { Card, Field, Skeleton, PageHeader } from '../components/ui';
 
 export default function QRGenerator() {
     const [clients, setClients] = useState(null);
@@ -39,7 +39,8 @@ export default function QRGenerator() {
 
     return (
         <div className="space-y-4">
-            <h1 className="text-2xl font-bold">QR-коды подключения</h1>
+            <PageHeader icon={<QrCode size={20} />} title="QR-коды подключения"
+                        subtitle="Быстрое подключение клиентов по QR" />
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                 <Card title="Параметры" className="lg:col-span-1">

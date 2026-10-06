@@ -1,10 +1,10 @@
 // Живые логи подключений: WebSocket-обновления, фильтры, экспорт
 import React, { useEffect, useRef, useState } from 'react';
-import { Download, Pause, Play } from 'lucide-react';
+import { Download, Pause, Play, ScrollText } from 'lucide-react';
 import { get } from '../api';
 import { useAuthStore, toast } from '../store';
 import { connectLive } from '../ws';
-import { Card, formatDate, deviceInfo } from '../components/ui';
+import { Card, formatDate, deviceInfo, PageHeader } from '../components/ui';
 
 const STATUS_BADGE = {
     ok: ['badge-green', '✅ успех'],
@@ -48,17 +48,16 @@ export default function Logs() {
 
     return (
         <div className="space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-                <h1 className="text-2xl font-bold">Живые логи</h1>
-                <div className="flex gap-2">
-                    <button className="btn-secondary" onClick={() => setPaused(!paused)}>
-                        {paused ? <><Play size={16} /> Возобновить</> : <><Pause size={16} /> Пауза</>}
-                    </button>
-                    <a href={exportUrl()} className="btn-secondary" download>
-                        <Download size={16} /> Экспорт
-                    </a>
-                </div>
-            </div>
+            <PageHeader icon={<ScrollText size={20} />} title="Живые логи"
+                        subtitle="Подключения клиентов в реальном времени"
+                        actions={<>
+                            <button className="btn-secondary" onClick={() => setPaused(!paused)}>
+                                {paused ? <><Play size={16} /> Возобновить</> : <><Pause size={16} /> Пауза</>}
+                            </button>
+                            <a href={exportUrl()} className="btn-secondary" download>
+                                <Download size={16} /> Экспорт
+                            </a>
+                        </>} />
 
             {/* Фильтры */}
             <Card>

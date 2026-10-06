@@ -3,7 +3,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { RefreshCw, Download, ShieldCheck, ChevronDown } from 'lucide-react';
 import { get, post, put } from '../api';
 import { toast } from '../store';
-import { Card, Field, Skeleton, formatDate } from '../components/ui';
+import { Card, Field, Skeleton, formatDate, PageHeader } from '../components/ui';
 
 /** Живой статус-бар обновления (данные из /updates/progress) */
 function ProgressCard({ progress, seenRunning }) {
@@ -204,13 +204,14 @@ export default function Updates() {
 
     return (
         <div className="space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-                <h1 className="text-2xl font-bold">Обновления системы</h1>
-                <button className="btn-secondary" disabled={busy !== ''}
-                        onClick={() => run('check', null, 'Проверка запущена')}>
-                    <RefreshCw size={16} /> Проверить сейчас
-                </button>
-            </div>
+            <PageHeader icon={<RefreshCw size={20} />} title="Обновления системы"
+                        subtitle="Версии панели, Telemt и SSL-сертификат"
+                        actions={
+                            <button className="btn-secondary" disabled={busy !== ''}
+                                    onClick={() => run('check', null, 'Проверка запущена')}>
+                                <RefreshCw size={16} /> Проверить сейчас
+                            </button>
+                        } />
 
             <ProgressCard progress={progress} seenRunning={sawRunning} />
 

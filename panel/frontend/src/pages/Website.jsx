@@ -1,9 +1,9 @@
 // Управление сайтом-заглушкой: файлы, редактор, шаблоны, предпросмотр
 import React, { useEffect, useState } from 'react';
-import { Save, Upload, Trash2, FileText, Eye } from 'lucide-react';
+import { Save, Upload, Trash2, FileText, Eye, Globe } from 'lucide-react';
 import { get, post, put, del } from '../api';
 import { toast } from '../store';
-import { Card, Modal, Skeleton } from '../components/ui';
+import { Card, Modal, Skeleton, PageHeader } from '../components/ui';
 
 export default function Website() {
     const [files, setFiles] = useState(null);
@@ -88,16 +88,15 @@ export default function Website() {
 
     return (
         <div className="space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-                <h1 className="text-2xl font-bold">Сайт-заглушка</h1>
-                <div className="flex gap-2">
-                    <a href={`${location.protocol}//${location.host}/`} target="_blank" rel="noreferrer" className="btn-secondary"><Eye size={16} /> Открыть сайт</a>
-                    <label className="btn-secondary cursor-pointer">
-                        <Upload size={16} /> Загрузить файл
-                        <input type="file" className="hidden" onChange={uploadFile} />
-                    </label>
-                </div>
-            </div>
+            <PageHeader icon={<Globe size={20} />} title="Сайт-заглушка"
+                        subtitle="Маскировка домена: файлы, шаблоны и SEO"
+                        actions={<>
+                            <a href={`${location.protocol}//${location.host}/`} target="_blank" rel="noreferrer" className="btn-secondary"><Eye size={16} /> Открыть сайт</a>
+                            <label className="btn-secondary cursor-pointer">
+                                <Upload size={16} /> Загрузить файл
+                                <input type="file" className="hidden" onChange={uploadFile} />
+                            </label>
+                        </>} />
 
             {/* Шаблоны */}
             <Card title="Готовые шаблоны" subtitle="Применение заменяет все файлы сайта">
