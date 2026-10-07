@@ -300,6 +300,7 @@ bash -c "$(curl -fsSL --proto '=https' --tlsv1.2 \
 | Документ | Содержание |
 |---|---|
 | [README.md](README.md) | обзор, быстрая установка, возможности, витрина скриншотов |
+| [README_EN.md](README_EN.md) | то же на английском |
 | [docs/SCREENSHOTS.md](docs/SCREENSHOTS.md) | галерея всех разделов панели |
 | [docs/INSTALL.md](docs/INSTALL.md) | установка, архитектура портов |
 | [docs/API.md](docs/API.md) | API панели |

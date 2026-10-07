@@ -1,4 +1,9 @@
 <p align="center">
+  <a href="README_EN.md">English</a> · <b>Русский</b>
+</p>
+
+<p align="center">
+  <img src="assets/logo.svg" width="120" alt="TGGATE logo">
   <h1 align="center">🚀 TGGATE — Telegram Gate</h1>
   <p align="center">
     Панель управления Telegram-прокси: <b>Web Proxy</b> и <b>MTProto</b> через единый сервер <b>Telemt</b> —
@@ -182,15 +187,34 @@ TGGATE развивается одним человеком в свободно�
 вам доход или просто нравится — поддержите разработку любой суммой 🙏
 Каждое пожертвование идёт на серверы, домены и новые функции.
 
-| Валюта | Сеть | Адрес |
-|---|---|---|
-| USDT | TRC-20 | `TGWtYdfLEVEVXScaE4Ut7ornk1A3CXCCfe` |
-| TRX | TRON | `TGWtYdfLEVEVXScaE4Ut7ornk1A3CXCCfe` |
-| USDT | TON | `UQCGYVM9hg2JcqnEQpTPibPxHUuSOB03zhaSE8Yn-C2aHlH-` |
-| GRAM | TON | `UQCGYVM9hg2JcqnEQpTPibPxHUuSOB03zhaSE8Yn-C2aHlH-` |
-| BNB | Smart Chain (BEP-20) | `0xde5a28A77359cdCf32666Db8Aae5f5Bb13c5f886` |
+Нажмите значок копирования в правом верхнем углу блока с адресом.
 
-> Адреса кликабельны для копирования. Спасибо! 💙
+**USDT — TRC-20**
+```
+TGWtYdfLEVEVXScaE4Ut7ornk1A3CXCCfe
+```
+
+**TRX — TRON**
+```
+TGWtYdfLEVEVXScaE4Ut7ornk1A3CXCCfe
+```
+
+**USDT — TON**
+```
+UQCGYVM9hg2JcqnEQpTPibPxHUuSOB03zhaSE8Yn-C2aHlH-
+```
+
+**GRAM — TON**
+```
+UQCGYVM9hg2JcqnEQpTPibPxHUuSOB03zhaSE8Yn-C2aHlH-
+```
+
+**BNB — Smart Chain (BEP-20)**
+```
+0xde5a28A77359cdCf32666Db8Aae5f5Bb13c5f886
+```
+
+> Спасибо! 💙
 
 ## 📚 Документация
 
