@@ -48,6 +48,9 @@ const DEFAULTS = {
     backup_auto: true,                   // ежедневные бэкапы
     backup_keep_days: 14,                // сколько дней хранить
 
+    // 📜 Журналы
+    logs_keep_days: 30,                 // сколько дней хранить логи подключений
+
     // 🔄 Обновления
     updates_auto_check: true,
     updates_frequency: 'daily',          // hourly | daily | weekly | monthly

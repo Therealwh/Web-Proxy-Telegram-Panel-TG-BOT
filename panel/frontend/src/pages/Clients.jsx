@@ -415,35 +415,71 @@ export default function Clients() {
                     </div>
                 )}
             </Modal>
-            {/* Модал подключений клиента: кто онлайн, IP, страна */}
-            <Modal open={!!connClient} onClose={() => setConnClient(null)}
-                   title={t('clients.connTitle', { username: connClient?.username })}>
-                {connClient && (activeMap[connClient.username] || []).length === 0 ? (
-                    <p className="text-sm text-slate-500 py-6 text-center">
-                        {t('clients.connEmpty')}
-                    </p>
-                ) : connClient && (
-                    <table className="w-full text-sm">
-                        <thead>
-                            <tr className="text-left text-slate-500 border-b border-slate-200 dark:border-slate-700">
-                                <th className="py-2 pr-4 font-medium">{t('dashboard.thIp')}</th>
-                                <th className="py-2 pr-4 font-medium">{t('dashboard.thCountry')}</th>
-                                <th className="py-2 font-medium">{t('dashboard.thProto')}</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {(activeMap[connClient.username] || []).map((c, i) => (
-                                <tr key={`${c.ip}-${i}`} className="border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
-                                    <td className="py-2 pr-4 font-mono text-xs">{c.ip}</td>
-                                    <td className="py-2 pr-4">{c.country}</td>
-                                    <td className="py-2"><ProtoBadge protocol={c.protocol} /></td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                )}
-                <p className="text-xs text-slate-400 mt-4">{t('clients.connNote')}</p>
-            </Modal>
+            {/* Модал подключений клиента */}
+            <ConnModal client={connClient}
+                       activeConns={connClient ? (activeMap[connClient.username] || []) : []}
+                       onClose={() => setConnClient(null)} t={t} lang={lang} />
         </div>
+    );
+}
+
+/** Модал подключений клиента: кто онлайн + персистентная история */
+function ConnModal({ client, activeConns, onClose, t, lang }) {
+    const [history, setHistory] = useState(null);
+    useEffect(() => {
+        if (!client) return;
+        setHistory(null);
+        get(`/logs?username=${encodeURIComponent(client.username)}&limit=20`)
+            .then((d) => setHistory(d.logs || []))
+            .catch(() => setHistory([]));
+    }, [client?.username]);
+    return (
+        <Modal open={!!client} onClose={onClose}
+               title={t('clients.connTitle', { username: client?.username })}>
+            {client && activeConns.length === 0 ? (
+                <p className="text-sm text-slate-500 py-6 text-center">
+                    {t('clients.connEmpty')}
+                </p>
+            ) : client && (
+                <table className="w-full text-sm">
+                    <thead>
+                        <tr className="text-left text-slate-500 border-b border-slate-200 dark:border-slate-700">
+                            <th className="py-2 pr-4 font-medium">{t('dashboard.thIp')}</th>
+                            <th className="py-2 pr-4 font-medium">{t('dashboard.thCountry')}</th>
+                            <th className="py-2 font-medium">{t('dashboard.thProto')}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {activeConns.map((c, i) => (
+                            <tr key={`${c.ip}-${i}`} className="border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                                <td className="py-2 pr-4 font-mono text-xs">{c.ip}</td>
+                                <td className="py-2 pr-4">{c.country}</td>
+                                <td className="py-2"><ProtoBadge protocol={c.protocol} /></td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            )}
+            {/* История подключений (переживает рестарты) */}
+            <h4 className="font-medium mt-5 mb-2 text-sm">{t('clients.histTitle')}</h4>
+            {!history ? (
+                <Skeleton className="h-16" />
+            ) : history.length === 0 ? (
+                <p className="text-sm text-slate-500 py-2 text-center">{t('clients.histEmpty')}</p>
+            ) : (
+                <table className="w-full text-sm">
+                    <tbody>
+                        {history.map((h) => (
+                            <tr key={h.id} className="border-b border-slate-100 dark:border-slate-800">
+                                <td className="py-1.5 pr-4 text-slate-500 whitespace-nowrap">{formatDate(h.created_at, lang)}</td>
+                                <td className="py-1.5 pr-4 font-mono text-xs">{h.ip}</td>
+                                <td className="py-1.5"><ProtoBadge protocol={h.protocol} /></td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            )}
+            <p className="text-xs text-slate-400 mt-4">{t('clients.connNote')}</p>
+        </Modal>
     );
 }

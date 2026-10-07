@@ -48,6 +48,12 @@ const CATEGORIES = (t) => [
         ],
     },
     {
+        id: 'logs', icon: '📜', title: t('settings.catLogs'),
+        fields: [
+            { key: 'logs_keep_days', label: t('settings.fLogsKeep'), hint: t('settings.fLogsKeepHint'), type: 'number' },
+        ],
+    },
+    {
         id: 'dc', icon: '🛰️', title: t('settings.catDc'),
         fields: [
             { key: 'dc_monitor_enabled', label: t('settings.fDcMonitor'), type: 'toggle' },

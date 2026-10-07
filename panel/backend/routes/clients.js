@@ -104,7 +104,9 @@ router.get('/', (req, res) => {
 
     const total = db.prepare(`SELECT COUNT(*) AS c FROM clients WHERE ${where}`).get(...params).c;
     const rows = db.prepare(
-        `SELECT * FROM clients WHERE ${where}
+        `SELECT clients.*,
+            (SELECT MAX(created_at) FROM connection_logs cl WHERE cl.username = clients.username) AS last_seen
+         FROM clients WHERE ${where}
          ORDER BY created_at DESC LIMIT ? OFFSET ?`
     ).all(...params, limitNum, (pageNum - 1) * limitNum);
 

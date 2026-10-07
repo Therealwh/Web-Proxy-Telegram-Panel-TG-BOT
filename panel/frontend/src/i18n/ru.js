@@ -149,6 +149,8 @@ export default {
         connTitle: 'Подключения: {username}',
         connEmpty: 'Сейчас нет активных подключений',
         connNote: 'Обновляется автоматически каждые 5 секунд — модал можно оставить открытым',
+        histTitle: 'История подключений',
+        histEmpty: 'Подключений пока не было',
     },
     ui: {
         stActive: 'Активен',
@@ -571,6 +573,9 @@ curl -X POST -H "Authorization: Bearer tgk_ваш_ключ" \\
         catBackup: 'Резервные копии',
         fBackupAuto: 'Ежедневные автобэкапы',
         fBackupKeep: 'Хранить бэкапов, дней',
+        catLogs: 'Журналы',
+        fLogsKeep: 'Хранить логи подключений, дней',
+        fLogsKeepHint: 'Старые записи чистятся автоматически',
         catDc: 'DC-монитор',
         fDcMonitor: 'Следить за доступностью DC',
         fDcThreshold: 'Порог покрытия, %',

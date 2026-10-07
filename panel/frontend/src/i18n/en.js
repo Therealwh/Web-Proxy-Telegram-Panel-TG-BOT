@@ -149,6 +149,8 @@ export default {
         connTitle: 'Connections: {username}',
         connEmpty: 'No active connections right now',
         connNote: 'Auto-refreshes every 5 seconds — feel free to keep the modal open',
+        histTitle: 'Connection history',
+        histEmpty: 'No connections yet',
     },
     ui: {
         stActive: 'Active',
@@ -571,6 +573,9 @@ curl -X POST -H "Authorization: Bearer tgk_your_key" \\
         catBackup: 'Backups',
         fBackupAuto: 'Daily auto-backups',
         fBackupKeep: 'Keep backups, days',
+        catLogs: 'Logs',
+        fLogsKeep: 'Keep connection logs, days',
+        fLogsKeepHint: 'Old entries are cleaned automatically',
         catDc: 'DC monitor',
         fDcMonitor: 'Watch Telegram DC availability',
         fDcThreshold: 'Coverage threshold, %',

@@ -11,8 +11,10 @@ const db = require('../db');
 const telemt = require('./telemtApi');
 const wsHub = require('./wsHub');
 const logger = require('../utils/logger');
+const { getAll } = require('../routes/settings');
 
 let running = false;
+let lastPrune = 0;
 /** @type {Set<string>} ключи "username|ip|protocol" из прошлого опроса */
 let prevKeys = new Set();
 
@@ -67,7 +69,19 @@ async function pollOnce() {
             wsHub.broadcast('log', rec);
         } catch { /* БД не должна падать */ }
     }
-    // Полный провал опроса — не сбрасываем prevKeys, чтобы после\n    // восстановления Telemt не задублировать все подключения\n    if (snapshot.size === 0 && prevKeys.size > 0) return;\n    prevKeys = new Set(snapshot.keys());
+    // Полный провал опроса — не сбрасываем prevKeys, чтобы после
+    // восстановления Telemt не задублировать все подключения
+    if (snapshot.size === 0 && prevKeys.size > 0) return;
+    prevKeys = new Set(snapshot.keys());
+
+    // Ретеншн: чистим старые логи не чаще раза в час
+    if (Date.now() - lastPrune > 60 * 60 * 1000) {
+        lastPrune = Date.now();
+        try {
+            const days = Math.max(1, Number(getAll().logs_keep_days ?? 30));
+            db.prepare(`DELETE FROM connection_logs WHERE created_at < datetime('now','-${days} days')`).run();
+        } catch { /* ignore */ }
+    }
 }
 
 /** Запускает периодический опрос. */
