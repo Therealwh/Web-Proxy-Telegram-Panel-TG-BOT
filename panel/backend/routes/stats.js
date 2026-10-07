@@ -155,6 +155,20 @@ router.get('/engine', async (req, res, next) => {
     }
 });
 
+// --- Движок: включить расширенную телеметрию (флаги API + instant reload) ---
+router.post('/engine/enable', async (req, res, next) => {
+    try {
+        const telemt = require('../services/telemtApi');
+        await telemt.patchConfig(
+            { server: { api: { minimal_runtime_enabled: true, runtime_edge_enabled: true } } },
+            'instant'
+        );
+        res.json({ ok: true });
+    } catch (err) {
+        next(err);
+    }
+});
+
 // --- TLS-отпечатки: накопленные записи ---
 router.get('/tls-fingerprints', (req, res, next) => {
     try {

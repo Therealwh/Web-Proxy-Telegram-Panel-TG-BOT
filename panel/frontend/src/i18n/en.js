@@ -655,6 +655,10 @@ curl -X POST -H "Authorization: Bearer tgk_your_key" \\
         fpEmpty: 'No fingerprints yet',
         fpTotal: 'Total',
         fpBad: 'Suspicious',
+        enableText: 'Extended telemetry is disabled in the Telemt config (minimal_runtime_enabled and runtime_edge_enabled flags). Enable it with one click — the config will be patched and applied without dropping connections.',
+        enableBtn: 'Enable telemetry',
+        enabling: 'Enabling...',
+        enabledToast: 'Telemetry enabled! Data will appear in a few seconds.',
     },
     login: {
         subtitle: 'Telegram Gate — proxy control panel',

@@ -1,7 +1,7 @@
 // Страница телеметрии движка Telemt: ME-качество, пул, NAT/STUN, самопроверка, гейты, апстримы
 import React, { useEffect, useState } from 'react';
 import { Activity } from 'lucide-react';
-import { get } from '../api';
+import { get, post } from '../api';
 import { toast } from '../store';
 import { useT } from '../i18n';
 import { Card, Skeleton, PageHeader } from '../components/ui';
@@ -31,6 +31,7 @@ export default function Engine() {
     const [data, setData] = useState(null);
     const [fp, setFp] = useState(null);
     const [fpQuery, setFpQuery] = useState('');
+    const [enabling, setEnabling] = useState(false);
     const t = useT();
 
     useEffect(() => {
@@ -45,6 +46,39 @@ export default function Engine() {
     }, []);
 
     if (!data) return <div className="space-y-4">{[...Array(3)].map((_, i) => <Skeleton key={i} className="h-40" />)}</div>;
+
+    const allNull = ['quality', 'pool', 'natStun', 'selftest', 'gates', 'upstreams', 'ready']
+        .every((k) => !data[k]);
+
+    const enableTelemetry = async () => {
+        setEnabling(true);
+        try {
+            await post('/stats/engine/enable');
+            toast.success(t('engine.enabledToast'));
+            setTimeout(() => get('/stats/engine').then(setData).catch(() => {}), 5000);
+        } catch (e) {
+            toast.error(e.message);
+        } finally {
+            setEnabling(false);
+        }
+    };
+
+    if (allNull) {
+        return (
+            <div className="space-y-4">
+                <PageHeader icon={<Activity size={20} />} title={t('engine.title')}
+                            subtitle={t('engine.subtitle')} />
+                <Card>
+                    <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">
+                        {t('engine.enableText')}
+                    </p>
+                    <button className="btn-primary" disabled={enabling} onClick={enableTelemetry}>
+                        {enabling ? t('engine.enabling') : t('engine.enableBtn')}
+                    </button>
+                </Card>
+            </div>
+        );
+    }
 
     const q = data.quality;
     const pool = data.pool;

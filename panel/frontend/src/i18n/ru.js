@@ -655,6 +655,10 @@ curl -X POST -H "Authorization: Bearer tgk_ваш_ключ" \\
         fpEmpty: 'Отпечатков пока нет',
         fpTotal: 'Всего',
         fpBad: 'Подозрительных',
+        enableText: 'Расширенная телеметрия выключена в конфиге Telemt (флаги minimal_runtime_enabled и runtime_edge_enabled). Включите её одной кнопкой — конфиг пропатчится и применится без разрыва соединений.',
+        enableBtn: 'Включить телеметрию',
+        enabling: 'Включаю...',
+        enabledToast: 'Телеметрия включена! Данные появятся через несколько секунд.',
     },
     login: {
         subtitle: 'Telegram Gate — панель управления прокси',

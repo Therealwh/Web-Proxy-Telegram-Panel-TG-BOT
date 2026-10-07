@@ -37,6 +37,9 @@ listen = "127.0.0.1:{{TELEMT_API_PORT}}"
 whitelist = ["127.0.0.1/32", "::1/128"]
 auth_header = "Bearer {{TELEMT_API_TOKEN}}"
 read_only = false
+# Расширенная телеметрия для панели (DC-монитор, страница Движка, TLS-отпечатки)
+minimal_runtime_enabled = true
+runtime_edge_enabled = true
 
 # Публичный MTProto-listener (все интерфейсы)
 [[server.listeners]]
