@@ -1,5 +1,6 @@
 // Глобальное состояние панели (Zustand)
 import { create } from 'zustand';
+import { ACCENTS, DEFAULT_ACCENT, isAccent } from './accents';
 
 // --- Авторизация ---
 export const useAuthStore = create((set) => ({
@@ -22,6 +23,12 @@ export const useAuthStore = create((set) => ({
 const savedTheme = localStorage.getItem('tggate_theme') || 'dark';
 document.documentElement.classList.toggle('dark', savedTheme === 'dark');
 
+// --- Акцентная цветовая схема ---
+const savedAccent = localStorage.getItem('tggate_accent') || DEFAULT_ACCENT;
+document.documentElement.dataset.accent = isAccent(savedAccent) ? savedAccent : DEFAULT_ACCENT;
+
+export { ACCENTS };
+
 export const useThemeStore = create((set) => ({
     theme: savedTheme,
     toggleTheme: () =>
@@ -31,6 +38,13 @@ export const useThemeStore = create((set) => ({
             document.documentElement.classList.toggle('dark', theme === 'dark');
             return { theme };
         }),
+    accent: isAccent(savedAccent) ? savedAccent : DEFAULT_ACCENT,
+    setAccent: (accent) => {
+        const v = isAccent(accent) ? accent : DEFAULT_ACCENT;
+        localStorage.setItem('tggate_accent', v);
+        document.documentElement.dataset.accent = v;
+        set({ accent: v });
+    },
 }));
 
 // --- Язык интерфейса ---

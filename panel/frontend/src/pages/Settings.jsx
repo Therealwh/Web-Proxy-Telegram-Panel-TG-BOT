@@ -2,7 +2,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Save, Pencil, Settings as SettingsIcon } from 'lucide-react';
 import { get, post, put } from '../api';
-import { toast } from '../store';
+import { toast, useThemeStore } from '../store';
+import { ACCENTS } from '../accents';
 import { useT } from '../i18n';
 import { Card, Field, Toggle, Skeleton, Modal, PageHeader } from '../components/ui';
 
@@ -35,6 +36,7 @@ const CATEGORIES = (t) => [
         fields: [
             { key: 'brand_name', label: t('settings.fBrand') },
             { key: 'theme', label: t('settings.fTheme'), type: 'select', options: [['dark', t('settings.themeDark')], ['light', t('settings.themeLight')]] },
+            { key: 'accent', label: t('settings.fAccent'), hint: t('settings.fAccentHint'), type: 'accent' },
             { key: 'language', label: t('settings.fLang'), type: 'select', options: [['ru', 'Русский'], ['en', 'English']] },
         ],
     },
@@ -53,6 +55,8 @@ export default function Settings() {
     const [editingCat, setEditingCat] = useState(null); // id категории в модалке
     const t = useT();
     const cats = CATEGORIES(t);
+    const accent = useThemeStore((s) => s.accent);
+    const setAccent = useThemeStore((s) => s.setAccent);
 
     useEffect(() => {
         get('/settings').then((d) => setSettings(d.settings)).catch((e) => toast.error(e.message));
@@ -74,6 +78,7 @@ export default function Settings() {
 
     // Отображение текущего значения поля в сводке
     const displayValue = (f) => {
+        if (f.type === 'accent') return t(`settings.accent_${accent}`);
         const v = settings[f.key];
         if (f.type === 'toggle') return v ? t('bot.yes') : t('bot.no');
         if (f.type === 'select') {
@@ -118,6 +123,32 @@ export default function Settings() {
                                 {f.options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
                             </select>
                         </Field>
+                    );
+                }
+                if (f.type === 'accent') {
+                    return (
+                        <div key={f.key} className="md:col-span-2">
+                            <span className="block text-sm font-medium mb-1.5">{f.label}</span>
+                            {f.hint && <span className="block text-xs text-slate-500 mt-0 mb-2">{f.hint}</span>}
+                            <div className="flex flex-wrap gap-2">
+                                {ACCENTS.map((a) => {
+                                    const active = accent === a.id;
+                                    return (
+                                        <button key={a.id} type="button"
+                                                title={t(`settings.accent_${a.id}`)}
+                                                onClick={() => setAccent(a.id)}
+                                                className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-sm transition-all
+                                                    ${active
+                                                        ? 'border-primary bg-primary/10 text-primary shadow-sm shadow-primary/20'
+                                                        : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'}`}>
+                                            <span className="w-5 h-5 rounded-full shrink-0 ring-1 ring-black/10"
+                                                  style={{ backgroundColor: a.swatch }} />
+                                            {t(`settings.accent_${a.id}`)}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
                     );
                 }
                 return (
