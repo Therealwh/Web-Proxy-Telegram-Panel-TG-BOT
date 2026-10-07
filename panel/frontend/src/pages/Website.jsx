@@ -3,6 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { Save, Upload, Trash2, FileText, Eye, Globe } from 'lucide-react';
 import { get, post, put, del } from '../api';
 import { toast } from '../store';
+import { useT } from '../i18n';
 import { Card, Modal, Skeleton, PageHeader } from '../components/ui';
 
 export default function Website() {
@@ -11,6 +12,7 @@ export default function Website() {
     const [templates, setTemplates] = useState([]);
     const [preview, setPreview] = useState(false);
     const [saving, setSaving] = useState(false);
+    const t = useT();
 
     const load = () => {
         get('/website/files').then((d) => setFiles(d.files)).catch((e) => toast.error(e.message));
@@ -31,7 +33,7 @@ export default function Website() {
         setSaving(true);
         try {
             await put(`/website/files/${encodeURIComponent(current.name)}`, { content: current.content });
-            toast.success('Файл сохранён. Сайт обновлён.');
+            toast.success(t('website.savedFile'));
             load();
         } catch (e) {
             toast.error(e.message);
@@ -54,8 +56,8 @@ export default function Website() {
                 },
                 body: formData,
             });
-            if (!res.ok) throw new Error((await res.json()).error || 'Ошибка загрузки');
-            toast.success('Файл загружен');
+            if (!res.ok) throw new Error((await res.json()).error || t('website.uploadFailed'));
+            toast.success(t('website.uploaded'));
             load();
         } catch (err) {
             toast.error(err.message);
@@ -64,10 +66,10 @@ export default function Website() {
     };
 
     const deleteFile = async (name) => {
-        if (!confirm(`Удалить файл ${name}?`)) return;
+        if (!confirm(t('website.confirmDelFile', { name }))) return;
         try {
             await del(`/website/files/${encodeURIComponent(name)}`);
-            toast.success('Файл удалён');
+            toast.success(t('website.removedFile'));
             if (current?.name === name) setCurrent(null);
             load();
         } catch (e) {
@@ -76,10 +78,10 @@ export default function Website() {
     };
 
     const applyTemplate = async (name) => {
-        if (!confirm(`Применить шаблон «${name}»? Текущие файлы сайта будут заменены.`)) return;
+        if (!confirm(t('website.confirmTpl', { name }))) return;
         try {
             await post('/website/apply-template', { template: name });
-            toast.success('Шаблон применён');
+            toast.success(t('website.tplApplied'));
             load();
         } catch (e) {
             toast.error(e.message);
@@ -88,22 +90,22 @@ export default function Website() {
 
     return (
         <div className="space-y-4">
-            <PageHeader icon={<Globe size={20} />} title="Сайт-заглушка"
-                        subtitle="Маскировка домена: файлы, шаблоны и SEO"
+            <PageHeader icon={<Globe size={20} />} title={t('website.title')}
+                        subtitle={t('website.subtitle')}
                         actions={<>
-                            <a href={`${location.protocol}//${location.host}/`} target="_blank" rel="noreferrer" className="btn-secondary"><Eye size={16} /> Открыть сайт</a>
+                            <a href={`${location.protocol}//${location.host}/`} target="_blank" rel="noreferrer" className="btn-secondary"><Eye size={16} /> {t('website.openSite')}</a>
                             <label className="btn-secondary cursor-pointer">
-                                <Upload size={16} /> Загрузить файл
+                                <Upload size={16} /> {t('website.upload')}
                                 <input type="file" className="hidden" onChange={uploadFile} />
                             </label>
                         </>} />
 
             {/* Шаблоны */}
-            <Card title="Готовые шаблоны" subtitle="Применение заменяет все файлы сайта">
+            <Card title={t('website.tplTitle')} subtitle={t('website.tplSub')}>
                 <div className="flex flex-wrap gap-2">
-                    {templates.map((t) => (
-                        <button key={t.id} className="btn-secondary" onClick={() => applyTemplate(t.id)}>
-                            {t.name}
+                    {templates.map((tpl) => (
+                        <button key={tpl.id} className="btn-secondary" onClick={() => applyTemplate(tpl.id)}>
+                            {tpl.name}
                         </button>
                     ))}
                 </div>
@@ -111,9 +113,9 @@ export default function Website() {
 
             <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
                 {/* Список файлов */}
-                <Card title="Файлы сайта" className="lg:col-span-1">
+                <Card title={t('website.filesTitle')} className="lg:col-span-1">
                     {!files ? <Skeleton className="h-40" /> : files.length === 0 ? (
-                        <p className="text-sm text-slate-500">Файлов нет. Примените шаблон или загрузите файлы.</p>
+                        <p className="text-sm text-slate-500">{t('website.filesEmpty')}</p>
                     ) : (
                         <ul className="space-y-1">
                             {files.map((f) => (
@@ -137,14 +139,14 @@ export default function Website() {
 
                 {/* Редактор */}
                 <Card className="lg:col-span-3"
-                      title={current ? `Редактор: ${current.name}` : 'Редактор'}
+                      title={current ? t('website.editorFor', { name: current.name }) : t('website.editor')}
                       actions={current && (
                           <button className="btn-primary !min-h-0 !px-3 !py-1.5 text-sm" onClick={saveFile} disabled={saving}>
-                              <Save size={14} /> {saving ? 'Сохранение...' : 'Сохранить'}
+                              <Save size={14} /> {saving ? t('common.saving') : t('common.save')}
                           </button>
                       )}>
                     {!current ? (
-                        <p className="text-sm text-slate-500 py-8 text-center">Выберите файл слева для редактирования</p>
+                        <p className="text-sm text-slate-500 py-8 text-center">{t('website.pickFile')}</p>
                     ) : (
                         <textarea
                             className="input font-mono text-xs !leading-relaxed min-h-[420px] resize-y"

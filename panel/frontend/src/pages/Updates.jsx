@@ -2,11 +2,13 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { RefreshCw, Download, ShieldCheck, ChevronDown } from 'lucide-react';
 import { get, post, put } from '../api';
-import { toast } from '../store';
+import { toast, useLangStore } from '../store';
+import { useT } from '../i18n';
 import { Card, Field, Skeleton, formatDate, PageHeader } from '../components/ui';
 
 /** Живой статус-бар обновления (данные из /updates/progress) */
 function ProgressCard({ progress, seenRunning }) {
+    const t = useT();
     if (!progress) return null;
     const running = progress.status === 'running';
     const failed = progress.status === 'failed';
@@ -23,9 +25,9 @@ function ProgressCard({ progress, seenRunning }) {
         : (running ? 10 : 100);
     const started = progress.started_at ? new Date(progress.started_at).getTime() : NaN;
     const mins = Number.isFinite(started) ? Math.max(0, Math.round((Date.now() - started) / 60000)) : null;
-    const title = failed ? '❌ Обновление прервано'
-        : running ? `⏳ Обновление ${progress.component === 'panel' ? 'панели' : 'Telemt'}`
-        : '✅ Обновление завершено';
+    const title = failed ? t('updates.failedTitle')
+        : running ? t('updates.runningTitle', { what: progress.component === 'panel' ? t('updates.whatPanel') : 'Telemt' })
+        : t('updates.doneTitle');
 
     return (
         <Card className={`border ${failed ? 'border-red-500/60' : running ? 'border-blue-500/60' : 'border-emerald-500/60'}`}>
@@ -33,10 +35,10 @@ function ProgressCard({ progress, seenRunning }) {
                 <div className="font-medium">
                     {title}
                     {progress.step && progress.total ? (
-                        <span className="text-slate-400 text-sm font-normal"> — шаг {progress.step} из {progress.total}</span>
+                        <span className="text-slate-400 text-sm font-normal"> {t('updates.stepOf', { step: progress.step, total: progress.total })}</span>
                     ) : ''}
                 </div>
-                {running && mins !== null && <span className="text-xs text-slate-400">{mins} мин</span>}
+                {running && mins !== null && <span className="text-xs text-slate-400">{t('updates.minsN', { n: mins })}</span>}
             </div>
             <div className="w-full h-2 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
                 <div className={`h-full rounded-full transition-all duration-500 ${failed ? 'bg-red-500' : running ? 'bg-blue-500' : 'bg-emerald-500'}`}
@@ -47,7 +49,7 @@ function ProgressCard({ progress, seenRunning }) {
             </div>
             {running && (
                 <div className="mt-1 text-xs text-slate-400">
-                    Страницу можно закрыть — прогресс сохранится и панель достроится после перезапуска.
+                    {t('updates.keepNote')}
                 </div>
             )}
         </Card>
@@ -58,6 +60,8 @@ function ProgressCard({ progress, seenRunning }) {
 function UpdateCard({ title, current, latest, releases, loading, busy, onUpdate }) {
     const [showList, setShowList] = useState(false);
     const [selected, setSelected] = useState('');
+    const lang = useLangStore((s) => s.lang);
+    const t = useT();
 
     // По умолчанию — последняя доступная
     useEffect(() => { setSelected(''); }, [releases]);
@@ -68,11 +72,11 @@ function UpdateCard({ title, current, latest, releases, loading, busy, onUpdate 
         <Card title={title}>
             <div className="space-y-2 text-sm">
                 <div className="flex justify-between">
-                    <span className="text-slate-500">Текущая версия</span>
+                    <span className="text-slate-500">{t('updates.curVer')}</span>
                     <span className="font-mono">{current || '—'}</span>
                 </div>
                 <div className="flex justify-between">
-                    <span className="text-slate-500">Последняя доступная</span>
+                    <span className="text-slate-500">{t('updates.latestVer')}</span>
                     <span className="font-mono">
                         {latest || '—'} {latest && current && latest !== current ? '✅' : ''}
                     </span>
@@ -83,15 +87,15 @@ function UpdateCard({ title, current, latest, releases, loading, busy, onUpdate 
             <div className="mt-3">
                 <button type="button" className="btn-ghost !min-h-0 !py-1.5 text-xs w-full justify-between"
                         onClick={() => setShowList(!showList)}>
-                    <span>{chosen ? `Установить: ${chosen}` : 'Выбрать версию'}</span>
+                    <span>{chosen ? t('updates.installVer', { v: chosen }) : t('updates.pickVer')}</span>
                     <ChevronDown size={14} className={`transition-transform ${showList ? 'rotate-180' : ''}`} />
                 </button>
                 {showList && (
                     <div className="mt-1 max-h-48 overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-700">
                         {loading ? (
-                            <p className="p-3 text-xs text-slate-500 text-center">Загрузка...</p>
+                            <p className="p-3 text-xs text-slate-500 text-center">{t('common.loading')}</p>
                         ) : releases.length === 0 ? (
-                            <p className="p-3 text-xs text-slate-500 text-center">Список недоступен</p>
+                            <p className="p-3 text-xs text-slate-500 text-center">{t('updates.listDown')}</p>
                         ) : (
                             releases.map((r) => (
                                 <button key={r.tag} type="button"
@@ -100,7 +104,7 @@ function UpdateCard({ title, current, latest, releases, loading, busy, onUpdate 
                                             ${r.tag === chosen ? 'bg-primary/10 text-primary' : ''}`}
                                         onClick={() => { setSelected(r.raw || r.tag); setShowList(false); }}>
                                     <span>{r.tag}{r.prerelease ? ' (beta)' : ''}</span>
-                                    {r.date && <span className="text-slate-400">{new Date(r.date).toLocaleDateString('ru-RU')}</span>}
+                                    {r.date && <span className="text-slate-400">{formatDate(r.date, lang).split(',')[0]}</span>}
                                 </button>
                             ))
                         )}
@@ -110,7 +114,7 @@ function UpdateCard({ title, current, latest, releases, loading, busy, onUpdate 
 
             <button className="btn-primary w-full mt-3" disabled={busy !== '' || !chosen}
                     onClick={() => onUpdate(chosen)}>
-                <Download size={16} /> {busy ? 'Обновление...' : `Обновить${chosen ? ` до ${chosen}` : ''}`}
+                <Download size={16} /> {busy ? t('updates.updating') : chosen ? t('updates.updateTo', { v: chosen }) : t('updates.updateBtn')}
             </button>
         </Card>
     );
@@ -125,6 +129,8 @@ export default function Updates() {
     const [progress, setProgress] = useState(null);
     const [sawRunning, setSawRunning] = useState(false);
     const prevProgressStatus = useRef('');
+    const lang = useLangStore((s) => s.lang);
+    const t = useT();
 
     const load = () => {
         get('/updates/status').then(setStatus).catch((e) => toast.error(e.message));
@@ -153,7 +159,7 @@ export default function Updates() {
         if ((st === 'success' || st === 'failed') && prevProgressStatus.current === 'running') {
             load();
             if (st === 'success') {
-                toast.success('Панель обновлена! Обновляю страницу...');
+                toast.success(t('updates.updatedReload'));
                 setTimeout(() => window.location.reload(), 2500);
             }
         }
@@ -165,8 +171,8 @@ export default function Updates() {
         Promise.all([
             get('/updates/available?component=panel'),
             get('/updates/available?component=telemt'),
-        ]).then(([p, t]) => {
-            setReleases({ panel: p.releases, telemt: t.releases });
+        ]).then(([p, tm]) => {
+            setReleases({ panel: p.releases, telemt: tm.releases });
         }).catch(() => {}).finally(() => setRelLoading(false));
     };
     useEffect(loadReleases, []);
@@ -192,7 +198,7 @@ export default function Updates() {
                 channel: status.settings.channel,
                 auto_install: status.settings.auto_install,
             });
-            toast.success('Настройки обновлений сохранены');
+            toast.success(t('updates.settingsSaved'));
         } catch (e) {
             toast.error(e.message);
         }
@@ -204,12 +210,12 @@ export default function Updates() {
 
     return (
         <div className="space-y-4">
-            <PageHeader icon={<RefreshCw size={20} />} title="Обновления системы"
-                        subtitle="Версии панели, Telemt и SSL-сертификат"
+            <PageHeader icon={<RefreshCw size={20} />} title={t('updates.title')}
+                        subtitle={t('updates.subtitle')}
                         actions={
                             <button className="btn-secondary" disabled={busy !== ''}
-                                    onClick={() => run('check', null, 'Проверка запущена')}>
-                                <RefreshCw size={16} /> Проверить сейчас
+                                    onClick={() => run('check', null, t('updates.checkStarted'))}>
+                                <RefreshCw size={16} /> {t('updates.checkNow')}
                             </button>
                         } />
 
@@ -217,57 +223,57 @@ export default function Updates() {
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                 <UpdateCard
-                    title="Панель управления"
+                    title={t('updates.panelCard')}
                     current={status.panel.current} latest={status.panel.latest}
                     releases={releases.panel} loading={relLoading} busy={busy}
-                    onUpdate={(v) => run('panel', v, `Обновление панели до ${v} запущено`)} />
+                    onUpdate={(v) => run('panel', v, t('updates.panelStarted', { v }))} />
 
                 <UpdateCard
-                    title="Telemt (прокси)"
+                    title={t('updates.telemtCard')}
                     current={status.telemt.current} latest={status.telemt.latest}
                     releases={releases.telemt} loading={relLoading} busy={busy}
-                    onUpdate={(v) => run('telemt', v, `Обновление Telemt до ${v} запущено`)} />
+                    onUpdate={(v) => run('telemt', v, t('updates.telemtStarted', { v }))} />
 
                 {/* SSL */}
-                <Card title="SSL-сертификат">
+                <Card title={t('updates.sslCard')}>
                     {status.ssl?.expires ? (
                         <div className="text-center py-2">
                             <ShieldCheck size={28} className="mx-auto text-emerald-500 mb-2" />
-                            <div className="text-sm text-slate-500">Действует до</div>
-                            <div className="font-mono">{formatDate(status.ssl.expires).split(',')[0]}</div>
+                            <div className="text-sm text-slate-500">{t('updates.validUntil')}</div>
+                            <div className="font-mono">{formatDate(status.ssl.expires, lang).split(',')[0]}</div>
                             <div className={`text-sm mt-1 ${status.ssl.daysLeft < 14 ? 'text-red-500' : 'text-emerald-500'}`}>
-                                осталось {status.ssl.daysLeft} дн.
+                                {t('updates.daysLeft', { n: status.ssl.daysLeft })}
                             </div>
-                            <div className="text-xs text-slate-400 mt-2">Автопродление Caddy включено</div>
+                            <div className="text-xs text-slate-400 mt-2">{t('updates.sslAuto')}</div>
                         </div>
                     ) : (
-                        <p className="text-sm text-slate-500 py-4 text-center">Нет данных о сертификате</p>
+                        <p className="text-sm text-slate-500 py-4 text-center">{t('updates.noSsl')}</p>
                     )}
                 </Card>
             </div>
 
             {/* Настройки автопроверки */}
-            <Card title="⚙️ Настройки автопроверки" actions={
-                <button className="btn-primary !min-h-0 !px-3 !py-1.5 text-sm" onClick={saveSettings}>Сохранить</button>
+            <Card title={t('updates.autoTitle')} actions={
+                <button className="btn-primary !min-h-0 !px-3 !py-1.5 text-sm" onClick={saveSettings}>{t('common.save')}</button>
             }>
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                    <Field label="Автопроверка">
+                    <Field label={t('updates.fAutoCheck')}>
                         <select className="input" value={String(status.settings.auto_check)}
                                 onChange={(e) => setS('auto_check', e.target.value === 'true')}>
-                            <option value="true">Включена</option>
-                            <option value="false">Выключена</option>
+                            <option value="true">{t('common.enabled')}</option>
+                            <option value="false">{t('common.disabled')}</option>
                         </select>
                     </Field>
-                    <Field label="Частота">
+                    <Field label={t('updates.fFreq')}>
                         <select className="input" value={status.settings.frequency}
                                 onChange={(e) => setS('frequency', e.target.value)}>
-                            <option value="hourly">Раз в час</option>
-                            <option value="daily">Раз в сутки</option>
-                            <option value="weekly">Раз в неделю</option>
-                            <option value="monthly">Раз в месяц</option>
+                            <option value="hourly">{t('updates.freqHourly')}</option>
+                            <option value="daily">{t('updates.freqDaily')}</option>
+                            <option value="weekly">{t('updates.freqWeekly')}</option>
+                            <option value="monthly">{t('updates.freqMonthly')}</option>
                         </select>
                     </Field>
-                    <Field label="Канал обновлений">
+                    <Field label={t('updates.fChannel')}>
                         <select className="input" value={status.settings.channel}
                                 onChange={(e) => setS('channel', e.target.value)}>
                             <option value="stable">stable</option>
@@ -275,23 +281,23 @@ export default function Updates() {
                             <option value="latest">latest</option>
                         </select>
                     </Field>
-                    <Field label="Режим">
+                    <Field label={t('updates.fMode')}>
                         <select className="input" value={String(status.settings.auto_install)}
                                 onChange={(e) => setS('auto_install', e.target.value === 'true')}>
-                            <option value="false">Только уведомлять</option>
-                            <option value="true">Автоустановка</option>
+                            <option value="false">{t('updates.modeNotify')}</option>
+                            <option value="true">{t('updates.modeAuto')}</option>
                         </select>
                     </Field>
                 </div>
                 <div className="mt-4 text-sm text-slate-500">
-                    Последняя проверка: {status.last_check ? formatDate(status.last_check) : '—'}
+                    {t('updates.lastCheck')}: {status.last_check ? formatDate(status.last_check, lang) : '—'}
                 </div>
             </Card>
 
             {/* История обновлений */}
-            <Card title="История обновлений">
+            <Card title={t('updates.historyTitle')}>
                 {history.length === 0 ? (
-                    <p className="text-sm text-slate-500">Обновлений ещё не было</p>
+                    <p className="text-sm text-slate-500">{t('updates.historyEmpty')}</p>
                 ) : (
                     <ul className="space-y-2 text-sm">
                         {history.map((h) => (
@@ -302,9 +308,9 @@ export default function Updates() {
                                             {h.status === 'success' ? '✅' : '❌'} {h.component}
                                         </span>
                                         <span className="font-mono">{h.to_version || 'latest'}</span>
-                                        <span className="text-slate-400">{formatDate(h.created_at)}</span>
+                                        <span className="text-slate-400">{formatDate(h.created_at, lang)}</span>
                                         {h.status !== 'success' && h.log && (
-                                            <span className="text-xs text-red-400">(нажмите — показать лог)</span>
+                                            <span className="text-xs text-red-400">{t('common.showLog')}</span>
                                         )}
                                     </summary>
                                     {h.log && (

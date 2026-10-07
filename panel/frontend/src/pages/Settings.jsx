@@ -3,45 +3,46 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Save, Pencil, Settings as SettingsIcon } from 'lucide-react';
 import { get, post, put } from '../api';
 import { toast } from '../store';
+import { useT } from '../i18n';
 import { Card, Field, Toggle, Skeleton, Modal, PageHeader } from '../components/ui';
 
-// Описание категорий и их полей (подписи на русском)
-const CATEGORIES = [
+// Описание категорий и их полей (подписи берутся из словаря i18n)
+const CATEGORIES = (t) => [
     {
-        id: 'network', icon: '🌐', title: 'Сеть и протоколы',
+        id: 'network', icon: '🌐', title: t('settings.catNetwork'),
         fields: [
-            { key: 'mask_domain', label: 'Домен маскировки Fake-TLS', hint: 'Смена сделает старые MTProto-ссылки недействительными!' },
-            { key: 'ad_tag_global', label: 'Глобальный Ad Tag', hint: '32 hex-символа из @MTProxybot' },
-            { key: 'web_proxy_enabled', label: 'Web Proxy включён', type: 'toggle' },
-            { key: 'mtproto_enabled', label: 'MTProto включён (порт 8443)', type: 'toggle' },
+            { key: 'mask_domain', label: t('settings.fMaskDomain'), hint: t('settings.fMaskHint') },
+            { key: 'ad_tag_global', label: t('settings.fAdTag'), hint: t('settings.fAdTagHint') },
+            { key: 'web_proxy_enabled', label: t('settings.fWebOn'), type: 'toggle' },
+            { key: 'mtproto_enabled', label: t('settings.fMtprotoOn'), type: 'toggle' },
         ],
     },
     {
-        id: 'notify', icon: '🔔', title: 'Уведомления',
+        id: 'notify', icon: '🔔', title: t('settings.catNotify'),
         fields: [
-            { key: 'tg_bot_token', label: 'Токен Telegram-бота администратора', hint: 'Получите у @BotFather' },
-            { key: 'tg_admin_chat_id', label: 'Chat ID администратора', hint: 'Узнайте у @userinfobot' },
-            { key: 'notify_disk', label: 'Мало места на диске', type: 'toggle' },
-            { key: 'notify_services', label: 'Падение сервисов', type: 'toggle' },
-            { key: 'notify_new_client', label: 'Новый клиент', type: 'toggle' },
-            { key: 'notify_quota', label: 'Превышение квоты', type: 'toggle' },
-            { key: 'auto_renew_enabled', label: '♻️ Автопродление с баланса (вкл. в боте клиентом)', type: 'toggle' },
-            { key: 'backup_tg_enabled', label: '📤 Присылать бэкап базы ботом в Telegram', type: 'toggle', backupNow: true },
+            { key: 'tg_bot_token', label: t('settings.fTgToken'), hint: t('settings.fTgTokenHint') },
+            { key: 'tg_admin_chat_id', label: t('settings.fTgChat'), hint: t('settings.fTgChatHint') },
+            { key: 'notify_disk', label: t('settings.fDisk'), type: 'toggle' },
+            { key: 'notify_services', label: t('settings.fServices'), type: 'toggle' },
+            { key: 'notify_new_client', label: t('settings.fNewClient'), type: 'toggle' },
+            { key: 'notify_quota', label: t('settings.fQuota'), type: 'toggle' },
+            { key: 'auto_renew_enabled', label: t('settings.fAutoRenew'), type: 'toggle' },
+            { key: 'backup_tg_enabled', label: t('settings.fBackupTg'), type: 'toggle', backupNow: true },
         ],
     },
     {
-        id: 'appearance', icon: '🎨', title: 'Внешний вид',
+        id: 'appearance', icon: '🎨', title: t('settings.catAppearance'),
         fields: [
-            { key: 'brand_name', label: 'Название в шапке' },
-            { key: 'theme', label: 'Тема по умолчанию', type: 'select', options: [['dark', 'Тёмная'], ['light', 'Светлая']] },
-            { key: 'language', label: 'Язык интерфейса', type: 'select', options: [['ru', 'Русский'], ['en', 'English']] },
+            { key: 'brand_name', label: t('settings.fBrand') },
+            { key: 'theme', label: t('settings.fTheme'), type: 'select', options: [['dark', t('settings.themeDark')], ['light', t('settings.themeLight')]] },
+            { key: 'language', label: t('settings.fLang'), type: 'select', options: [['ru', 'Русский'], ['en', 'English']] },
         ],
     },
     {
-        id: 'backup', icon: '📊', title: 'Резервные копии',
+        id: 'backup', icon: '📊', title: t('settings.catBackup'),
         fields: [
-            { key: 'backup_auto', label: 'Ежедневные автобэкапы', type: 'toggle' },
-            { key: 'backup_keep_days', label: 'Хранить бэкапов, дней', type: 'number' },
+            { key: 'backup_auto', label: t('settings.fBackupAuto'), type: 'toggle' },
+            { key: 'backup_keep_days', label: t('settings.fBackupKeep'), type: 'number' },
         ],
     },
 ];
@@ -50,6 +51,8 @@ export default function Settings() {
     const [settings, setSettings] = useState(null);
     const [saving, setSaving] = useState(false);
     const [editingCat, setEditingCat] = useState(null); // id категории в модалке
+    const t = useT();
+    const cats = CATEGORIES(t);
 
     useEffect(() => {
         get('/settings').then((d) => setSettings(d.settings)).catch((e) => toast.error(e.message));
@@ -61,7 +64,7 @@ export default function Settings() {
         setSaving(true);
         try {
             await put('/settings', settings);
-            toast.success('Настройки сохранены');
+            toast.success(t('settings.saved'));
         } catch (e) {
             toast.error(e.message);
         } finally {
@@ -72,7 +75,7 @@ export default function Settings() {
     // Отображение текущего значения поля в сводке
     const displayValue = (f) => {
         const v = settings[f.key];
-        if (f.type === 'toggle') return v ? '✅ Да' : '❌ Нет';
+        if (f.type === 'toggle') return v ? t('bot.yes') : t('bot.no');
         if (f.type === 'select') {
             const opt = (f.options || []).find(([ov]) => String(ov) === String(v ?? ''));
             return (opt && opt[1]) || v || '—';
@@ -95,13 +98,13 @@ export default function Settings() {
                             {f.backupNow && (
                                 <button className="btn-secondary !min-h-0 !py-1.5 text-xs mt-2"
                                         onClick={async () => {
-                                            if (!settings[f.key]) return toast.error('Сначала включите отправку и сохраните настройки');
+                                            if (!settings[f.key]) return toast.error(t('settings.enableFirst'));
                                             try {
                                                 const r = await post('/bot/backup-tg', {});
-                                                toast.success(`Бэкап отправлен: ${r.filename}`);
+                                                toast.success(t('settings.backupSent', { f: r.filename }));
                                             } catch (e) { toast.error(e.message); }
                                         }}>
-                                    📤 Отправить бэкап сейчас
+                                    {t('settings.sendBackupNow')}
                                 </button>
                             )}
                         </div>
@@ -133,16 +136,16 @@ export default function Settings() {
 
     return (
         <div className="space-y-6">
-            <PageHeader icon={<SettingsIcon size={20} />} title="Настройки"
-                        subtitle="Домен, сеть, уведомления, внешний вид и бэкапы" />
+            <PageHeader icon={<SettingsIcon size={20} />} title={t('settings.title')}
+                        subtitle={t('settings.subtitle')} />
 
 
             {/* Смена домена без переустановки */}
             <DomainCard />
 
-            {CATEGORIES.map((cat) => (
+            {cats.map((cat) => (
                 <Card key={cat.id} title={`${cat.icon} ${cat.title}`} actions={
-                    <button className="btn-ghost !min-h-0 !p-2" title="Изменить"
+                    <button className="btn-ghost !min-h-0 !p-2" title={t('common.edit')}
                             onClick={() => setEditingCat(cat.id)}>
                         <Pencil size={16} />
                     </button>
@@ -160,13 +163,13 @@ export default function Settings() {
 
             {/* Модал редактирования категории */}
             <Modal open={!!editingCat} onClose={() => setEditingCat(null)} wide
-                   title={(() => { const c = CATEGORIES.find((x) => x.id === editingCat); return c ? `${c.icon} ${c.title}` : ''; })()}>
-                {(() => { const c = CATEGORIES.find((x) => x.id === editingCat); return c ? renderCatFields(c) : null; })()}
+                   title={(() => { const c = cats.find((x) => x.id === editingCat); return c ? `${c.icon} ${c.title}` : ''; })()}>
+                {(() => { const c = cats.find((x) => x.id === editingCat); return c ? renderCatFields(c) : null; })()}
                 <div className="flex justify-end gap-2 mt-4">
-                    <button className="btn-secondary" onClick={() => setEditingCat(null)}>Отмена</button>
+                    <button className="btn-secondary" onClick={() => setEditingCat(null)}>{t('common.cancel')}</button>
                     <button className="btn-primary" disabled={saving}
                             onClick={async () => { await save(); setEditingCat(null); }}>
-                        <Save size={14} /> {saving ? 'Сохранение...' : 'Сохранить'}
+                        <Save size={14} /> {saving ? t('common.saving') : t('common.save')}
                     </button>
                 </div>
             </Modal>
@@ -181,6 +184,7 @@ export default function Settings() {
 function BackupCard() {
     const [restoring, setRestoring] = useState(false);
     const fileRef = useRef(null);
+    const t = useT();
 
     const download = () => {
         const token = sessionStorage.getItem('tggate_token');
@@ -190,13 +194,13 @@ function BackupCard() {
         document.body.appendChild(a);
         a.click();
         a.remove();
-        toast.success('Бэкап скачивается...');
+        toast.success(t('settings.bkDownloading'));
     };
 
     const restore = async (e) => {
         const file = e.target.files[0];
         if (!file) return;
-        if (!confirm(`Восстановить из ${file.name}? ВСЕ текущие данные панели будут заменены данными из бэкапа!`)) {
+        if (!confirm(t('settings.bkConfirm', { f: file.name }))) {
             e.target.value = '';
             return;
         }
@@ -213,10 +217,10 @@ function BackupCard() {
                 body: text,
             });
             const data = await res.json().catch(() => ({}));
-            if (!res.ok) throw new Error(data.error || `Ошибка ${res.status}`);
-            toast.success('Бэкап восстановлен! Обновите страницу (F5).');
+            if (!res.ok) throw new Error(data.error || t('settings.bkError', { s: res.status }));
+            toast.success(t('settings.bkDone'));
         } catch (err) {
-            toast.error(`Ошибка восстановления: ${err.message}`);
+            toast.error(t('settings.bkFail', { e: err.message }));
         } finally {
             setRestoring(false);
             if (fileRef.current) fileRef.current.value = '';
@@ -224,22 +228,21 @@ function BackupCard() {
     };
 
     return (
-        <Card title="💾 Резервное копирование"
-              subtitle="Для переноса панели на другой сервер: скачайте бэкап здесь и восстановите его там">
+        <Card title={t('settings.bkTitle')}
+              subtitle={t('settings.bkSub')}>
             <div className="flex flex-wrap gap-2">
                 <button className="btn-secondary" onClick={download}>
-                    ⬇️ Скачать бэкап (все данные)
+                    {t('settings.bkDownload')}
                 </button>
                 <label className="btn-secondary cursor-pointer">
-                    ⬆️ Восстановить из файла
+                    {t('settings.bkRestore')}
                     <input ref={fileRef} type="file" accept=".json,application/json"
                            className="hidden" onChange={restore} disabled={restoring} />
                 </label>
-                {restoring && <span className="text-sm text-slate-500 self-center">Восстановление...</span>}
+                {restoring && <span className="text-sm text-slate-500 self-center">{t('settings.bkRestoring')}</span>}
             </div>
             <p className="text-xs text-slate-400 mt-3">
-                В бэкап входят: администраторы, клиенты, тарифы, платежи, настройки (включая токены),
-                промокоды, API-ключи, вебхуки, тикеты. Схема базы обновляется автоматически.
+                {t('settings.bkNote')}
             </p>
         </Card>
     );
@@ -252,6 +255,7 @@ function DomainCard() {
     const [force, setForce] = useState(false);
     const [busy, setBusy] = useState(false);
     const [changed, setChanged] = useState(false);
+    const t = useT();
 
     useEffect(() => {
         get('/settings/domain').then(setInfo).catch(() => {});
@@ -259,11 +263,11 @@ function DomainCard() {
 
     const changeDomain = async () => {
         const d = newDomain.trim().toLowerCase();
-        if (!confirm(`Сменить домен ${info?.domain} → ${d}?\n\nСтарые ссылки клиентов перестанут работать — после смены разошлите новые ссылки.`)) return;
+        if (!confirm(t('settings.dmConfirm', { from: info?.domain, to: d }))) return;
         setBusy(true);
         try {
             await post('/settings/domain', { domain: d, force });
-            toast.success('Смена домена запущена — панель перезапустится');
+            toast.success(t('settings.dmStarted'));
             setChanged(true);
             // Панель перезапустится: через 20 сек пробуем перезагрузить страницу
             setTimeout(() => window.location.reload(), 20000);
@@ -275,11 +279,11 @@ function DomainCard() {
     };
 
     const notifyClients = async () => {
-        if (!confirm('Разослать новые ссылки всем активным клиентам в боте?')) return;
+        if (!confirm(t('settings.dmNotifyConfirm'))) return;
         setBusy(true);
         try {
             const r = await post('/settings/domain/notify', {});
-            toast.success(`Отправлено: ${r.sent} из ${r.total} (не доставлено: ${r.failed})`);
+            toast.success(t('settings.dmSent', { s: r.sent, tot: r.total, f: r.failed }));
         } catch (e) {
             toast.error(e.message);
         } finally {
@@ -288,21 +292,21 @@ function DomainCard() {
     };
 
     return (
-        <Card title="🌐 Домен панели"
-              subtitle={`Текущий: ${info?.domain ?? '...'}`}>
+        <Card title={t('settings.dmTitle')}
+              subtitle={t('settings.dmCur', { d: info?.domain ?? '...' })}>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
-                <Field label="Новый домен"
-                       hint="Сначала поменяйте A-запись домена на IP этого сервера (DNS обновится за 5–30 минут)">
+                <Field label={t('settings.fNewDomain')}
+                       hint={t('settings.fNewDomainHint')}>
                     <input className="input font-mono" placeholder="proxy2.example.com"
                            value={newDomain}
                            onChange={(e) => setNewDomain(e.target.value)} />
                 </Field>
                 <div className="space-y-3">
-                    <Toggle label="Принудительно (даже если DNS не проверился)"
+                    <Toggle label={t('settings.tForce')}
                             checked={force}
                             onChange={setForce} />
                     <button className="btn-primary w-full" disabled={busy || !newDomain.trim()} onClick={changeDomain}>
-                        Сменить домен
+                        {t('settings.changeDomain')}
                     </button>
                 </div>
             </div>
@@ -310,19 +314,17 @@ function DomainCard() {
             {/* Рассылка новых ссылок — доступна всегда (после смены домена и не только) */}
             <div className="mt-4 p-3 rounded-lg bg-slate-50 dark:bg-slate-800/50 flex flex-wrap items-center justify-between gap-3">
                 <p className="text-sm text-slate-500">
-                    После смены домена клиенты должны переподключиться — разошлите им новые ссылки
-                    (старые перестанут работать).
+                    {t('settings.dmNote')}
                 </p>
                 <button className="btn-secondary whitespace-nowrap text-sm" disabled={busy} onClick={notifyClients}>
-                    📣 Разослать новые ссылки активным клиентам
+                    {t('settings.dmNotifyBtn')}
                 </button>
             </div>
 
             {changed && (
                 <div className="mt-3 p-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
                     <p className="text-sm">
-                        ⏳ Панель перезапускается с новым доменом. Обновите страницу через 30–60 секунд
-                        и разошлите клиентам новые ссылки.
+                        {t('settings.dmRestarting')}
                     </p>
                 </div>
             )}

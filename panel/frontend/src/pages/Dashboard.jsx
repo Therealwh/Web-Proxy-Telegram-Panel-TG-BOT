@@ -3,18 +3,24 @@ import React, { useEffect, useState } from 'react';
 import { AreaChart, Area, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { Users, Link2, Wifi, HardDrive, Cpu, MemoryStick, RefreshCw, LayoutDashboard } from 'lucide-react';
 import { get, post } from '../api';
-import { useAuthStore, toast } from '../store';
+import { useAuthStore, useLangStore, toast } from '../store';
+import { useT } from '../i18n';
 import { connectLive } from '../ws';
 import { Card, StatusDot, Skeleton, formatBytes, deviceInfo, PageHeader, chartTheme, Avatar, ProtoBadge } from '../components/ui';
 
 const COLORS = ['#0088cc', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316'];
 
 /** Формат аптайма: «3 дн. 04:12» или «5 ч 12 мин» */
-function formatUptime(secs) {
+function formatUptime(secs, lang) {
     if (secs == null) return '—';
     const d = Math.floor(secs / 86400);
     const h = Math.floor((secs % 86400) / 3600);
     const m = Math.floor((secs % 3600) / 60);
+    if (lang === 'en') {
+        if (d > 0) return `${d}d ${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+        if (h > 0) return `${h}h ${m}m`;
+        return `${m} min`;
+    }
     if (d > 0) return `${d} дн. ${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
     if (h > 0) return `${h} ч ${m} мин`;
     return `${m} мин`;
@@ -52,6 +58,8 @@ export default function Dashboard() {
     const [active, setActive] = useState(null); // активные подключения (IP + страна)
     const [error, setError] = useState('');
     const accessToken = useAuthStore((s) => s.accessToken);
+    const lang = useLangStore((s) => s.lang);
+    const t = useT();
 
     // Первичная загрузка сводки
     useEffect(() => {
@@ -102,7 +110,7 @@ export default function Dashboard() {
     const approvePayment = async (id) => {
         try {
             await post(`/payments/${id}/confirm`);
-            toast.success(`Платёж #${id} подтверждён — доступ выдан`);
+            toast.success(t('dashboard.approved', { id }));
             setPending((p) => p.filter((x) => x.id !== id));
         } catch (e) {
             toast.error(e.message);
@@ -110,10 +118,10 @@ export default function Dashboard() {
     };
 
     const cancelPayment = async (id) => {
-        if (!confirm(`Отменить заказ #${id}?`)) return;
+        if (!confirm(t('dashboard.confirmCancel', { id }))) return;
         try {
             await post(`/payments/${id}/cancel`);
-            toast.success(`Заказ #${id} отменён`);
+            toast.success(t('dashboard.cancelled', { id }));
             setPending((p) => p.filter((x) => x.id !== id));
         } catch (e) {
             toast.error(e.message);
@@ -148,14 +156,14 @@ export default function Dashboard() {
 
     return (
         <div className="space-y-6">
-            <PageHeader icon={<LayoutDashboard size={20} />} title="Дашборд"
-                        subtitle="Состояние сервера и сервисов в реальном времени" />
+            <PageHeader icon={<LayoutDashboard size={20} />} title={t('dashboard.title')}
+                        subtitle={t('dashboard.subtitle')} />
 
             {/* Hero-полоса: общее состояние сервисов */}
             {(() => {
                 const items = [
                     { key: 'telemt', ok: services.telemt, label: 'Telemt' },
-                    { key: 'panel', ok: services.panel, label: 'Панель' },
+                    { key: 'panel', ok: services.panel, label: t('dashboard.heroPanel') },
                     { key: 'nginx', ok: services.nginx, label: 'Nginx' },
                     { key: 'caddy', ok: services.caddy, label: 'Caddy' },
                 ];
@@ -167,14 +175,14 @@ export default function Dashboard() {
                         <span className="text-2xl">{allOk ? '🟢' : '🔴'}</span>
                         <div className="flex-1 min-w-[200px]">
                             <div className="font-bold">
-                                {allOk ? 'Все системы работают' : `Сбой: ${down.map((d) => d.label).join(', ')}`}
+                                {allOk ? t('dashboard.heroOk') : t('dashboard.heroDown', { list: down.map((d) => d.label).join(', ') })}
                             </div>
                             <div className="text-xs text-slate-500 dark:text-slate-400">
                                 {items.map((i) => `${i.ok ? '✅' : '❌'} ${i.label}`).join(' · ')}
                             </div>
                         </div>
                         <div className="text-xs text-slate-400">
-                            SSL: {ssl ? `${ssl.daysLeft} дн.` : '—'}
+                            SSL: {ssl ? t('dashboard.heroSsl', { days: ssl.daysLeft }) : '—'}
                         </div>
                     </div>
                 );
@@ -182,22 +190,22 @@ export default function Dashboard() {
 
             {/* Счётчики */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                <StatCard icon={Users} label="Клиентов всего" value={clients.total}
-                    sub={`активных сегодня: ${clients.activeToday} · новых за неделю: ${clients.newWeek}`}
+                <StatCard icon={Users} label={t('dashboard.statClients')} value={clients.total}
+                    sub={t('dashboard.statClientsSub', { today: clients.activeToday, week: clients.newWeek })}
                     spark={trends.clients} sparkColor={chartTheme.colors.green} />
-                <StatCard icon={Link2} label="Активных ссылок" value={clients.active}
-                    sub={`просроченных: ${clients.expired}`} />
-                <StatCard icon={Wifi} label="Подключений сейчас" value={active?.active_total ?? connections.active}
-                    sub={`всего за сессию: ${connections.total}`} />
-                <StatCard icon={HardDrive} label="Трафик за месяц" value={formatBytes(traffic.month)}
-                    sub={`день: ${formatBytes(traffic.day)} · неделя: ${formatBytes(traffic.week)}`}
+                <StatCard icon={Link2} label={t('dashboard.statLinks')} value={clients.active}
+                    sub={t('dashboard.statLinksSub', { n: clients.expired })} />
+                <StatCard icon={Wifi} label={t('dashboard.statOnline')} value={active?.active_total ?? connections.active}
+                    sub={t('dashboard.statOnlineSub', { n: connections.total })} />
+                <StatCard icon={HardDrive} label={t('dashboard.statTraffic')} value={formatBytes(traffic.month, lang)}
+                    sub={t('dashboard.statTrafficSub', { d: formatBytes(traffic.day, lang), w: formatBytes(traffic.week, lang) })}
                     spark={(traffic.daily || []).slice(-14).map((r) => ({ v: r.bytes }))}
                     sparkColor={chartTheme.colors.primary} />
             </div>
 
             {/* Нагрузка сервера */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                <Card title="Нагрузка сервера" subtitle="обновление каждую секунду">
+                <Card title={t('dashboard.loadTitle')} subtitle={t('dashboard.loadSubtitle')}>
                     <div className="space-y-4">
                         <div>
                             <div className="flex justify-between text-sm mb-1">
@@ -211,20 +219,20 @@ export default function Dashboard() {
                         <div>
                             <div className="flex justify-between text-sm mb-1">
                                 <span className="flex items-center gap-1.5"><MemoryStick size={14} /> RAM</span>
-                                <span className="font-mono">{ram ? `${ram.percent}% (${formatBytes(ram.used)} / ${formatBytes(ram.total)})` : '—'}</span>
+                                <span className="font-mono">{ram ? `${ram.percent}% (${formatBytes(ram.used, lang)} / ${formatBytes(ram.total, lang)})` : '—'}</span>
                             </div>
                             <div className="h-2 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
                                 <div className="h-full bg-emerald-500 rounded-full transition-all duration-700" style={{ width: `${ram?.percent ?? 0}%` }} />
                             </div>
                         </div>
                         <div className="text-sm text-slate-500 dark:text-slate-400">
-                            Сеть: ↓ {formatBytes(net.rx_sec)}/с · ↑ {formatBytes(net.tx_sec)}/с
+                            {t('dashboard.network', { rx: formatBytes(net.rx_sec, lang), tx: formatBytes(net.tx_sec, lang) })}
                         </div>
                     </div>
                 </Card>
 
                 {/* Трафик по дням */}
-                <Card title="Трафик за 30 дней" className="lg:col-span-2">
+                <Card title={t('dashboard.traffic30')} className="lg:col-span-2">
                     <ResponsiveContainer width="100%" height={200}>
                         <AreaChart data={traffic.daily}>
                             <defs>
@@ -234,18 +242,18 @@ export default function Dashboard() {
                                 </linearGradient>
                             </defs>
                             <XAxis dataKey="date" tick={chartTheme.tick} tickFormatter={(d) => d.slice(5)} />
-                            <YAxis tick={chartTheme.tick} tickFormatter={formatBytes} width={70} />
-                            <Tooltip formatter={(v) => formatBytes(v)} labelFormatter={(d) => `Дата: ${d}`}
+                            <YAxis tick={chartTheme.tick} tickFormatter={(v) => formatBytes(v, lang)} width={70} />
+                            <Tooltip formatter={(v) => formatBytes(v, lang)} labelFormatter={(d) => t('dashboard.trafficDate', { d })}
                                      contentStyle={chartTheme.tooltip} labelStyle={{ color: '#e2e8f0' }} />
-                            <Area type="monotone" dataKey="bytes" stroke="#0088cc" fill="url(#trafficGrad)" name="Трафик" />
+                            <Area type="monotone" dataKey="bytes" stroke="#0088cc" fill="url(#trafficGrad)" name={t('dashboard.trafficSeries')} />
                         </AreaChart>
                     </ResponsiveContainer>
                 </Card>
             </div>
 
             {/* Живой график трафика: получение/отправка */}
-            <Card title="📈 Трафик прокси"
-                  subtitle="скорость в реальном времени, обновление каждые 5 секунд"
+            <Card title={t('dashboard.liveTitle')}
+                  subtitle={t('dashboard.liveSubtitle')}
                   actions={
                       <div className="flex gap-1">
                           {['1h', '6h', '24h'].map((r) => (
@@ -259,51 +267,51 @@ export default function Dashboard() {
                   }>
                   <div className="flex gap-8 mb-3">
                       <div>
-                          <div className="text-xs text-slate-500 mb-0.5">↑ Отправка</div>
-                          <div className="text-2xl font-bold">{formatBytes(liveTraffic?.current?.tx ?? 0)}<span className="text-sm font-normal text-slate-400"> /с</span></div>
+                          <div className="text-xs text-slate-500 mb-0.5">{t('dashboard.liveUp')}</div>
+                          <div className="text-2xl font-bold">{formatBytes(liveTraffic?.current?.tx ?? 0, lang)}<span className="text-sm font-normal text-slate-400"> {t('dashboard.perSec')}</span></div>
                       </div>
                       <div>
-                          <div className="text-xs text-slate-500 mb-0.5">↓ Получение</div>
-                          <div className="text-2xl font-bold text-amber-500">{formatBytes(liveTraffic?.current?.rx ?? 0)}<span className="text-sm font-normal text-slate-400"> /с</span></div>
+                          <div className="text-xs text-slate-500 mb-0.5">{t('dashboard.liveDown')}</div>
+                          <div className="text-2xl font-bold text-amber-500">{formatBytes(liveTraffic?.current?.rx ?? 0, lang)}<span className="text-sm font-normal text-slate-400"> {t('dashboard.perSec')}</span></div>
                       </div>
                   </div>
                   <ResponsiveContainer width="100%" height={220}>
                       <LineChart data={liveTraffic?.points || []} margin={{ top: 5, right: 5, bottom: 0, left: 5 }}>
                            <XAxis dataKey="t" type="number" scale="time" domain={['dataMin', 'dataMax']}
-                                  tickFormatter={(t) => new Date(t).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
+                                  tickFormatter={(t) => new Date(t).toLocaleTimeString(lang === 'en' ? 'en-GB' : 'ru-RU', { hour: '2-digit', minute: '2-digit' })}
                                   tick={{ fontSize: 10, fill: '#94a3b8' }} stroke="#64748b" />
-                           <YAxis tickFormatter={(v) => formatBytes(v)} tick={{ fontSize: 10, fill: '#94a3b8' }} stroke="#64748b" width={70} />
+                           <YAxis tickFormatter={(v) => formatBytes(v, lang)} tick={{ fontSize: 10, fill: '#94a3b8' }} stroke="#64748b" width={70} />
                            <Tooltip
-                               formatter={(v, name) => [`${formatBytes(v)}/с`, name]}
-                               labelFormatter={(t) => new Date(t).toLocaleTimeString('ru-RU')}
+                               formatter={(v, name) => [`${formatBytes(v, lang)}${t('dashboard.perSecShort')}`, name]}
+                               labelFormatter={(t) => new Date(t).toLocaleTimeString(lang === 'en' ? 'en-GB' : 'ru-RU')}
                                contentStyle={chartTheme.tooltip} />
-                          <Line type="monotone" dataKey="tx" name="Отправка" stroke="#0088cc" strokeWidth={1.5} dot={false} />
-                          <Line type="monotone" dataKey="rx" name="Получение" stroke="#f59e0b" strokeWidth={1.5} dot={false} />
+                           <Line type="monotone" dataKey="tx" name={t('dashboard.seriesTx')} stroke="#0088cc" strokeWidth={1.5} dot={false} />
+                           <Line type="monotone" dataKey="rx" name={t('dashboard.seriesRx')} stroke="#f59e0b" strokeWidth={1.5} dot={false} />
                       </LineChart>
                   </ResponsiveContainer>
                   <div className="flex gap-4 mt-2 text-xs text-slate-400">
-                      <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-primary inline-block" /> Отправка</span>
-                      <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-500 inline-block" /> Получение</span>
+                      <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-primary inline-block" /> {t('dashboard.seriesTx')}</span>
+                      <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-500 inline-block" /> {t('dashboard.seriesRx')}</span>
                   </div>
             </Card>
 
             {/* Платежи, ожидающие подтверждения */}
             {pending.length > 0 && (
-                <Card title="⏳ Платежи к подтверждению" subtitle="Оплата шла напрямую администратору — подтвердите, чтобы выдать доступ">
+                <Card title={t('dashboard.pendingTitle')} subtitle={t('dashboard.pendingSubtitle')}>
                     <div className="space-y-2">
                         {pending.map((p) => (
                             <div key={p.id} className="flex items-center justify-between gap-3 rounded-lg bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 px-3 py-2">
                                 <span className="text-sm">
-                                    <b>#{p.id}</b> — {p.tariff_name || 'пополнение'} · {p.amount} {p.currency}
+                                    <b>#{p.id}</b> — {p.tariff_name || t('dashboard.topupFallback')} · {p.amount} {p.currency}
                                     {p.username ? ` · ${p.username}` : ''}
                                     {p.telegram_id ? ` · TG ${p.telegram_id}` : ''}
                                 </span>
                                 <span className="flex gap-2">
                                     <button className="btn-danger !min-h-0 !px-3 !py-1.5 text-xs" onClick={() => cancelPayment(p.id)}>
-                                        ✕ Отменить
+                                        {t('dashboard.cancel')}
                                     </button>
                                     <button className="btn-primary !min-h-0 !px-3 !py-1.5 text-xs" onClick={() => approvePayment(p.id)}>
-                                        ✓ Одобрить
+                                        {t('dashboard.approve')}
                                     </button>
                                 </span>
                             </div>
@@ -313,26 +321,26 @@ export default function Dashboard() {
             )}
 
             {/* Активные подключения: IP + страна */}
-            <Card title="🌍 Активные подключения" subtitle="обновление каждые 5 секунд">
+            <Card title={t('dashboard.activeTitle')} subtitle={t('dashboard.activeSubtitle')}>
                 {!active || active.connections.length === 0 ? (
                     <p className="text-sm text-slate-500 py-4 text-center">
-                        Сейчас никто не подключён
+                        {t('dashboard.activeEmpty')}
                     </p>
                 ) : (
                     <div className="overflow-x-auto">
                     <table className="w-full text-sm min-w-[560px]">
                         <thead className="sticky top-0 z-10 bg-white dark:bg-slate-900">
                             <tr className="text-left text-slate-500 border-b border-slate-200 dark:border-slate-700">
-                                <th className="py-2 pr-4 font-medium">Клиент</th>
-                                <th className="py-2 pr-4 font-medium">IP-адрес</th>
-                                <th className="py-2 pr-4 font-medium">Страна</th>
-                                <th className="py-2 pr-4 font-medium">Устройство</th>
-                                <th className="py-2 font-medium">Протокол</th>
+                                <th className="py-2 pr-4 font-medium">{t('dashboard.thClient')}</th>
+                                <th className="py-2 pr-4 font-medium">{t('dashboard.thIp')}</th>
+                                <th className="py-2 pr-4 font-medium">{t('dashboard.thCountry')}</th>
+                                <th className="py-2 pr-4 font-medium">{t('dashboard.thDevice')}</th>
+                                <th className="py-2 font-medium">{t('dashboard.thProto')}</th>
                             </tr>
                         </thead>
                         <tbody>
                             {active.connections.map((c, i) => {
-                                const dev = deviceInfo(c.user_agent);
+                                const dev = deviceInfo(c.user_agent, lang);
                                 return (
                                     <tr key={`${c.username}-${c.ip}-${i}`} className="border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
                                         <td className="py-2 pr-4">
@@ -356,18 +364,18 @@ export default function Dashboard() {
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                 {/* Статусы сервисов + аптайм */}
-                <Card title="Статус сервисов" subtitle="время работы без перезапусков">
+                <Card title={t('dashboard.svcTitle')} subtitle={t('dashboard.svcSubtitle')}>
                     <div className="space-y-3">
                         {[
-                            ['telemt', services.telemt, 'Telemt (прокси)', data.uptimes?.telemt],
-                            ['panel', services.panel, 'Панель', data.uptimes?.panel],
+                            ['telemt', services.telemt, t('dashboard.svcTelemt'), data.uptimes?.telemt],
+                            ['panel', services.panel, t('dashboard.svcPanel'), data.uptimes?.panel],
                             ['nginx', services.nginx, 'Nginx', data.uptimes?.nginx],
                             ['caddy', services.caddy, 'Caddy (HTTPS)', data.uptimes?.caddy],
                         ].map(([key, ok, label, uptime]) => (
                             <div key={key}>
                                 <StatusDot ok={ok} label={label} />
                                 <div className="text-xs text-slate-400 ml-5 mt-0.5">
-                                    {uptime != null ? `без падений: ${formatUptime(uptime)}` : 'аптайм недоступен'}
+                                    {uptime != null ? t('dashboard.svcUptime', { t: formatUptime(uptime, lang) }) : t('dashboard.svcNoUptime')}
                                 </div>
                             </div>
                         ))}
@@ -375,34 +383,34 @@ export default function Dashboard() {
                     <div className="mt-4 pt-4 border-t border-slate-200 dark:border-slate-700 space-y-2 text-sm">
                         <div className="flex justify-between">
                             <span className="text-slate-500">Web Proxy</span>
-                            <span className={protocols.web ? 'text-emerald-500' : 'text-red-500'}>{protocols.web ? '✅ включён' : '❌ выключен'}</span>
+                            <span className={protocols.web ? 'text-emerald-500' : 'text-red-500'}>{protocols.web ? t('dashboard.svcOn') : t('dashboard.svcOff')}</span>
                         </div>
                         <div className="flex justify-between">
                             <span className="text-slate-500">MTProto (8443)</span>
-                            <span className={protocols.mtproto ? 'text-emerald-500' : 'text-red-500'}>{protocols.mtproto ? '✅ включён' : '❌ выключен'}</span>
+                            <span className={protocols.mtproto ? 'text-emerald-500' : 'text-red-500'}>{protocols.mtproto ? t('dashboard.svcOn') : t('dashboard.svcOff')}</span>
                         </div>
                     </div>
                 </Card>
 
                 {/* SSL */}
-                <Card title="SSL-сертификат">
+                <Card title={t('dashboard.sslTitle')}>
                     {ssl ? (
                         <div className="text-center py-4">
                             <div className={`text-4xl font-bold ${ssl.daysLeft < 14 ? 'text-red-500' : 'text-emerald-500'}`}>
                                 {ssl.daysLeft}
                             </div>
-                            <div className="text-sm text-slate-500 mt-1">дней до истечения</div>
+                            <div className="text-sm text-slate-500 mt-1">{t('dashboard.sslDays')}</div>
                             <div className="text-xs text-slate-400 mt-3 flex items-center justify-center gap-1">
-                                <RefreshCw size={12} /> Автопродление Caddy включено
+                                <RefreshCw size={12} /> {t('dashboard.sslAuto')}
                             </div>
                         </div>
                     ) : (
-                        <p className="text-sm text-slate-500 py-4 text-center">Не удалось проверить сертификат</p>
+                        <p className="text-sm text-slate-500 py-4 text-center">{t('dashboard.sslFail')}</p>
                     )}
                 </Card>
 
                 {/* Топ клиентов по трафику */}
-                <Card title="Трафик по клиентам" subtitle="за 30 дней">
+                <Card title={t('dashboard.topTitle')} subtitle={t('dashboard.topSubtitle')}>
                     {traffic.byClient.length > 0 ? (
                         <ResponsiveContainer width="100%" height={180}>
                             <PieChart>
@@ -412,11 +420,11 @@ export default function Dashboard() {
                                         <Cell key={i} fill={COLORS[i % COLORS.length]} />
                                     ))}
                                 </Pie>
-                                <Tooltip formatter={(v) => formatBytes(v)} />
+                                <Tooltip formatter={(v) => formatBytes(v, lang)} />
                             </PieChart>
                         </ResponsiveContainer>
                     ) : (
-                        <p className="text-sm text-slate-500 py-8 text-center">Пока нет данных о трафике</p>
+                        <p className="text-sm text-slate-500 py-8 text-center">{t('dashboard.topEmpty')}</p>
                     )}
                 </Card>
             </div>

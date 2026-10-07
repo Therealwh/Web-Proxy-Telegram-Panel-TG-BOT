@@ -2,14 +2,17 @@
 import React, { useEffect, useState } from 'react';
 import { Plus, Copy, Trash2, Power, KeyRound } from 'lucide-react';
 import { get, post, del, patch } from '../api';
-import { toast } from '../store';
-import { Card, Modal, Field, Skeleton, PageHeader } from '../components/ui';
+import { toast, useLangStore } from '../store';
+import { useT } from '../i18n';
+import { Card, Modal, Field, Skeleton, PageHeader, formatDate } from '../components/ui';
 
 export default function ApiKeys() {
     const [keys, setKeys] = useState(null);
     const [modal, setModal] = useState(false);
     const [form, setForm] = useState({ name: '', permissions: 'read', days: '' });
     const [newKey, setNewKey] = useState(null); // показывается один раз
+    const lang = useLangStore((s) => s.lang);
+    const t = useT();
 
     const load = () => get('/api-keys').then((d) => setKeys(d.keys)).catch((e) => toast.error(e.message));
     useEffect(load, []);
@@ -38,49 +41,49 @@ export default function ApiKeys() {
     };
 
     const remove = async (key) => {
-        if (!confirm(`Удалить ключ «${key.name}»?`)) return;
+        if (!confirm(t('apikeys.confirmDel', { name: key.name }))) return;
         try {
             await del(`/api-keys/${key.id}`);
             load();
         } catch (e) { toast.error(e.message); }
     };
 
-    const PERM_LABELS = { read: 'Только чтение', write: 'Чтение и запись', full: 'Полный доступ' };
+    const PERM_LABELS = { read: t('apikeys.permRead'), write: t('apikeys.permWrite'), full: t('apikeys.permFull') };
 
     return (
         <div className="space-y-4">
-            <PageHeader icon={<KeyRound size={20} />} title="API-ключи"
-                        subtitle="Доступ для внешних интеграций"
+            <PageHeader icon={<KeyRound size={20} />} title={t('apikeys.title')}
+                        subtitle={t('apikeys.subtitle')}
                         actions={
-                            <button className="btn-primary" onClick={() => setModal(true)}><Plus size={16} /> Создать ключ</button>
+                            <button className="btn-primary" onClick={() => setModal(true)}><Plus size={16} /> {t('apikeys.createBtn')}</button>
                         } />
 
             {newKey && (
                 <Card className="border-amber-300 dark:border-amber-500/50">
-                    <p className="text-sm mb-2 font-medium">⚠️ Сохраните ключ — он показывается только один раз:</p>
+                    <p className="text-sm mb-2 font-medium">{t('apikeys.saveOnce')}</p>
                     <div className="flex gap-2">
                         <code className="flex-1 font-mono text-sm bg-slate-100 dark:bg-slate-800 rounded-lg px-3 py-2 break-all">{newKey}</code>
-                        <button className="btn-secondary shrink-0" onClick={() => { navigator.clipboard.writeText(newKey); toast.success('Скопировано'); }}>
+                        <button className="btn-secondary shrink-0" onClick={() => { navigator.clipboard.writeText(newKey); toast.success(t('common.copied')); }}>
                             <Copy size={16} />
                         </button>
                     </div>
-                    <button className="btn-ghost mt-2 text-sm" onClick={() => setNewKey(null)}>Я сохранил ключ</button>
+                    <button className="btn-ghost mt-2 text-sm" onClick={() => setNewKey(null)}>{t('apikeys.savedBtn')}</button>
                 </Card>
             )}
 
             <Card className="!p-0 overflow-x-auto">
                 {!keys ? <div className="p-5"><Skeleton className="h-24" /></div> : keys.length === 0 ? (
-                    <p className="p-8 text-center text-slate-500">Ключей нет. Создайте первый для интеграций.</p>
+                    <p className="p-8 text-center text-slate-500">{t('apikeys.empty')}</p>
                 ) : (
                     <table className="w-full text-sm">
                         <thead>
                             <tr className="text-left text-slate-500 border-b border-slate-200 dark:border-slate-700">
-                                <th className="px-4 py-3 font-medium">Название</th>
-                                <th className="px-4 py-3 font-medium">Ключ</th>
-                                <th className="px-4 py-3 font-medium">Права</th>
-                                <th className="px-4 py-3 font-medium">Запросов</th>
-                                <th className="px-4 py-3 font-medium">Истекает</th>
-                                <th className="px-4 py-3 font-medium text-right">Действия</th>
+                                <th className="px-4 py-3 font-medium">{t('apikeys.thName')}</th>
+                                <th className="px-4 py-3 font-medium">{t('apikeys.thKey')}</th>
+                                <th className="px-4 py-3 font-medium">{t('apikeys.thPerms')}</th>
+                                <th className="px-4 py-3 font-medium">{t('apikeys.thReqs')}</th>
+                                <th className="px-4 py-3 font-medium">{t('apikeys.thExpires')}</th>
+                                <th className="px-4 py-3 font-medium text-right">{t('common.actions')}</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -90,7 +93,7 @@ export default function ApiKeys() {
                                     <td className="px-4 py-3 font-mono text-xs">{k.key_prefix}••••••••</td>
                                     <td className="px-4 py-3">{PERM_LABELS[k.permissions]}</td>
                                     <td className="px-4 py-3">{k.requests_count}</td>
-                                    <td className="px-4 py-3 text-slate-500">{k.expires_at ? new Date(k.expires_at).toLocaleDateString('ru-RU') : '∞'}</td>
+                                    <td className="px-4 py-3 text-slate-500">{k.expires_at ? formatDate(k.expires_at, lang).split(',')[0] : t('common.infinity')}</td>
                                     <td className="px-4 py-3">
                                         <div className="flex justify-end gap-1">
                                             <button className="btn-ghost !min-h-0 !p-2" onClick={() => toggle(k)}>
@@ -106,24 +109,24 @@ export default function ApiKeys() {
                 )}
             </Card>
 
-            <Modal open={modal} onClose={() => setModal(false)} title="Новый API-ключ">
+            <Modal open={modal} onClose={() => setModal(false)} title={t('apikeys.modalTitle')}>
                 <div className="space-y-4">
-                    <Field label="Название" hint="Для кого этот ключ (например, «Бот продаж»)">
+                    <Field label={t('apikeys.fName')} hint={t('apikeys.fNameHint')}>
                         <input className="input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
                     </Field>
-                    <Field label="Права доступа">
+                    <Field label={t('apikeys.fPerms')}>
                         <select className="input" value={form.permissions} onChange={(e) => setForm({ ...form, permissions: e.target.value })}>
-                            <option value="read">Только чтение</option>
-                            <option value="write">Чтение и запись</option>
-                            <option value="full">Полный доступ</option>
+                            <option value="read">{t('apikeys.permRead')}</option>
+                            <option value="write">{t('apikeys.permWrite')}</option>
+                            <option value="full">{t('apikeys.permFull')}</option>
                         </select>
                     </Field>
-                    <Field label="Срок действия, дней" hint="Пусто = бессрочный">
+                    <Field label={t('apikeys.fDays')} hint={t('apikeys.fDaysHint')}>
                         <input className="input" type="number" min="1" value={form.days} onChange={(e) => setForm({ ...form, days: e.target.value })} />
                     </Field>
                     <div className="flex justify-end gap-2">
-                        <button className="btn-secondary" onClick={() => setModal(false)}>Отмена</button>
-                        <button className="btn-primary" onClick={create} disabled={!form.name.trim()}>Создать</button>
+                        <button className="btn-secondary" onClick={() => setModal(false)}>{t('common.cancel')}</button>
+                        <button className="btn-primary" onClick={create} disabled={!form.name.trim()}>{t('common.create')}</button>
                     </div>
                 </div>
             </Modal>

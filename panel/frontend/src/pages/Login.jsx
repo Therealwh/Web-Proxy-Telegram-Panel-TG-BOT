@@ -2,12 +2,14 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore, toast } from '../store';
+import { useT } from '../i18n';
 
 export default function Login() {
     const [login, setLogin] = useState('');
     const [password, setPassword] = useState('');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
+    const t = useT();
     const setAuth = useAuthStore((s) => s.setAuth);
     const navigate = useNavigate();
 
@@ -25,9 +27,9 @@ export default function Login() {
                 body: JSON.stringify({ login, password }),
             });
             const data = await res.json().catch(() => ({}));
-            if (!res.ok) throw new Error(data.error || `Ошибка входа (${res.status})`);
+            if (!res.ok) throw new Error(data.error || t('login.failed', { status: res.status }));
             setAuth(data.accessToken, data.login);
-            toast.success('Добро пожаловать!');
+            toast.success(t('login.welcome'));
             navigate('/');
         } catch (err) {
             setError(err.message);
@@ -47,13 +49,13 @@ export default function Login() {
                     </div>
                     <h1 className="text-2xl font-bold">TGGATE</h1>
                     <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-                        Telegram Gate — панель управления прокси
+                        {t('login.subtitle')}
                     </p>
                 </div>
 
                 <form onSubmit={submit} className="space-y-4">
                     <label className="block">
-                        <span className="block text-sm font-medium mb-1.5">Логин</span>
+                        <span className="block text-sm font-medium mb-1.5">{t('login.username')}</span>
                         <input
                             className="input"
                             value={login}
@@ -64,7 +66,7 @@ export default function Login() {
                         />
                     </label>
                     <label className="block">
-                        <span className="block text-sm font-medium mb-1.5">Пароль</span>
+                        <span className="block text-sm font-medium mb-1.5">{t('login.password')}</span>
                         <input
                             className="input"
                             type="password"
@@ -83,7 +85,7 @@ export default function Login() {
                     )}
 
                     <button type="submit" className="btn-primary w-full" disabled={loading}>
-                        {loading ? 'Вход...' : 'Войти в панель'}
+                        {loading ? t('login.submitting') : t('login.submit')}
                     </button>
                 </form>
             </div>

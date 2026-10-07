@@ -5,33 +5,71 @@ import {
     LayoutDashboard, Users, BarChart3, ScrollText, Settings, QrCode, Globe,
     KeyRound, Bot, RefreshCw, Code2, Moon, Sun, LogOut, Menu, X,
 } from 'lucide-react';
-import { useAuthStore, useThemeStore } from '../store';
-import { get, post } from '../api';
+import { useAuthStore, useThemeStore, useLangStore } from '../store';
+import { get, post, put } from '../api';
 import { toast } from '../store';
 import { Toasts } from './ui';
+import { useT } from '../i18n';
 
 // Пункты меню
 const NAV = [
-    { to: '/', icon: LayoutDashboard, label: 'Дашборд' },
-    { to: '/clients', icon: Users, label: 'Клиенты' },
-    { to: '/sales', icon: BarChart3, label: 'Продажи' },
-    { to: '/logs', icon: ScrollText, label: 'Живые логи' },
-    { to: '/qr', icon: QrCode, label: 'QR-коды' },
-    { to: '/website', icon: Globe, label: 'Сайт-заглушка' },
-    { to: '/bot', icon: Bot, label: 'Telegram бот' },
-    { to: '/api-keys', icon: KeyRound, label: 'API-ключи' },
-    { to: '/developers', icon: Code2, label: 'Разработчикам' },
-    { to: '/updates', icon: RefreshCw, label: 'Обновления' },
-    { to: '/settings', icon: Settings, label: 'Настройки' },
+    { to: '/', icon: LayoutDashboard, label: 'nav.dashboard' },
+    { to: '/clients', icon: Users, label: 'nav.clients' },
+    { to: '/sales', icon: BarChart3, label: 'nav.sales' },
+    { to: '/logs', icon: ScrollText, label: 'nav.logs' },
+    { to: '/qr', icon: QrCode, label: 'nav.qr' },
+    { to: '/website', icon: Globe, label: 'nav.website' },
+    { to: '/bot', icon: Bot, label: 'nav.bot' },
+    { to: '/api-keys', icon: KeyRound, label: 'nav.apikeys' },
+    { to: '/developers', icon: Code2, label: 'nav.developers' },
+    { to: '/updates', icon: RefreshCw, label: 'nav.updates' },
+    { to: '/settings', icon: Settings, label: 'nav.settings' },
 ];
+
+/** Переключатель языка RU/EN (сохраняет и в настройки панели) */
+function LangSwitch() {
+    const lang = useLangStore((s) => s.lang);
+    const setLang = (v) => {
+        useLangStore.getState().setLang(v);
+        put('/settings', { language: v }).catch(() => {});
+    };
+    return (
+        <div className="flex rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 text-xs font-medium">
+            {['ru', 'en'].map((l) => (
+                <button key={l}
+                        onClick={() => setLang(l)}
+                        className={`px-2 py-1.5 uppercase transition-colors ${lang === l ? 'bg-primary text-white' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'}`}>
+                    {l === 'ru' ? 'RU' : 'EN'}
+                </button>
+            ))}
+        </div>
+    );
+}
+
+/** Строка версии в подвале (переводится) */
+function FooterLine({ version }) {
+    const t = useT();
+    return <div>{t('layout.footer', { version: version || '...' })}</div>;
+}
 
 export default function Layout() {
     const { login, clearAuth } = useAuthStore();
     const { theme, toggleTheme } = useThemeStore();
+    const t = useT();
     const [menuOpen, setMenuOpen] = useState(false);
     const [version, setVersion] = useState('');
     const [badges, setBadges] = useState({ online: 0, pending: 0, updates: false });
     const navigate = useNavigate();
+
+    // Язык по умолчанию — из настроек панели (если не выбран вручную)
+    useEffect(() => {
+        if (!localStorage.getItem('tggate_lang')) {
+            get('/settings').then((d) => {
+                const srv = d.settings?.language;
+                if (srv === 'en' || srv === 'ru') useLangStore.getState().setLang(srv);
+            }).catch(() => {});
+        }
+    }, []);
 
     // Версия панели из API (всегда актуальная)
     useEffect(() => {
@@ -79,13 +117,13 @@ export default function Layout() {
         get('/updates/status').then((s) => {
             const parts = [];
             if (newer(s.panel?.latest, s.panel?.current)) {
-                parts.push(`🖥️ Панель: ${s.panel.latest} (у вас ${s.panel.current})`);
+                parts.push(t('layout.updatePanel', { latest: s.panel.latest, current: s.panel.current }));
             }
             if (newer(s.telemt?.latest, s.telemt?.current)) {
-                parts.push(`🔌 Telemt: ${s.telemt.latest} (у вас ${s.telemt.current})`);
+                parts.push(t('layout.updateTelemt', { latest: s.telemt.latest, current: s.telemt.current }));
             }
             if (parts.length) {
-                toast.info(`Доступно обновление: ${parts.join(' · ')}`, {
+                toast.info(t('layout.updateAvailable', { parts: parts.join(' · ') }), {
                     duration: 10000,
                     onClick: () => navigate('/updates'),
                 });
@@ -133,15 +171,15 @@ export default function Layout() {
                             `}
                         >
                             <Icon size={18} />
-                            <span className="flex-1">{label}</span>
+                            <span className="flex-1">{t(label)}</span>
                             {to === '/logs' && badges.online > 0 && (
-                                <span className="badge-green !px-1.5" title="Сейчас онлайн">{badges.online}</span>
+                                <span className="badge-green !px-1.5" title={t('layout.onlineNow')}>{badges.online}</span>
                             )}
                             {to === '/sales' && badges.pending > 0 && (
-                                <span className="badge-yellow !px-1.5" title="Ожидают подтверждения">{badges.pending}</span>
+                                <span className="badge-yellow !px-1.5" title={t('layout.pendingPayments')}>{badges.pending}</span>
                             )}
                             {to === '/updates' && badges.updates && (
-                                <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" title="Доступно обновление" />
+                                <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" title={t('layout.updateAvailableShort')} />
                             )}
                         </NavLink>
                     ))}
@@ -157,15 +195,16 @@ export default function Layout() {
             <div className="flex-1 flex flex-col min-w-0">
                 <header className="h-16 flex items-center justify-between gap-4 px-4 lg:px-6
                     bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 sticky top-0 z-20">
-                    <button className="lg:hidden btn-ghost !min-h-0 !p-2" onClick={() => setMenuOpen(!menuOpen)} aria-label="Меню">
+                    <button className="lg:hidden btn-ghost !min-h-0 !p-2" onClick={() => setMenuOpen(!menuOpen)} aria-label={t('layout.menu')}>
                         {menuOpen ? <X size={20} /> : <Menu size={20} />}
                     </button>
                     <div className="flex-1" />
-                    <button onClick={toggleTheme} className="btn-ghost !min-h-0 !p-2" aria-label="Сменить тему">
+                    <LangSwitch />
+                    <button onClick={toggleTheme} className="btn-ghost !min-h-0 !p-2" aria-label={t('layout.theme')}>
                         {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
                     </button>
                     <span className="text-sm text-slate-500 dark:text-slate-400 hidden sm:block">{login}</span>
-                    <button onClick={logout} className="btn-ghost !min-h-0 !p-2" aria-label="Выйти">
+                    <button onClick={logout} className="btn-ghost !min-h-0 !p-2" aria-label={t('layout.logout')}>
                         <LogOut size={18} />
                     </button>
                 </header>
@@ -173,12 +212,12 @@ export default function Layout() {
                     <Outlet />
                 </main>
                 <footer className="px-6 py-4 text-center text-xs text-slate-400 dark:text-slate-500 space-y-1">
-                    <div>© 2026 TGGATE | Версия {version || '...'} | Работает на Telemt</div>
+                    <FooterLine version={version} />
                     <div className="flex items-center justify-center gap-4">
                         <a href="https://t.me/tggatetopsupport" target="_blank" rel="noreferrer"
-                           className="hover:text-primary transition-colors">🛟 Поддержка @tggatetopsupport</a>
+                           className="hover:text-primary transition-colors">{t('layout.support')}</a>
                         <a href="https://t.me/wtfpoxy" target="_blank" rel="noreferrer"
-                           className="hover:text-primary transition-colors">📢 Канал @wtfpoxy</a>
+                           className="hover:text-primary transition-colors">{t('layout.channel')}</a>
                     </div>
                 </footer>
             </div>

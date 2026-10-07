@@ -2,7 +2,8 @@
 import React, { useEffect, useState } from 'react';
 import { Plus, Save, Trash2, Power, Wallet, MessageSquare, ChevronDown, Pencil, Bot as BotIcon } from 'lucide-react';
 import { get, post, put, del } from '../api';
-import { toast } from '../store';
+import { toast, useLangStore } from '../store';
+import { useT } from '../i18n';
 import { Card, Field, Toggle, Skeleton, Modal, StatusBadge, formatDate, PageHeader, Avatar } from '../components/ui';
 
 /** Строка «настройка → значение» для сводного вида карточек */
@@ -27,11 +28,13 @@ export default function Bot() {
     const [issueBusy, setIssueBusy] = useState(false);
     const [editCard, setEditCard] = useState(null);     // 'buttons' | 'basic' | 'sub' | 'pay' — модалка настроек
     const [tariffModal, setTariffModal] = useState(null);   // редактирование тарифа (null = закрыто)
+    const lang = useLangStore((s) => s.lang);
+    const t = useT();
 
-    const toggleTariff = async (t, v) => {
-        if (!t.id) return;
+    const toggleTariff = async (row, v) => {
+        if (!row.id) return;
         try {
-            await put(`/bot/tariffs/${t.id}`, { ...t, enabled: v ? 1 : 0 });
+            await put(`/bot/tariffs/${row.id}`, { ...row, enabled: v ? 1 : 0 });
             load();
         } catch (e) { toast.error(e.message); }
     };
@@ -51,19 +54,19 @@ export default function Bot() {
     const saveSettings = async () => {
         try {
             await put('/bot/settings', settings);
-            toast.success('Настройки бота сохранены');
+            toast.success(t('bot.saved'));
             load();
         } catch (e) {
             toast.error(e.message);
         }
     };
 
-    const saveTariff = async (t) => {
+    const saveTariff = async (tar) => {
         // Нормализация: пустые строки → null (без лимита)
         const payload = {
-            ...t,
-            max_ips: t.max_ips === '' || t.max_ips == null ? null : Number(t.max_ips),
-            quota_gb: t.quota_gb === '' || t.quota_gb == null ? null : Number(t.quota_gb),
+            ...tar,
+            max_ips: tar.max_ips === '' || tar.max_ips == null ? null : Number(tar.max_ips),
+            quota_gb: tar.quota_gb === '' || tar.quota_gb == null ? null : Number(tar.quota_gb),
         };
         try {
             if (payload.id) {
@@ -71,7 +74,7 @@ export default function Bot() {
             } else {
                 await post('/bot/tariffs', payload);
             }
-            toast.success('Тариф сохранён');
+            toast.success(t('bot.tariffSaved'));
             load();
         } catch (e) {
             toast.error(e.message);
@@ -79,7 +82,7 @@ export default function Bot() {
     };
 
     const deleteTariff = async (id) => {
-        if (!confirm('Удалить тариф?')) return;
+        if (!confirm(t('bot.confirmDelTariff'))) return;
         try {
             await del(`/bot/tariffs/${id}`);
             load();
@@ -88,63 +91,65 @@ export default function Bot() {
         }
     };
 
+    const curName = (cur) => ({ RUB: t('bot.curRub'), USD: t('bot.curUsd'), USDT: t('bot.curUsdt') }[cur] || cur);
+
     if (!settings || !tariffs) return <div className="space-y-4">{[...Array(3)].map((_, i) => <Skeleton key={i} className="h-48" />)}</div>;
 
     return (
         <div className="space-y-6">
-            <PageHeader icon={<BotIcon size={20} />} title="Telegram бот продаж"
-                        subtitle="Тарифы, платежи, пользователи и статистика продаж"
+            <PageHeader icon={<BotIcon size={20} />} title={t('bot.title')}
+                        subtitle={t('bot.subtitle')}
                         actions={
                             <span className={botStatus?.running ? 'badge-green' : 'badge-red'}>
-                                {botStatus?.running ? '✅ Бот запущен' : '❌ Бот остановлен'}
+                                {botStatus?.running ? t('bot.running') : t('bot.stopped')}
                             </span>
                         } />
 
             {/* Статистика продаж */}
             {stats && (
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                    <Card><div className="text-2xl font-bold">{stats.sales_total}</div><div className="text-sm text-slate-500">Продаж всего</div></Card>
-                    <Card><div className="text-2xl font-bold">{stats.sales_month}</div><div className="text-sm text-slate-500">За месяц</div></Card>
-                    <Card><div className="text-2xl font-bold">{stats.revenue_month} ₽</div><div className="text-sm text-slate-500">Доход за месяц</div></Card>
+                    <Card><div className="text-2xl font-bold">{stats.sales_total}</div><div className="text-sm text-slate-500">{t('bot.statSalesTotal')}</div></Card>
+                    <Card><div className="text-2xl font-bold">{stats.sales_month}</div><div className="text-sm text-slate-500">{t('bot.statMonth')}</div></Card>
+                    <Card><div className="text-2xl font-bold">{stats.revenue_month} ₽</div><div className="text-sm text-slate-500">{t('bot.statRevMonth')}</div></Card>
                     <Card className="flex flex-col justify-between">
                         <div>
                             <div className="text-2xl font-bold">{stats.revenue_total} ₽</div>
-                            <div className="text-sm text-slate-500">Доход всего</div>
+                            <div className="text-sm text-slate-500">{t('bot.statRevTotal')}</div>
                         </div>
                         <button className="btn-danger !min-h-0 !px-2 !py-1.5 text-xs mt-2"
                                 onClick={async () => {
-                                    if (!confirm('Сбросить статистику продаж и дохода? История платежей будет удалена (клиенты останутся).')) return;
+                                    if (!confirm(t('bot.confirmResetStats'))) return;
                                     try {
                                         await post('/bot/stats/reset');
-                                        toast.success('Статистика сброшена');
+                                        toast.success(t('bot.statsReset'));
                                         load();
                                     } catch (e) { toast.error(e.message); }
                                 }}>
-                                🧹 Сбросить продажи
+                                {t('bot.resetSales')}
                         </button>
                     </Card>
                 </div>
             )}
 
             {/* ═══ Админка бота: пользователи Telegram ═══ */}
-            <Card title="👥 Пользователи бота"
-                  subtitle="Все пользователи бота (сгруппированы по Telegram)"
+            <Card title={t('bot.usersTitle')}
+                  subtitle={t('bot.usersSub')}
                   actions={
                       <button className="btn-secondary !min-h-0 !px-3 !py-1.5 text-sm" onClick={load}>
-                          Обновить
+                          {t('bot.refresh')}
                       </button>
                   }>
                 {!users ? <Skeleton className="h-24" /> : users.length === 0 ? (
-                    <p className="text-sm text-slate-500 py-4 text-center">👥 Пользователей бота пока нет</p>
+                    <p className="text-sm text-slate-500 py-4 text-center">{t('bot.usersEmpty')}</p>
                 ) : (
                     <div className="overflow-x-auto">
                     <table className="w-full text-sm min-w-[720px]">
                         <thead className="sticky top-0 z-10 bg-white dark:bg-slate-900">
                             <tr className="text-left text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-700">
-                                <th className="py-2 pr-4 font-medium sticky left-0 bg-white dark:bg-slate-900 z-20">Telegram ID</th>
-                                <th className="py-2 pr-4 font-medium">Прокси</th>
-                                <th className="py-2 pr-4 font-medium">Баланс</th>
-                                <th className="py-2 pr-4 font-medium text-right">Действия</th>
+                                <th className="py-2 pr-4 font-medium sticky left-0 bg-white dark:bg-slate-900 z-20">{t('bot.thTgId')}</th>
+                                <th className="py-2 pr-4 font-medium">{t('bot.thProxies')}</th>
+                                <th className="py-2 pr-4 font-medium">{t('bot.thBalance')}</th>
+                                <th className="py-2 pr-4 font-medium text-right">{t('common.actions')}</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -173,26 +178,26 @@ export default function Bot() {
                                             </div>
                                         </td>
                                         <td className="py-2 pr-4">
-                                            <span className="badge-green">🟢 {u.active} актив.</span>{' '}
-                                            <span className="text-xs text-slate-400">всего {u.proxies.length}</span>
+                                            <span className="badge-green">{t('bot.activeN', { n: u.active })}</span>{' '}
+                                            <span className="text-xs text-slate-400">{t('bot.totalN', { n: u.proxies.length })}</span>
                                         </td>
                                         <td className="py-2 pr-4 font-medium">{u.balance.toFixed(2)}</td>
                                         <td className="py-2 pr-4">
                                             <div className="flex justify-end gap-1">
                                                 <button className="btn-secondary !min-h-0 !px-2 !py-1.5 text-xs"
-                                                        title="Выдать прокси с настройками"
+                                                        title={t('bot.issueTitleAttr')}
                                                         onClick={() => setIssueModal({ telegram_id: u.telegram_id, days: 30, protocols: 'both', max_ips: '', quota_gb: '' })}>
-                                                    🌐 Выдать прокси
+                                                    {t('bot.issueBtn')}
                                                 </button>
                                                 <button className="btn-secondary !min-h-0 !px-2 !py-1.5 text-xs"
-                                                        title="Выдать баланс"
+                                                        title={t('bot.balanceTitleAttr')}
                                                         onClick={() => { setBalanceModal(u); setBalanceAmount(''); }}>
-                                                    <Wallet size={14} /> Баланс
+                                                    <Wallet size={14} /> {t('bot.balanceBtn')}
                                                 </button>
                                                 <button className="btn-secondary !min-h-0 !px-2 !py-1.5 text-xs"
-                                                        title="Написать через бота"
+                                                        title={t('bot.msgTitleAttr')}
                                                         onClick={() => { setMsgModal(u); setMsgText(''); }}>
-                                                    <MessageSquare size={14} /> Написать
+                                                    <MessageSquare size={14} /> {t('bot.msgBtn')}
                                                 </button>
                                             </div>
                                         </td>
@@ -204,10 +209,10 @@ export default function Bot() {
                                                 <table className="w-full text-xs">
                                                     <thead>
                                                         <tr className="text-left text-slate-400">
-                                                            <th className="py-1 pr-4">Прокси</th>
-                                                            <th className="py-1 pr-4">Статус</th>
-                                                            <th className="py-1 pr-4">Действует до</th>
-                                                            <th className="py-1">Баланс</th>
+                                                            <th className="py-1 pr-4">{t('bot.subThProxy')}</th>
+                                                            <th className="py-1 pr-4">{t('bot.subThStatus')}</th>
+                                                            <th className="py-1 pr-4">{t('bot.subThUntil')}</th>
+                                                            <th className="py-1">{t('bot.subThBalance')}</th>
                                                         </tr>
                                                     </thead>
                                                     <tbody>
@@ -215,7 +220,7 @@ export default function Bot() {
                                                             <tr key={p.id}>
                                                                 <td className="py-1 pr-4 font-mono">{p.username}</td>
                                                                 <td className="py-1 pr-4"><StatusBadge status={p.status} /></td>
-                                                                <td className="py-1 pr-4">{p.expires_at ? formatDate(p.expires_at).split(',')[0] : '∞'}</td>
+                                                                <td className="py-1 pr-4">{p.expires_at ? formatDate(p.expires_at, lang).split(',')[0] : t('common.infinity')}</td>
                                                                 <td className="py-1">{(p.balance || 0).toFixed(2)}</td>
                                                             </tr>
                                                         ))}
@@ -232,38 +237,36 @@ export default function Bot() {
                 )}
             </Card>
 
-            {/* Модал: выдать/списать баланс */}
             {/* Модал: выдать прокси пользователю */}
             <Modal open={!!issueModal} onClose={() => setIssueModal(null)}
-                   title={`Выдать прокси: ${issueModal?.telegram_id}`}>
+                   title={t('bot.issueTitle', { id: issueModal?.telegram_id })}>
                 <div className="grid grid-cols-2 gap-3">
-                    <Field label="Срок (дней)">
+                    <Field label={t('bot.fDays')}>
                         <input className="input" type="number" min="1" value={issueModal?.days ?? 30}
                                onChange={(e) => setIssueModal((m) => ({ ...m, days: e.target.value }))} />
                     </Field>
-                    <Field label="Протоколы">
+                    <Field label={t('bot.fProtocols')}>
                         <select className="input" value={issueModal?.protocols ?? 'both'}
                                 onChange={(e) => setIssueModal((m) => ({ ...m, protocols: e.target.value }))}>
-                            <option value="both">Оба (Web + MTProto)</option>
-                            <option value="web">Только Web Proxy</option>
-                            <option value="mtproto">Только MTProto</option>
+                            <option value="both">{t('bot.protoBoth')}</option>
+                            <option value="web">{t('bot.protoWebOnly')}</option>
+                            <option value="mtproto">{t('bot.protoMtprotoOnly')}</option>
                         </select>
                     </Field>
-                    <Field label="Макс. IP" hint="Пусто = без лимита">
+                    <Field label={t('bot.fMaxIp')} hint={t('bot.noLimitHint')}>
                         <input className="input" type="number" min="1" placeholder="∞" value={issueModal?.max_ips ?? ''}
                                onChange={(e) => setIssueModal((m) => ({ ...m, max_ips: e.target.value }))} />
                     </Field>
-                    <Field label="Трафик, ГБ" hint="Пусто = без лимита">
+                    <Field label={t('bot.fQuotaGb')} hint={t('bot.noLimitHint')}>
                         <input className="input" type="number" min="0" placeholder="∞" value={issueModal?.quota_gb ?? ''}
                                onChange={(e) => setIssueModal((m) => ({ ...m, quota_gb: e.target.value }))} />
                     </Field>
                 </div>
                 <p className="text-xs text-slate-400 mt-3">
-                    Прокси создастся в Telemt и привяжется к telegram_id пользователя — он сразу получит
-                    ссылки в боте. Выданный ранее баланс перенесётся на новый прокси.
+                    {t('bot.issueNote')}
                 </p>
                 <div className="flex justify-end gap-2 mt-4">
-                    <button className="btn-secondary" onClick={() => setIssueModal(null)}>Отмена</button>
+                    <button className="btn-secondary" onClick={() => setIssueModal(null)}>{t('common.cancel')}</button>
                     <button className="btn-primary" disabled={issueBusy}
                             onClick={async () => {
                                 setIssueBusy(true);
@@ -274,40 +277,40 @@ export default function Bot() {
                                         max_ips: issueModal.max_ips === '' ? null : Number(issueModal.max_ips),
                                         quota_gb: issueModal.quota_gb === '' ? null : Number(issueModal.quota_gb),
                                     });
-                                    toast.success(`Прокси ${r.username} выдан${r.notified ? ' — уведомлён' : ' (бот не смог написать)'}`);
+                                    toast.success(t('bot.issuedOk', { u: r.username }) + (r.notified ? t('bot.issuedNotified') : t('bot.issuedNoNotify')));
                                     setIssueModal(null);
                                     load();
                                 } catch (e) { toast.error(e.message); }
                                 finally { setIssueBusy(false); }
                             }}>
-                        🌐 Выдать прокси
+                        {t('bot.issueBtn')}
                     </button>
                 </div>
             </Modal>
 
             {/* Модал: настройки (кастомные кнопки / основные / подписка / платежи) */}
             <Modal open={!!editCard} onClose={() => setEditCard(null)} wide
-                   title={editCard === 'buttons' ? '🔗 Кастомные кнопки в боте'
-                       : editCard === 'basic' ? '🤖 Основные настройки'
-                       : editCard === 'sub' ? '📢 Обязательная подписка на канал'
-                       : '💳 Платёжные системы'}>
+                   title={editCard === 'buttons' ? t('bot.modalButtons')
+                       : editCard === 'basic' ? t('bot.modalBasic')
+                       : editCard === 'sub' ? t('bot.modalSub')
+                       : t('bot.modalPay')}>
                 {editCard === 'buttons' && (
                     <div className="space-y-2">
                         {(settings.custom_buttons || []).map((b, i) => (
                             <div key={i} className="flex flex-wrap items-center gap-2 p-2 rounded-lg bg-slate-50 dark:bg-slate-800/50">
-                                <input className="input !w-44" placeholder="НАЗВАНИЕ КНОПКИ"
+                                <input className="input !w-44" placeholder={t('bot.btnNamePh')}
                                        value={b.name}
                                        onChange={(e) => setSettings((s) => ({
                                            ...s,
                                            custom_buttons: s.custom_buttons.map((x, j) => j === i ? { ...x, name: e.target.value } : x),
                                        }))} />
-                                <input className="input flex-1 min-w-[200px] font-mono text-xs" placeholder="https://t.me/channel"
+                                <input className="input flex-1 min-w-[200px] font-mono text-xs" placeholder={t('bot.btnUrlPh')}
                                        value={b.url}
                                        onChange={(e) => setSettings((s) => ({
                                            ...s,
                                            custom_buttons: s.custom_buttons.map((x, j) => j === i ? { ...x, url: e.target.value } : x),
                                        }))} />
-                                <Toggle label="Вкл" checked={b.enabled !== false}
+                                <Toggle label={t('common.on')} checked={b.enabled !== false}
                                         onChange={(v) => setSettings((s) => ({
                                             ...s,
                                             custom_buttons: s.custom_buttons.map((x, j) => j === i ? { ...x, enabled: v } : x),
@@ -327,7 +330,7 @@ export default function Bot() {
                                         ...s,
                                         custom_buttons: [...(s.custom_buttons || []), { name: '', url: 'https://', enabled: true }],
                                     }))}>
-                                <Plus size={14} /> Добавить кнопку
+                                <Plus size={14} /> {t('bot.addBtn')}
                             </button>
                         )}
                     </div>
@@ -335,32 +338,32 @@ export default function Bot() {
 
                 {editCard === 'basic' && (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <Field label="Bot Token" hint="Получите у @BotFather в Telegram">
+                        <Field label="Bot Token" hint={t('bot.fBotTokenHint')}>
                             <input className="input font-mono" value={settings.bot_token ?? ''}
                                    onChange={(e) => setSettings({ ...settings, bot_token: e.target.value })} />
                         </Field>
-                        <Field label="Валюта цен">
+                        <Field label={t('bot.fCurrency')}>
                             <select className="input" value={settings.currency ?? 'RUB'}
                                     onChange={(e) => setSettings({ ...settings, currency: e.target.value })}>
-                                <option value="RUB">₽ Рубли</option>
-                                <option value="USD">$ Доллары</option>
-                                <option value="USDT">₮ USDT</option>
+                                <option value="RUB">{t('bot.curRub')}</option>
+                                <option value="USD">{t('bot.curUsd')}</option>
+                                <option value="USDT">{t('bot.curUsdt')}</option>
                             </select>
                         </Field>
-                        <Field label="Приветственное сообщение" hint="Переменные: {имя}, {ссылка}, {дата}. Пусто — встроенное красивое приветствие">
+                        <Field label={t('bot.fWelcome')} hint={t('bot.fWelcomeHint')}>
                             <textarea className="input min-h-[100px]" value={settings.welcome_text ?? ''}
                                       onChange={(e) => setSettings({ ...settings, welcome_text: e.target.value })} />
                         </Field>
-                        <Field label="🟢 Ссылка на статус-страницу"
-                               hint="Кнопка «Статус сервиса» в боте: меню тарифов, поддержка, сообщение после покупки. Пусто — кнопки нет">
-                            <input className="input font-mono" placeholder="https://status.ваш-домен.com/status"
+                        <Field label={t('bot.fStatusUrl')}
+                               hint={t('bot.fStatusUrlHint')}>
+                            <input className="input font-mono" placeholder={t('bot.statusUrlPh')}
                                    value={settings.status_url ?? ''}
                                    onChange={(e) => setSettings({ ...settings, status_url: e.target.value })} />
                         </Field>
                         <div className="space-y-3 md:col-span-2">
-                            <Toggle label="Бот включён" checked={!!settings.enabled}
+                            <Toggle label={t('bot.tBotOn')} checked={!!settings.enabled}
                                     onChange={(v) => setSettings({ ...settings, enabled: v })} />
-                            <Toggle label="Уведомлять админа о покупках" checked={!!settings.notify_admin}
+                            <Toggle label={t('bot.tNotify')} checked={!!settings.notify_admin}
                                     onChange={(v) => setSettings({ ...settings, notify_admin: v })} />
                         </div>
                     </div>
@@ -368,78 +371,77 @@ export default function Bot() {
 
                 {editCard === 'sub' && (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <Field label="Юзернейм канала" hint="Например: @my_proxy_channel (бот должен быть админом канала)">
+                        <Field label={t('bot.fChannel')} hint={t('bot.fChannelHint')}>
                             <input className="input font-mono" placeholder="@my_proxy_channel"
                                    value={settings.channel_username ?? ''}
                                    onChange={(e) => setSettings({ ...settings, channel_username: e.target.value })} />
                         </Field>
                         <div className="flex items-end pb-2">
-                            <Toggle label="Требовать подписку для пользования ботом"
+                            <Toggle label={t('bot.tChannelReq')}
                                     checked={!!settings.channel_required}
                                     onChange={(v) => setSettings({ ...settings, channel_required: v })} />
                         </div>
                         <p className="text-xs text-slate-400 md:col-span-2">
-                            ⚠️ Добавьте бота администратором в канал, иначе проверка подписи работать не будет
-                            (при недоступности канала проверка автоматически отключается).
+                            {t('bot.channelWarn')}
                         </p>
                     </div>
                 )}
 
                 {editCard === 'pay' && (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <Field label="🪙 CryptoBot (CryptoCloud) — токен" hint="Из @CryptoBot → Crypto Pay → Create App">
+                        <Field label={t('bot.fCrypto')} hint={t('bot.fCryptoHint')}>
                             <input className="input font-mono" value={settings.cryptobot_token ?? ''}
                                    onChange={(e) => setSettings({ ...settings, cryptobot_token: e.target.value })} />
                         </Field>
                         <div />
-                        <Field label="🏦 ЮKassa — shopId">
+                        <Field label={t('bot.fYkShop')}>
                             <input className="input font-mono" value={settings.yookassa_shop_id ?? ''}
                                    onChange={(e) => setSettings({ ...settings, yookassa_shop_id: e.target.value })} />
                         </Field>
-                        <Field label="🏦 ЮKassa — секретный ключ">
+                        <Field label={t('bot.fYkSecret')}>
                             <input className="input font-mono" type="password" value={settings.yookassa_secret_key ?? ''}
                                    onChange={(e) => setSettings({ ...settings, yookassa_secret_key: e.target.value })} />
                         </Field>
-                        <Field label="💳 Карта для ручной оплаты" hint="Показывается в боте при оплате напрямую">
+                        <Field label={t('bot.fPayCard')} hint={t('bot.fPayCardHint')}>
                             <input className="input font-mono" value={settings.pay_card ?? ''}
                                    onChange={(e) => setSettings({ ...settings, pay_card: e.target.value })} />
                         </Field>
-                        <Field label="📱 Телефон для СБП">
+                        <Field label={t('bot.fPayPhone')}>
                             <input className="input font-mono" value={settings.pay_phone ?? ''}
                                    onChange={(e) => setSettings({ ...settings, pay_phone: e.target.value })} />
                         </Field>
-                        <Field label="🏦 Название банка">
+                        <Field label={t('bot.fPayBank')}>
                             <input className="input" value={settings.pay_bank ?? ''}
                                    onChange={(e) => setSettings({ ...settings, pay_bank: e.target.value })} />
                         </Field>
-                        <Field label="📝 Инструкция для ручной оплаты" hint="Показывается в боте, если ни одна платёжка не подключена (пусто — покажем карту/СБП)" className="md:col-span-2">
+                        <Field label={t('bot.fPayInstr')} hint={t('bot.fPayInstrHint')} className="md:col-span-2">
                             <textarea className="input min-h-[70px]" value={settings.payment_instructions ?? ''}
                                       onChange={(e) => setSettings({ ...settings, payment_instructions: e.target.value })} />
                         </Field>
                         <div className="flex items-end pb-2">
-                            <Toggle label="⭐ Telegram Stars (оплата звёздами)"
+                            <Toggle label={t('bot.tStars')}
                                     checked={!!settings.stars_enabled}
                                     onChange={(v) => setSettings({ ...settings, stars_enabled: v })} />
                         </div>
                         <div />
-                        <Field label="⭐ Курс: 1 звезда = ₽" hint="Для тарифов в рублях. Звёзды = цена / курс, округление вверх">
+                        <Field label={t('bot.fStarsRub')} hint={t('bot.fStarsRubHint')}>
                             <input className="input" type="number" step="0.01" min="0.01" value={settings.stars_rate_rub ?? 2}
                                    onChange={(e) => setSettings({ ...settings, stars_rate_rub: Number(e.target.value) })} />
                         </Field>
-                        <Field label="⭐ Курс: 1 звезда = $" hint="Для тарифов в $ и USDT">
+                        <Field label={t('bot.fStarsUsd')} hint={t('bot.fStarsUsdHint')}>
                             <input className="input" type="number" step="0.001" min="0.001" value={settings.stars_rate_usd ?? 0.02}
                                    onChange={(e) => setSettings({ ...settings, stars_rate_usd: Number(e.target.value) })} />
                         </Field>
                         <p className="text-xs text-slate-400 md:col-span-2">
-                            Вебхук CryptoBot: <code className="font-mono">https://ваш-домен/api/payments/webhook/cryptobot</code>
-                            (вставьте в @CryptoBot → Webhooks). ЮKassa → <code className="font-mono">/api/payments/webhook/yookassa</code>.
-                            Если счёт не создаётся — проверьте с VPS: <code className="font-mono">curl -I https://pay.crypt.bot</code> (домен должен быть доступен).
+                            {t('bot.payWh1')} <code className="font-mono">{t('bot.whCryptoUrl')}</code>
+                            {t('bot.payWh2')} <code className="font-mono">/api/payments/webhook/yookassa</code>.
+                            {t('bot.payWh3')} <code className="font-mono">curl -I https://pay.crypt.bot</code> {t('bot.payWh4')}
                         </p>
                     </div>
                 )}
 
                 <div className="flex justify-end gap-2 mt-4">
-                    <button className="btn-secondary" onClick={() => setEditCard(null)}>Отмена</button>
+                    <button className="btn-secondary" onClick={() => setEditCard(null)}>{t('common.cancel')}</button>
                     <button className="btn-primary"
                             onClick={async () => {
                                 try {
@@ -447,74 +449,74 @@ export default function Bot() {
                                     setEditCard(null);
                                 } catch { /* ошибка уже показана тостом */ }
                             }}>
-                        <Save size={14} /> Сохранить
+                        <Save size={14} /> {t('common.save')}
                     </button>
                 </div>
             </Modal>
 
             <Modal open={!!balanceModal} onClose={() => setBalanceModal(null)}
-                   title={`Баланс: ${balanceModal?.telegram_id}`}>
-                <Field label="Сумма" hint="Положительная — начислить, отрицательная — списать">
+                   title={t('bot.balanceTitle', { id: balanceModal?.telegram_id })}>
+                <Field label={t('bot.fAmount')} hint={t('bot.fAmountHint')}>
                     <input className="input" type="number" value={balanceAmount}
                            onChange={(e) => setBalanceAmount(e.target.value)} autoFocus />
                 </Field>
                 <div className="flex justify-end gap-2 mt-4">
-                    <button className="btn-secondary" onClick={() => setBalanceModal(null)}>Отмена</button>
+                    <button className="btn-secondary" onClick={() => setBalanceModal(null)}>{t('common.cancel')}</button>
                     <button className="btn-primary" disabled={!balanceAmount}
                             onClick={async () => {
                                 try {
                                     await post(`/bot/users/${balanceModal.telegram_id}/balance`, { amount: Number(balanceAmount) });
-                                    toast.success('Баланс изменён');
+                                    toast.success(t('bot.balanceChanged'));
                                     setBalanceModal(null);
                                     load();
                                 } catch (e) { toast.error(e.message); }
                             }}>
-                        Применить
+                        {t('bot.apply')}
                     </button>
                 </div>
             </Modal>
 
             {/* Модал: написать пользователю через бота */}
             <Modal open={!!msgModal} onClose={() => setMsgModal(null)}
-                   title={`Сообщение: ${msgModal?.telegram_id}`}>
-                <Field label="Текст (HTML разрешён)">
+                   title={t('bot.msgTitle', { id: msgModal?.telegram_id })}>
+                <Field label={t('bot.fMsgText')}>
                     <textarea className="input min-h-[100px]" value={msgText}
                               onChange={(e) => setMsgText(e.target.value)} autoFocus />
                 </Field>
                 <div className="flex justify-end gap-2 mt-4">
-                    <button className="btn-secondary" onClick={() => setMsgModal(null)}>Отмена</button>
+                    <button className="btn-secondary" onClick={() => setMsgModal(null)}>{t('common.cancel')}</button>
                     <button className="btn-primary" disabled={!msgText.trim()}
                             onClick={async () => {
                                 try {
                                     await post(`/bot/users/${msgModal.telegram_id}/message`, { text: msgText });
-                                    toast.success('Отправлено через бота');
+                                    toast.success(t('bot.msgSent'));
                                     setMsgModal(null);
                                 } catch (e) { toast.error(e.message); }
                             }}>
-                        Отправить
+                        {t('common.send')}
                     </button>
                 </div>
             </Modal>
 
             {/* Кастомные кнопки в боте: сводка + модалка */}
-            <Card title="🔗 Кастомные кнопки в боте"
-                  subtitle="Появятся в меню тарифов — ссылки на каналы, ботов, сайты"
+            <Card title={t('bot.buttonsTitle')}
+                  subtitle={t('bot.buttonsSub')}
                   actions={
-                      <button className="btn-ghost !min-h-0 !p-2" title="Изменить кнопки"
+                      <button className="btn-ghost !min-h-0 !p-2" title={t('bot.editButtons')}
                               onClick={() => setEditCard('buttons')}>
                           <Pencil size={16} />
                       </button>
                   }>
                 {!settings ? <Skeleton className="h-20" /> : (settings.custom_buttons || []).length === 0 ? (
-                    <p className="text-sm text-slate-500 py-2">Кнопок нет — нажмите ✏️, чтобы добавить</p>
+                    <p className="text-sm text-slate-500 py-2">{t('bot.buttonsEmpty')}</p>
                 ) : (
                     <div className="space-y-2">
                         {(settings.custom_buttons || []).map((b, i) => (
                             <div key={i} className="flex flex-wrap items-center gap-2 p-2 rounded-lg bg-slate-50 dark:bg-slate-800/50">
-                                <span className="font-medium text-sm">{b.name || 'Без названия'}</span>
+                                <span className="font-medium text-sm">{b.name || t('bot.noName')}</span>
                                 <span className="font-mono text-xs text-slate-400 break-all">{b.url}</span>
                                 <span className={b.enabled !== false ? 'badge-green' : 'badge-red'}>
-                                    {b.enabled !== false ? 'Вкл' : 'Выкл'}
+                                    {b.enabled !== false ? t('common.on') : t('common.off')}
                                 </span>
                             </div>
                         ))}
@@ -523,92 +525,92 @@ export default function Bot() {
             </Card>
 
             {/* Основные настройки: сводка + модалка */}
-            <Card title="🤖 Основные настройки" actions={
-                <button className="btn-ghost !min-h-0 !p-2" title="Изменить"
+            <Card title={t('bot.basicTitle')} actions={
+                <button className="btn-ghost !min-h-0 !p-2" title={t('common.edit')}
                         onClick={() => setEditCard('basic')}>
                     <Pencil size={16} />
                 </button>
             }>
                 <div>
-                    {settingRow('Bot Token', settings.bot_token || 'не задан')}
-                    {settingRow('Валюта цен', { RUB: '₽ Рубли', USD: '$ Доллары', USDT: '₮ USDT' }[settings.currency] || settings.currency)}
-                    {settingRow('Приветствие', settings.welcome_text ? `${String(settings.welcome_text).slice(0, 60)}…` : 'встроенное')}
-                    {settingRow('Ссылка на статус-страницу', settings.status_url || 'нет')}
-                    {settingRow('Бот включён', settings.enabled ? '✅ Да' : '❌ Нет')}
-                    {settingRow('Уведомления админу', settings.notify_admin ? '✅ Да' : '❌ Нет')}
+                    {settingRow('Bot Token', settings.bot_token || t('bot.notSet'))}
+                    {settingRow(t('bot.rowCurrency'), curName(settings.currency) || settings.currency)}
+                    {settingRow(t('bot.rowWelcome'), settings.welcome_text ? `${String(settings.welcome_text).slice(0, 60)}…` : t('bot.builtin'))}
+                    {settingRow(t('bot.rowStatusUrl'), settings.status_url || t('bot.none'))}
+                    {settingRow(t('bot.rowBotOn'), settings.enabled ? t('bot.yes') : t('bot.no'))}
+                    {settingRow(t('bot.rowNotify'), settings.notify_admin ? t('bot.yes') : t('bot.no'))}
                 </div>
             </Card>
 
             {/* Обязательная подписка на канал: сводка + модалка */}
-            <Card title="📢 Обязательная подписка на канал"
-                  subtitle="Бот не будет работать, пока пользователь не подпишется на канал"
+            <Card title={t('bot.subTitle')}
+                  subtitle={t('bot.subSub')}
                   actions={
-                      <button className="btn-ghost !min-h-0 !p-2" title="Изменить"
+                      <button className="btn-ghost !min-h-0 !p-2" title={t('common.edit')}
                               onClick={() => setEditCard('sub')}>
                           <Pencil size={16} />
                       </button>
                   }>
                 <div>
-                    {settingRow('Юзернейм канала', settings.channel_username || 'не задан')}
-                    {settingRow('Требовать подписку', settings.channel_required ? '✅ Да' : '❌ Нет')}
+                    {settingRow(t('bot.rowChannel'), settings.channel_username || t('bot.notSet'))}
+                    {settingRow(t('bot.rowChannelReq'), settings.channel_required ? t('bot.yes') : t('bot.no'))}
                 </div>
             </Card>
 
             {/* Платёжные системы: сводка + модалка */}
-            <Card title="💳 Платёжные системы"
-                  subtitle="Настройте одну из них — счёт будет создаваться автоматически, доступ выдаётся после оплаты"
+            <Card title={t('bot.payTitle')}
+                  subtitle={t('bot.paySub')}
                   actions={
-                      <button className="btn-ghost !min-h-0 !p-2" title="Изменить"
+                      <button className="btn-ghost !min-h-0 !p-2" title={t('common.edit')}
                               onClick={() => setEditCard('pay')}>
                           <Pencil size={16} />
                       </button>
                   }>
                 <div>
-                    {settingRow('🪙 CryptoBot', settings.cryptobot_token ? 'настроен' : 'не настроен')}
-                    {settingRow('🏦 ЮKassa', (settings.yookassa_shop_id && settings.yookassa_secret_key) ? 'настроена' : 'не настроена')}
-                    {settingRow('🏦 Карта админа', settings.pay_card || 'не задана')}
-                    {settingRow('⭐ Telegram Stars', settings.stars_enabled
-                        ? `включены (${settings.stars_rate_rub ?? 2} ₽ / ${settings.stars_rate_usd ?? 0.02} $ за ⭐)`
-                        : 'выключены')}
+                    {settingRow(t('bot.rowCrypto'), settings.cryptobot_token ? t('bot.configured') : t('bot.notConfigured'))}
+                    {settingRow(t('bot.rowYk'), (settings.yookassa_shop_id && settings.yookassa_secret_key) ? t('bot.configuredF') : t('bot.notConfiguredF'))}
+                    {settingRow(t('bot.rowPayCard'), settings.pay_card || t('bot.notSetF'))}
+                    {settingRow(t('bot.rowStars'), settings.stars_enabled
+                        ? t('bot.starsOn', { rub: settings.stars_rate_rub ?? 2, usd: settings.stars_rate_usd ?? 0.02 })
+                        : t('bot.starsOff'))}
                 </div>
             </Card>
 
             {/* Тарифы: компактный список + модалка редактирования */}
-            <Card title="💰 Тарифы" actions={
+            <Card title={t('bot.tariffsTitle')} actions={
                 <button className="btn-secondary !min-h-0 !px-3 !py-1.5 text-sm"
                         onClick={() => setTariffModal({ name: '', days: 30, price: 100, protocols: 'both', max_ips: null, quota_gb: null, enabled: 1 })}>
-                    <Plus size={14} /> Добавить
+                    <Plus size={14} /> {t('common.add')}
                 </button>
             }>
                 <div className="space-y-2">
-                    {tariffs.map((t) => {
+                    {tariffs.map((tar) => {
                         const cur = settings.currency ?? 'RUB';
                         const sign = cur === 'RUB' ? '₽' : cur === 'USD' ? '$' : cur === 'USDT' ? '₮' : cur;
-                        const protoLabel = t.protocols === 'web' ? '🌐 Web Proxy'
-                            : t.protocols === 'mtproto' ? '🔌 MTProto' : '🌐 Web + 🔌 MTProto';
-                        const limits = `${t.max_ips ? `${t.max_ips} IP` : 'IP ∞'} · ${t.quota_gb ? `${t.quota_gb} ГБ` : 'трафик ∞'}`;
-                        const accent = !t.enabled ? 'border-slate-600'
-                            : t.protocols === 'web' ? 'border-sky-500'
-                            : t.protocols === 'mtproto' ? 'border-violet-500' : 'border-emerald-500';
+                        const protoLabel = tar.protocols === 'web' ? t('bot.protoWeb')
+                            : tar.protocols === 'mtproto' ? t('bot.protoMtproto') : t('bot.protoBothLabel');
+                        const limits = `${tar.max_ips ? t('bot.limitsIp', { n: tar.max_ips }) : t('bot.limitsIpInf')} · ${tar.quota_gb ? t('bot.limitsGb', { n: tar.quota_gb }) : t('bot.limitsGbInf')}`;
+                        const accent = !tar.enabled ? 'border-slate-600'
+                            : tar.protocols === 'web' ? 'border-sky-500'
+                            : tar.protocols === 'mtproto' ? 'border-violet-500' : 'border-emerald-500';
                         return (
-                            <div key={t.id ?? t.name}
-                                 className={`flex flex-wrap items-center gap-3 p-3 rounded-xl border-l-4 ${accent} bg-slate-50 dark:bg-slate-800/50 ${t.enabled ? '' : 'opacity-60'}`}>
+                            <div key={tar.id ?? tar.name}
+                                 className={`flex flex-wrap items-center gap-3 p-3 rounded-xl border-l-4 ${accent} bg-slate-50 dark:bg-slate-800/50 ${tar.enabled ? '' : 'opacity-60'}`}>
                                 <div className="flex-1 min-w-[180px]">
-                                    <div className="font-medium">{t.name || 'Без названия'}</div>
+                                    <div className="font-medium">{tar.name || t('bot.noName')}</div>
                                     <div className="text-xs text-slate-400">
-                                        {t.days} дн. · <b className="text-slate-700 dark:text-slate-200">{t.price} {sign}</b> · {protoLabel} · {limits}
+                                        {t('bot.daysN', { n: tar.days })} · <b className="text-slate-700 dark:text-slate-200">{tar.price} {sign}</b> · {protoLabel} · {limits}
                                     </div>
                                 </div>
-                                <Toggle label="Вкл" checked={!!t.enabled}
-                                        onChange={(v) => toggleTariff(t, v)} />
+                                <Toggle label={t('common.on')} checked={!!tar.enabled}
+                                        onChange={(v) => toggleTariff(tar, v)} />
                                 <div className="flex gap-1">
-                                    <button className="btn-ghost !min-h-0 !p-2" title="Редактировать"
-                                            onClick={() => setTariffModal({ ...t })}>
+                                    <button className="btn-ghost !min-h-0 !p-2" title={t('bot.editTariff')}
+                                            onClick={() => setTariffModal({ ...tar })}>
                                         <Pencil size={16} />
                                     </button>
-                                    {t.id && (
-                                        <button className="btn-ghost !min-h-0 !p-2 text-red-500" title="Удалить"
-                                                onClick={() => deleteTariff(t.id)}>
+                                    {tar.id && (
+                                        <button className="btn-ghost !min-h-0 !p-2 text-red-500" title={t('common.delete')}
+                                                onClick={() => deleteTariff(tar.id)}>
                                             <Trash2 size={16} />
                                         </button>
                                     )}
@@ -616,13 +618,13 @@ export default function Bot() {
                             </div>
                         );
                     })}
-                    {tariffs.length === 0 && <p className="text-sm text-slate-500 text-center py-4">Тарифов нет — добавьте первый</p>}
+                    {tariffs.length === 0 && <p className="text-sm text-slate-500 text-center py-4">{t('bot.tariffsEmpty')}</p>}
                 </div>
             </Card>
 
             {/* Модал: создание/редактирование тарифа */}
             <Modal open={!!tariffModal} onClose={() => setTariffModal(null)}
-                   title={tariffModal?.id ? 'Редактировать тариф' : 'Новый тариф'}>
+                   title={tariffModal?.id ? t('bot.editTariffTitle') : t('bot.newTariff')}>
                 {tariffModal && (() => {
                     const cur = settings.currency ?? 'RUB';
                     const sign = cur === 'RUB' ? '₽' : cur === 'USD' ? '$' : cur === 'USDT' ? '₮' : cur;
@@ -632,44 +634,44 @@ export default function Bot() {
                     return (
                         <>
                             <div className="grid grid-cols-2 gap-3">
-                                <Field label="Название" hint="Можно со смайлами 🚀💎🔥" className="col-span-2">
+                                <Field label={t('bot.fTName')} hint={t('bot.fTNameHint')} className="col-span-2">
                                     <input className="input" value={tariffModal.name ?? ''}
                                            onChange={(e) => upd({ name: e.target.value })} />
                                 </Field>
-                                <Field label="Срок (дней)">
+                                <Field label={t('bot.fTDays')}>
                                     <input className="input" type="number" min="1" value={tariffModal.days ?? 30}
                                            onChange={(e) => upd({ days: Number(e.target.value) })} />
                                 </Field>
-                                <Field label={`Цена, ${sign}`}>
+                                <Field label={t('bot.fTPrice', { sign })}>
                                     <input className="input" type="number" min="0" value={tariffModal.price ?? 0}
                                            onChange={(e) => upd({ price: Number(e.target.value) })} />
                                 </Field>
-                                <Field label="Протоколы">
+                                <Field label={t('bot.fTProto')}>
                                     <select className="input" value={tariffModal.protocols ?? 'both'}
                                             onChange={(e) => upd({ protocols: e.target.value })}>
-                                        <option value="both">Оба</option>
+                                        <option value="both">{t('bot.protoBothShort')}</option>
                                         <option value="web">Web Proxy</option>
                                         <option value="mtproto">MTProto</option>
                                     </select>
                                 </Field>
-                                <Field label="Макс. IP" hint="Пусто = ∞">
+                                <Field label={t('bot.fTMaxIp')} hint={t('bot.infHint')}>
                                     <input className="input" type="number" min="1" value={tariffModal.max_ips ?? ''}
                                            onChange={(e) => upd({ max_ips: e.target.value === '' ? null : Number(e.target.value) })} />
                                 </Field>
-                                <Field label="Трафик, ГБ" hint="Пусто = ∞">
+                                <Field label={t('bot.fTQuota')} hint={t('bot.infHint')}>
                                     <input className="input" type="number" min="0" value={tariffModal.quota_gb ?? ''}
                                            onChange={(e) => upd({ quota_gb: e.target.value === '' ? null : Number(e.target.value) })} />
                                 </Field>
                                 <div className="flex items-end pb-1">
-                                    <Toggle label="Включён" checked={!!tariffModal.enabled}
+                                    <Toggle label={t('bot.tEnabled')} checked={!!tariffModal.enabled}
                                             onChange={(v) => upd({ enabled: v ? 1 : 0 })} />
                                 </div>
                             </div>
                             <p className="text-xs text-slate-400 mt-3">
-                                👁 Клиент увидит: <b className="text-slate-700 dark:text-slate-200">{tariffModal.name || '—'} — {tariffModal.days} дн. — {tariffModal.price} {sign}</b> · {protoLabel}
+                                {t('bot.previewSees')} <b className="text-slate-700 dark:text-slate-200">{tariffModal.name || '—'} — {t('bot.daysN', { n: tariffModal.days })} — {tariffModal.price} {sign}</b> · {protoLabel}
                             </p>
                             <div className="flex justify-end gap-2 mt-4">
-                                <button className="btn-secondary" onClick={() => setTariffModal(null)}>Отмена</button>
+                                <button className="btn-secondary" onClick={() => setTariffModal(null)}>{t('common.cancel')}</button>
                                 <button className="btn-primary"
                                         onClick={async () => {
                                             try {
@@ -677,7 +679,7 @@ export default function Bot() {
                                                 setTariffModal(null);
                                             } catch { /* ошибка уже показана тостом */ }
                                         }}>
-                                    <Save size={14} /> Сохранить
+                                    <Save size={14} /> {t('common.save')}
                                 </button>
                             </div>
                         </>

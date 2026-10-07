@@ -1,6 +1,7 @@
 // Базовые UI-компоненты TGGATE (стилистика shadcn/ui на Tailwind)
 import React from 'react';
 import { useToastStore } from '../store';
+import { useT } from '../i18n';
 import { CheckCircle, XCircle, Info } from 'lucide-react';
 
 /** Карточка-контейнер */
@@ -23,11 +24,12 @@ export function Card({ title, subtitle, actions, children, className = '' }) {
 
 /** Индикатор статуса сервиса */
 export function StatusDot({ ok, label }) {
+    const t = useT();
     return (
         <span className="inline-flex items-center gap-2 text-sm">
             <span className={`w-2.5 h-2.5 rounded-full ${ok ? 'bg-emerald-500' : 'bg-red-500'} ${ok ? 'animate-pulse' : ''}`} />
             {label}
-            <span className={ok ? 'text-emerald-500' : 'text-red-500'}>{ok ? 'работает' : 'остановлен'}</span>
+            <span className={ok ? 'text-emerald-500' : 'text-red-500'}>{ok ? t('ui.svcWorks') : t('ui.svcDown')}</span>
         </span>
     );
 }
@@ -45,10 +47,11 @@ export function ProgressBar({ percent, className = '' }) {
 
 /** Бейдж статуса клиента */
 export function StatusBadge({ status }) {
+    const t = useT();
     const map = {
-        active: ['badge-green', 'Активен'],
-        blocked: ['badge-red', 'Заблокирован'],
-        expired: ['badge-yellow', 'Просрочен'],
+        active: ['badge-green', t('ui.stActive')],
+        blocked: ['badge-red', t('ui.stBlocked')],
+        expired: ['badge-yellow', t('ui.stExpired')],
     };
     const [cls, text] = map[status] || ['badge-blue', status];
     return <span className={cls}>{text}</span>;
@@ -134,6 +137,7 @@ export function ProtoBadge({ protocol }) {
 
 /** Модальное окно (на телефоне — шторка снизу) */
 export function Modal({ open, onClose, title, children, wide }) {
+    const t = useT();
     if (!open) return null;
     return (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4"
@@ -143,7 +147,7 @@ export function Modal({ open, onClose, title, children, wide }) {
                  onClick={(e) => e.stopPropagation()}>
                 <div className="flex items-center justify-between mb-4">
                     <h3 className="text-lg font-semibold">{title}</h3>
-                    <button onClick={onClose} className="btn-ghost !min-h-0 !p-2" aria-label="Закрыть">✕</button>
+                    <button onClick={onClose} className="btn-ghost !min-h-0 !p-2" aria-label={t('common.close')}>✕</button>
                 </div>
                 {children}
             </div>
@@ -154,6 +158,7 @@ export function Modal({ open, onClose, title, children, wide }) {
 /** Контейнер toast-уведомлений */
 export function Toasts() {
     const toasts = useToastStore((s) => s.toasts);
+    const tr = useT();
     const icons = {
         success: <CheckCircle size={18} className="text-emerald-500" />,
         error: <XCircle size={18} className="text-red-500" />,
@@ -165,7 +170,7 @@ export function Toasts() {
                 <div key={t.id}
                      className={`card !p-3 flex items-center gap-2 shadow-lg animate-[slideIn_0.2s_ease-out] ${t.onClick ? 'cursor-pointer hover:brightness-110' : ''}`}
                      onClick={t.onClick}
-                     title={t.onClick ? 'Нажмите, чтобы перейти' : undefined}>
+                     title={t.onClick ? tr('ui.toastGo') : undefined}>
                     {icons[t.type]}
                     <span className="text-sm">{t.message}</span>
                 </div>
@@ -175,10 +180,10 @@ export function Toasts() {
 }
 
 /** Форматирование байтов в читаемый вид */
-export function formatBytes(bytes) {
+export function formatBytes(bytes, lang = 'ru') {
     if (bytes == null) return '—';
-    if (bytes === 0) return '0 Б';
-    const units = ['Б', 'КБ', 'МБ', 'ГБ', 'ТБ'];
+    if (bytes === 0) return lang === 'en' ? '0 B' : '0 Б';
+    const units = lang === 'en' ? ['B', 'KB', 'MB', 'GB', 'TB'] : ['Б', 'КБ', 'МБ', 'ГБ', 'ТБ'];
     const i = Math.min(units.length - 1, Math.floor(Math.log2(bytes) / 10));
     return `${(bytes / 1024 ** i).toFixed(i > 0 ? 1 : 0)} ${units[i]}`;
 }
@@ -196,16 +201,17 @@ export const chartTheme = {
 };
 
 /** Форматирование даты */
-export function formatDate(iso) {
+export function formatDate(iso, lang = 'ru') {
     if (!iso) return '—';
-    return new Date(iso).toLocaleString('ru-RU', {
+    return new Date(iso).toLocaleString(lang === 'en' ? 'en-GB' : 'ru-RU', {
         day: '2-digit', month: '2-digit', year: 'numeric',
         hour: '2-digit', minute: '2-digit',
     });
 }
 
 /** Определение устройства по User-Agent (web-сессии Telemt). У MTProto UA нет. */
-export function deviceInfo(ua) {
+export function deviceInfo(ua, lang = 'ru') {
+    const other = lang === 'en' ? 'Other' : 'Др.';
     if (!ua) return { icon: '', label: '—' };
     const s = String(ua).toLowerCase();
     if (s.includes('iphone') || s.includes('ipad')) return { icon: '📱', label: 'iOS' };
@@ -213,5 +219,5 @@ export function deviceInfo(ua) {
     if (s.includes('mac os') || s.includes('macintosh')) return { icon: '🍎', label: 'macOS' };
     if (s.includes('windows')) return { icon: '🖥️', label: 'Windows' };
     if (s.includes('linux') || s.includes('x11')) return { icon: '🐧', label: 'Linux' };
-    return { icon: '🌐', label: 'Др.' };
+    return { icon: '🌐', label: other };
 }

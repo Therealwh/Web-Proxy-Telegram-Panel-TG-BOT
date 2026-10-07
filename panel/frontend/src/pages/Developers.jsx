@@ -1,52 +1,8 @@
 // Документация для разработчиков: примеры использования публичного API
 import React from 'react';
 import { Code2 } from 'lucide-react';
+import { useT } from '../i18n';
 import { Card, PageHeader } from '../components/ui';
-
-const PY_EXAMPLE = `# Пример бота на Python (aiogram 3.x)
-from aiogram import Bot, Dispatcher
-import aiohttp
-
-API_URL = "https://ваш-домен/api/v1"
-API_KEY = "tgk_ваш_ключ"
-
-async def create_client(username: str) -> dict:
-    async with aiohttp.ClientSession() as s:
-        async with s.post(
-            f"{API_URL}/clients",
-            headers={"Authorization": f"Bearer {API_KEY}"},
-            json={"username": username, "days": 30},
-        ) as r:
-            return await r.json()
-`;
-
-const JS_EXAMPLE = `// Пример на Node.js
-const API_URL = 'https://ваш-домен/api/v1';
-const API_KEY = 'tgk_ваш_ключ';
-
-async function createClient(username) {
-    const res = await fetch(\`\${API_URL}/clients\`, {
-        method: 'POST',
-        headers: {
-            Authorization: \`Bearer \${API_KEY}\`,
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ username, days: 30 }),
-    });
-    return res.json();
-}
-`;
-
-const CURL_EXAMPLE = `# Список клиентов
-curl -H "Authorization: Bearer tgk_ваш_ключ" \\
-  https://ваш-домен/api/v1/clients
-
-# Создать клиента
-curl -X POST -H "Authorization: Bearer tgk_ваш_ключ" \\
-  -H "Content-Type: application/json" \\
-  -d '{"username":"ivan","days":30}' \\
-  https://ваш-домен/api/v1/clients
-`;
 
 function CodeBlock({ title, code }) {
     return (
@@ -58,30 +14,34 @@ function CodeBlock({ title, code }) {
 }
 
 export default function Developers() {
+    const t = useT();
+    const PY_EXAMPLE = t('dev.pyEx');
+    const JS_EXAMPLE = t('dev.jsEx');
+    const CURL_EXAMPLE = t('dev.curlEx');
     return (
         <div className="space-y-4">
-            <PageHeader icon={<Code2 size={20} />} title="Для разработчиков"
-                        subtitle="Публичный API, вебхуки и примеры кода" />
+            <PageHeader icon={<Code2 size={20} />} title={t('dev.title')}
+                        subtitle={t('dev.subtitle')} />
 
-            <Card title="🔌 Публичный API">
+            <Card title={t('dev.apiTitle')}>
                 <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">
-                    Все запросы к <code className="font-mono text-xs">/panel-api/v1/*</code> требуют заголовок{' '}
-                    <code className="font-mono text-xs">Authorization: Bearer &lt;ключ&gt;</code>.
-                    Ключи создаются в разделе «API-ключи». Полная интерактивная документация:{' '}
+                    {t('dev.apiP1')} <code className="font-mono text-xs">/panel-api/v1/*</code> {t('dev.apiP2')}{' '}
+                    <code className="font-mono text-xs">{t('dev.authHeader')}</code>.
+                    {t('dev.apiP3')}{' '}
                     <a href="/api/docs" target="_blank" rel="noreferrer" className="text-primary underline">/api/docs</a> (Swagger UI).
                 </p>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
                     {[
-                        ['GET', '/panel-api/v1/clients', 'Список клиентов'],
-                        ['POST', '/panel-api/v1/clients', 'Создать клиента (days, quota_gb, max_ips, protocols...)'],
-                        ['PATCH', '/panel-api/v1/clients/{id}', 'Обновить: продлить, лимиты, блокировка'],
-                        ['DELETE', '/panel-api/v1/clients/{id}', 'Удалить клиента'],
-                        ['GET', '/panel-api/v1/clients/{id}/links', 'Ссылки подключения'],
-                        ['GET', '/panel-api/v1/clients/{id}/qr', 'QR-коды (base64)'],
-                        ['GET', '/panel-api/v1/clients/{id}/connections', 'Кто подключён: IP + страна'],
-                        ['GET', '/panel-api/v1/stats', 'Статистика сервера'],
-                        ['GET', '/panel-api/v1/tariffs', 'Список тарифов'],
-                        ['POST', '/panel-api/v1/extend/{id}', 'Продлить доступ'],
+                        ['GET', '/panel-api/v1/clients', t('dev.epClients')],
+                        ['POST', '/panel-api/v1/clients', t('dev.epCreate')],
+                        ['PATCH', '/panel-api/v1/clients/{id}', t('dev.epUpdate')],
+                        ['DELETE', '/panel-api/v1/clients/{id}', t('dev.epDelete')],
+                        ['GET', '/panel-api/v1/clients/{id}/links', t('dev.epLinks')],
+                        ['GET', '/panel-api/v1/clients/{id}/qr', t('dev.epQr')],
+                        ['GET', '/panel-api/v1/clients/{id}/connections', t('dev.epConns')],
+                        ['GET', '/panel-api/v1/stats', t('dev.epStats')],
+                        ['GET', '/panel-api/v1/tariffs', t('dev.epTariffs')],
+                        ['POST', '/panel-api/v1/extend/{id}', t('dev.epExtend')],
                     ].map(([m, p, d]) => (
                         <div key={p + m} className="flex items-center gap-2">
                             <span className={`badge ${m === 'GET' ? 'badge-blue' : m === 'POST' ? 'badge-green' : m === 'DELETE' ? 'badge-red' : 'badge-yellow'}`}>{m}</span>
@@ -92,18 +52,18 @@ export default function Developers() {
                 </div>
             </Card>
 
-            <Card title="🪝 Вебхуки">
+            <Card title={t('dev.whTitle')}>
                 <p className="text-sm text-slate-500 dark:text-slate-400">
-                    События: <code className="font-mono text-xs">client.created</code>,{' '}
+                    {t('dev.whText')} <code className="font-mono text-xs">client.created</code>,{' '}
                     <code className="font-mono text-xs">client.expired</code>,{' '}
                     <code className="font-mono text-xs">client.blocked</code>,{' '}
                     <code className="font-mono text-xs">payment.success</code>,{' '}
                     <code className="font-mono text-xs">quota.exceeded</code>.
-                    Каждый запрос подписан HMAC-SHA256 в заголовке <code className="font-mono text-xs">X-TGGATE-Signature</code>.
+                    {t('dev.whSigned')} <code className="font-mono text-xs">X-TGGATE-Signature</code>.
                 </p>
             </Card>
 
-            <Card title="📖 Примеры кода">
+            <Card title={t('dev.exTitle')}>
                 <div className="space-y-6">
                     <CodeBlock title="cURL" code={CURL_EXAMPLE} />
                     <CodeBlock title="🐍 Python (aiogram)" code={PY_EXAMPLE} />

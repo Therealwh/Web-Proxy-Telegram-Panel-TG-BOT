@@ -33,6 +33,18 @@ export const useThemeStore = create((set) => ({
         }),
 }));
 
+// --- Язык интерфейса ---
+const savedLang = localStorage.getItem('tggate_lang') || 'ru';
+
+export const useLangStore = create((set) => ({
+    lang: ['ru', 'en'].includes(savedLang) ? savedLang : 'ru',
+    setLang: (lang) => {
+        const v = lang === 'en' ? 'en' : 'ru';
+        localStorage.setItem('tggate_lang', v);
+        set({ lang: v });
+    },
+}));
+
 // --- Toast-уведомления ---
 let toastId = 0;
 export const useToastStore = create((set) => ({
