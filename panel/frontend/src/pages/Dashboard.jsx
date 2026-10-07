@@ -92,6 +92,56 @@ function DcStrip({ t }) {
     );
 }
 
+/** Карточка внешней доступности (замеры Globalping) */
+function AvailCard({ t }) {
+    const [avail, setAvail] = useState(null);
+    const [checking, setChecking] = useState(false);
+    useEffect(() => {
+        const load = () => get('/stats/availability').then(setAvail).catch(() => {});
+        load();
+        const timer = setInterval(load, 60000);
+        return () => clearInterval(timer);
+    }, []);
+    if (!avail || (!avail.enabled && !avail.last)) return null;
+    const hist = (avail.history || []).slice(-30);
+    const last = avail.last;
+    const checkNow = async () => {
+        setChecking(true);
+        try {
+            await post('/stats/availability/check');
+            toast.success(t('dashboard.availStarted'));
+            setTimeout(() => get('/stats/availability').then(setAvail).catch(() => {}), 95000);
+        } catch (e) {
+            toast.error(e.message);
+        } finally {
+            setChecking(false);
+        }
+    };
+    return (
+        <Card title={t('dashboard.availTitle')}
+              subtitle={last ? t('dashboard.availPct', { ok: last.probes_ok, total: last.probes_total }) : t('dashboard.availNone')}
+              actions={
+                  <button className="btn-secondary !min-h-0 !px-3 !py-1.5 text-sm" disabled={checking} onClick={checkNow}>
+                      <RefreshCw size={14} /> {t('dashboard.availCheckBtn')}
+                  </button>
+              }>
+            {hist.length > 0 && (
+                <div className="flex items-end gap-1 h-14">
+                    {hist.map((h, i) => {
+                        const pct = h.pct ?? 0;
+                        const color = pct >= 80 ? 'bg-emerald-500' : pct >= 50 ? 'bg-amber-500' : 'bg-red-500';
+                        return (
+                            <div key={i} title={`${h.probes_ok}/${h.probes_total}`}
+                                 className={`flex-1 rounded-sm ${color} opacity-80`}
+                                 style={{ height: `${Math.max(8, pct)}%` }} />
+                        );
+                    })}
+                </div>
+            )}
+        </Card>
+    );
+}
+
 export default function Dashboard() {    const [data, setData] = useState(null);
     const [live, setLive] = useState(null); // real-time нагрузка из WebSocket
     const [active, setActive] = useState(null); // активные подключения (IP + страна)
@@ -229,6 +279,9 @@ export default function Dashboard() {    const [data, setData] = useState(null);
 
             {/* DC-монитор: доступность дата-центров Telegram */}
             <DcStrip t={t} />
+
+            {/* Внешняя доступность: видимость прокси из России */}
+            <AvailCard t={t} />
 
             {/* Счётчики */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

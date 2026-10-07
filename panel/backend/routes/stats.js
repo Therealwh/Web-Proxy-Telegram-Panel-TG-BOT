@@ -124,6 +124,27 @@ router.get('/dc', (req, res, next) => {
     }
 });
 
+// --- Внешняя доступность: история замеров Globalping ---
+router.get('/availability', (req, res, next) => {
+    try {
+        const availability = require('../services/availability');
+        res.json(availability.getStatus());
+    } catch (err) {
+        next(err);
+    }
+});
+
+// --- Внешняя доступность: ручной запуск замера (фоном) ---
+router.post('/availability/check', (req, res, next) => {
+    try {
+        const availability = require('../services/availability');
+        availability.runCheck({ manual: true }).catch(() => {});
+        res.json({ started: true });
+    } catch (err) {
+        next(err);
+    }
+});
+
 // --- Активные подключения: кто сейчас онлайн, с каких IP и стран ---
 router.get('/active', async (req, res, next) => {    try {
         const geo = require('../services/geo');

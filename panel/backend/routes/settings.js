@@ -60,6 +60,15 @@ const DEFAULTS = {
     dc_coverage_threshold: 50,          // покрытие ниже — деградация DC (%)
     dc_auto_restart: true,              // авторестарт Telemt при тотальной деградации
     dc_cooldown_min: 30,                // пауза между авторестартами (минут)
+
+    // 🌍 Внешняя доступность (Globalping)
+    avail_enabled: true,                // периодические замеры видимости из РФ
+    avail_interval_min: 15,             // период замеров (минут)
+    avail_probes: 10,                  // зондов на замер (1 кредит = 1 зонд)
+    avail_threshold: 50,               // доля успеха ниже — алерт (%)
+    avail_target: null,                // цель (по умолчанию — домен панели)
+    avail_port: null,                  // порт (по умолчанию — порт MTProto)
+    avail_token: null,                 // токен Globalping (квота 500/час вместо 250)
 };
 
 /** Читает все настройки, подставляя дефолты. */

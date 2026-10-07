@@ -56,6 +56,18 @@ const CATEGORIES = (t) => [
             { key: 'dc_cooldown_min', label: t('settings.fDcCooldown'), hint: t('settings.fDcCooldownHint'), type: 'number' },
         ],
     },
+    {
+        id: 'avail', icon: '🌍', title: t('settings.catAvail'),
+        fields: [
+            { key: 'avail_enabled', label: t('settings.fAvailMonitor'), type: 'toggle' },
+            { key: 'avail_interval_min', label: t('settings.fAvailInterval'), hint: t('settings.fAvailIntervalHint'), type: 'number' },
+            { key: 'avail_probes', label: t('settings.fAvailProbes'), hint: t('settings.fAvailProbesHint'), type: 'number' },
+            { key: 'avail_threshold', label: t('settings.fAvailThreshold'), hint: t('settings.fAvailThresholdHint'), type: 'number' },
+            { key: 'avail_target', label: t('settings.fAvailTarget'), hint: t('settings.fAvailTargetHint') },
+            { key: 'avail_port', label: t('settings.fAvailPort'), hint: t('settings.fAvailPortHint'), type: 'number' },
+            { key: 'avail_token', label: t('settings.fAvailToken'), hint: t('settings.fAvailTokenHint') },
+        ],
+    },
 ];
 
 export default function Settings() {

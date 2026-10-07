@@ -371,6 +371,12 @@ function start() {
     setInterval(() => dcMonitor.checkDc().catch(() => {}), 2 * 60 * 1000).unref();
     dcMonitor.checkDc().catch(() => {});
 
+    // Внешняя доступность: замер Globalping каждые N минут (по настройке)
+    const availability = require('./availability');
+    const availEvery = Math.max(5, Number(getAll().avail_interval_min ?? 15)) * 60 * 1000;
+    setInterval(() => availability.runCheck().catch(() => {}), availEvery).unref();
+    availability.runCheck().catch(() => {});
+
     // Ежечасно: истечения, просроченные, тестовые, диск, автопродление, дожим тестов
     setInterval(() => {
         try { checkExpiring(); } catch (e) { logger.error(e); }
