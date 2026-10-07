@@ -24,11 +24,13 @@ async function getEngineStatus(deps = telemt) {
         ready: () => deps.getHealthReady(),
     };
     const out = {};
+    out.errors = {};
     for (const [key, fn] of Object.entries(jobs)) {
         try {
             out[key] = await fn();
-        } catch {
+        } catch (e) {
             out[key] = null;
+            out.errors[key] = String(e?.message || e).slice(0, 200);
         }
     }
     // Флаги расширенной телеметрии из конфига (фронт решает, показывать ли кнопку включения)
@@ -40,8 +42,14 @@ async function getEngineStatus(deps = telemt) {
             minimal_runtime_enabled: api.minimal_runtime_enabled ?? null,
             runtime_edge_enabled: api.runtime_edge_enabled ?? null,
         };
+    } catch (e) {
+        out.errors.config = String(e?.message || e).slice(0, 200);
+    }
+    // Версия движка — чтобы отличать «флаги выключены» от «telemt старый, эндпоинтов нет»
+    try {
+        out.system = await deps.getSystemInfo();
     } catch {
-        /* конфиг недоступен — флаги неизвестны */
+        out.system = null;
     }
     return out;
 }

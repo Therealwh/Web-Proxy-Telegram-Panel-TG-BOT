@@ -18,11 +18,16 @@ function Row({ label, value, bad }) {
     );
 }
 
-/** Секция с заглушкой при недоступности данных */
-function Section({ title, data, children }) {
+/** Секция с заглушкой при недоступности данных (и причиной, если известна) */
+function Section({ title, data, error, children }) {
     return (
         <Card title={title}>
-            {data ? children : <p className="text-sm text-slate-500 py-2">—</p>}
+            {data ? children : (
+                <div className="py-2">
+                    <p className="text-sm text-slate-500">—</p>
+                    {error && <p className="text-xs text-amber-500/80 mt-1 break-all">{error}</p>}
+                </div>
+            )}
         </Card>
     );
 }
@@ -47,10 +52,11 @@ export default function Engine() {
 
     if (!data) return <div className="space-y-4">{[...Array(3)].map((_, i) => <Skeleton key={i} className="h-40" />)}</div>;
 
-    // Флаги телеметрии выключены в конфиге Telemt → показываем баннер с кнопкой
-    const needEnable = !!data.flags && (
-        data.flags.minimal_runtime_enabled === false || data.flags.runtime_edge_enabled === false
-    );
+    // Баннер включения: флаги выключены ИЛИ расширенные секции пусты при не-true флагах
+    const f = data.flags || {};
+    const flagsOff = f.minimal_runtime_enabled === false || f.runtime_edge_enabled === false;
+    const extendedBad = ['quality', 'pool', 'natStun', 'selftest'].some((k) => data[k] == null);
+    const needEnable = flagsOff || (extendedBad && f.minimal_runtime_enabled !== true);
 
     const enableTelemetry = async () => {
         setEnabling(true);
@@ -76,7 +82,10 @@ export default function Engine() {
     return (
         <div className="space-y-4">
             <PageHeader icon={<Activity size={20} />} title={t('engine.title')}
-                        subtitle={t('engine.subtitle')} />
+                        subtitle={t('engine.subtitle')}
+                        actions={data.system?.version ? (
+                            <span className="badge-blue">Telemt v{data.system.version}</span>
+                        ) : null} />
 
             {needEnable && (
                 <Card className="border-amber-500/50">
@@ -86,11 +95,14 @@ export default function Engine() {
                     <button className="btn-primary" disabled={enabling} onClick={enableTelemetry}>
                         {enabling ? t('engine.enabling') : t('engine.enableBtn')}
                     </button>
+                    {f.minimal_runtime_enabled == null && data.errors?.config && (
+                        <p className="text-xs text-slate-400 mt-2">{data.errors.config}</p>
+                    )}
                 </Card>
             )}
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                <Section title={t('engine.qualityTitle')} data={q}>
+                <Section title={t('engine.qualityTitle')} data={q} error={data.errors?.quality}>
                     <Row label={t('engine.reconnects')} value={q.counters ? `${q.counters.reconnect_success ?? '—'} / ${q.counters.reconnect_attempt ?? '—'}` : null} />
                     <Row label={t('engine.kdfDrift')} value={q.counters?.kdf_drift} />
                     <Row label={t('engine.routeDrops')} value={q.route_drops ? Object.values(q.route_drops).reduce((a, b) => a + (Number(b) || 0), 0) : null} />
@@ -100,7 +112,7 @@ export default function Engine() {
                          bad={ready && !ready.ready} />
                 </Section>
 
-                <Section title={t('engine.poolTitle')} data={pool}>
+                <Section title={t('engine.poolTitle')} data={pool} error={data.errors?.pool}>
                     <Row label={t('engine.writersAlive')} value={pool.writers?.alive} />
                     <Row label={t('engine.writersDegraded')} value={pool.writers?.degraded} bad={(pool.writers?.degraded || 0) > 0} />
                     <Row label={t('engine.writersTotal')} value={pool.writers?.total} />
@@ -131,20 +143,20 @@ export default function Engine() {
                     )}
                 </Section>
 
-                <Section title={t('engine.natTitle')} data={nat}>
+                <Section title={t('engine.natTitle')} data={nat} error={data.errors?.natStun}>
                     <Row label={t('engine.stunServers')} value={nat.servers ? (nat.servers.live ?? '—') : null} />
                     <Row label="IPv4" value={nat.reflection?.v4?.addr} />
                     <Row label="IPv6" value={nat.reflection?.v6?.addr} />
                 </Section>
 
-                <Section title={t('engine.selfTitle')} data={self}>
+                <Section title={t('engine.selfTitle')} data={self} error={data.errors?.selftest}>
                     <Row label="KDF" value={self.kdf?.state} bad={self.kdf?.state === 'error'} />
                     <Row label={t('engine.timeskew')} value={self.timeskew?.state} bad={self.timeskew && self.timeskew.state !== 'ok'} />
                     <Row label="IPv4" value={self.ip?.v4?.state} />
                     <Row label="IPv6" value={self.ip?.v6?.state} />
                 </Section>
 
-                <Section title={t('engine.upsTitle')} data={ups}>
+                <Section title={t('engine.upsTitle')} data={ups} error={data.errors?.upstreams}>
                     <Row label={t('engine.upsHealthy')} value={ups.summary ? `${ups.summary.healthy_total ?? '—'} / ${ups.summary.unhealthy_total ?? 0}` : null} />
                     {(ups.upstreams || []).slice(0, 8).map((u) => (
                         <Row key={u.upstream_id || u.address} label={`${u.route_kind || ''} ${u.address || u.upstream_id || ''}`}

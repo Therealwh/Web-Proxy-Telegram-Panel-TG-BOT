@@ -17,17 +17,33 @@ const POLL_MS = 5000;
 const POLL_TRIES = 18; // ~90 секунд ожидания результата
 
 /**
+ * Успех одного проба: Globalping отдаёт итог в rawOutput, а не в статусе
+ * (статус проба = finished/in-progress). Для ping/TCP успех — «Reply from»,
+ * неудача — «No reply», таймаут, DNS-ошибка.
+ */
+function probeOk(r) {
+    const raw = String(r?.result?.rawOutput || '');
+    if (!raw) return false;
+    if (/no reply|timed out|could not|unknown host|name or service|resolve/i.test(raw)) return false;
+    return /reply from/i.test(raw);
+}
+
+/**
  * Чистая функция подсчёта: сколько пробов успешно дошли.
  * @param {Array} results - results[] замера Globalping
  * @returns {{ ok: number, total: number, pct: number|null }}
  */
 function scoreResults(results) {
     const list = Array.isArray(results) ? results : [];
-    const ok = list.filter((r) => r && r.status === 'success').length;
+    const ok = list.filter(probeOk).length;
     return { ok, total: list.length, pct: list.length ? Math.round((ok / list.length) * 100) : null };
 }
 
-/** Создать замер. @returns {Promise<string>} measurement id */
+/**
+ * Создать замер: TCP-рукопожатие с портом прокси из РФ-зондов.
+ * HTTP не используем — MTProto FakeTLS не отвечает по HTTP, всё было бы 0/10.
+ * @returns {Promise<string>} measurement id
+ */
 async function createMeasurement({ target, port, probes, token }) {
     const headers = { 'Content-Type': 'application/json' };
     if (token) headers.Authorization = `Bearer ${token}`;
@@ -35,15 +51,11 @@ async function createMeasurement({ target, port, probes, token }) {
         method: 'POST',
         headers,
         body: JSON.stringify({
-            type: 'http',
+            type: 'ping',
             target,
             limit: probes,
             locations: [{ country: 'RU' }],
-            measurementOptions: {
-                port,
-                protocol: 'HTTPS',
-                request: { method: 'HEAD' },
-            },
+            measurementOptions: { protocol: 'TCP', port },
         }),
         signal: AbortSignal.timeout(20000),
     });
@@ -95,7 +107,7 @@ async function runCheck({ manual = false } = {}) {
         const isOk = score.pct == null || score.pct >= threshold;
         if (wasOk && !isOk && settings.notify_services) {
             notifier.notifyAdmin(settings,
-                `🌍 <b>Прокси плохо виден из России</b>\nДоступно ${score.ok} из ${score.total} зондов (порог ${threshold}%).`);
+                `🌍 <b>TCP-порт прокси недоступен из России</b>\nОтвечают ${score.ok} из ${score.total} зондов (порог ${threshold}%).`);
         } else if (!wasOk && isOk && settings.notify_services) {
             notifier.notifyAdmin(settings, '🌍 <b>Доступность из России восстановлена</b>.');
         }
