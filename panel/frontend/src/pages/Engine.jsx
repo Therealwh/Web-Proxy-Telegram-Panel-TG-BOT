@@ -47,8 +47,10 @@ export default function Engine() {
 
     if (!data) return <div className="space-y-4">{[...Array(3)].map((_, i) => <Skeleton key={i} className="h-40" />)}</div>;
 
-    const allNull = ['quality', 'pool', 'natStun', 'selftest', 'gates', 'upstreams', 'ready']
-        .every((k) => !data[k]);
+    // Флаги телеметрии выключены в конфиге Telemt → показываем баннер с кнопкой
+    const needEnable = !!data.flags && (
+        data.flags.minimal_runtime_enabled === false || data.flags.runtime_edge_enabled === false
+    );
 
     const enableTelemetry = async () => {
         setEnabling(true);
@@ -63,23 +65,6 @@ export default function Engine() {
         }
     };
 
-    if (allNull) {
-        return (
-            <div className="space-y-4">
-                <PageHeader icon={<Activity size={20} />} title={t('engine.title')}
-                            subtitle={t('engine.subtitle')} />
-                <Card>
-                    <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">
-                        {t('engine.enableText')}
-                    </p>
-                    <button className="btn-primary" disabled={enabling} onClick={enableTelemetry}>
-                        {enabling ? t('engine.enabling') : t('engine.enableBtn')}
-                    </button>
-                </Card>
-            </div>
-        );
-    }
-
     const q = data.quality;
     const pool = data.pool;
     const nat = data.natStun;
@@ -92,6 +77,17 @@ export default function Engine() {
         <div className="space-y-4">
             <PageHeader icon={<Activity size={20} />} title={t('engine.title')}
                         subtitle={t('engine.subtitle')} />
+
+            {needEnable && (
+                <Card className="border-amber-500/50">
+                    <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">
+                        {t('engine.enableText')}
+                    </p>
+                    <button className="btn-primary" disabled={enabling} onClick={enableTelemetry}>
+                        {enabling ? t('engine.enabling') : t('engine.enableBtn')}
+                    </button>
+                </Card>
+            )}
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <Section title={t('engine.qualityTitle')} data={q}>

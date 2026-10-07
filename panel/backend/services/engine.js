@@ -9,9 +9,9 @@
 const telemt = require('./telemtApi');
 
 /**
- * Собрать все разделы телеметрии.
+ * Собрать все разделы телеметрии + флаги расширенной телеметрии из конфига.
  * @param {object} [deps] - клиент Telemt (для тестов — стаб)
- * @returns {Promise<object>} { quality, pool, natStun, selftest, gates, upstreams, ready }
+ * @returns {Promise<object>} { quality, pool, natStun, selftest, gates, upstreams, ready, flags }
  */
 async function getEngineStatus(deps = telemt) {
     const jobs = {
@@ -30,6 +30,18 @@ async function getEngineStatus(deps = telemt) {
         } catch {
             out[key] = null;
         }
+    }
+    // Флаги расширенной телеметрии из конфига (фронт решает, показывать ли кнопку включения)
+    out.flags = { minimal_runtime_enabled: null, runtime_edge_enabled: null };
+    try {
+        const cfg = await deps.getConfig();
+        const api = cfg?.server?.api || {};
+        out.flags = {
+            minimal_runtime_enabled: api.minimal_runtime_enabled ?? null,
+            runtime_edge_enabled: api.runtime_edge_enabled ?? null,
+        };
+    } catch {
+        /* конфиг недоступен — флаги неизвестны */
     }
     return out;
 }

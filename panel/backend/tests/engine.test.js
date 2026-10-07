@@ -15,6 +15,7 @@ describe('engine.getEngineStatus', () => {
             getRuntimeGates: async () => ({ reroute_active: false }),
             getUpstreams: async () => ({ summary: {} }),
             getHealthReady: async () => ({ ready: true }),
+            getConfig: async () => ({ server: { api: { minimal_runtime_enabled: false } } }),
         };
         const r = await getEngineStatus(deps);
         assert.deepEqual(r.quality, { counters: { reconnect_success: 5 } });
@@ -22,5 +23,6 @@ describe('engine.getEngineStatus', () => {
         assert.equal(r.selftest, null);
         assert.equal(r.gates.reroute_active, false);
         assert.equal(r.ready.ready, true);
+        assert.deepEqual(r.flags, { minimal_runtime_enabled: false, runtime_edge_enabled: null });
     });
 });
