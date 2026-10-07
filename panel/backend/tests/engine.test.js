@@ -9,7 +9,7 @@ describe('engine.getEngineStatus', () => {
     it('собирает разделы, недоступные даёт null', async () => {
         const deps = {
             getMeQuality: async () => ({ counters: { reconnect_success: 5 } }),
-            getMePoolState: async () => { throw new Error('feature_disabled'); },
+            getMePoolState: async () => ({ enabled: false, reason: 'feature_disabled', data: null }),
             getNatStun: async () => ({ servers: { live: 2 } }),
             getMeSelftest: async () => { throw new Error('nope'); },
             getRuntimeGates: async () => ({ reroute_active: false }),
@@ -20,6 +20,7 @@ describe('engine.getEngineStatus', () => {
         const r = await getEngineStatus(deps);
         assert.deepEqual(r.quality, { counters: { reconnect_success: 5 } });
         assert.equal(r.pool, null);
+        assert.equal(r.errors.pool, 'feature_disabled');
         assert.equal(r.selftest, null);
         assert.equal(r.gates.reroute_active, false);
         assert.equal(r.ready.ready, true);

@@ -52,11 +52,12 @@ export default function Engine() {
 
     if (!data) return <div className="space-y-4">{[...Array(3)].map((_, i) => <Skeleton key={i} className="h-40" />)}</div>;
 
-    // Баннер включения: флаги выключены ИЛИ расширенные секции пусты при не-true флагах
+    // Баннер включения: флаги выключены, фича отключена (reason) или секции пусты
     const f = data.flags || {};
     const flagsOff = f.minimal_runtime_enabled === false || f.runtime_edge_enabled === false;
+    const featureDisabled = Object.values(data.errors || {}).some((e) => /feature_disabled/i.test(e));
     const extendedBad = ['quality', 'pool', 'natStun', 'selftest'].some((k) => data[k] == null);
-    const needEnable = flagsOff || (extendedBad && f.minimal_runtime_enabled !== true);
+    const needEnable = flagsOff || featureDisabled || (extendedBad && f.minimal_runtime_enabled !== true);
 
     const enableTelemetry = async () => {
         setEnabling(true);

@@ -11,7 +11,7 @@ const telemt = require('./telemtApi');
 /**
  * Собрать все разделы телеметрии + флаги расширенной телеметрии из конфига.
  * @param {object} [deps] - клиент Telemt (для тестов — стаб)
- * @returns {Promise<object>} { quality, pool, natStun, selftest, gates, upstreams, ready, flags }
+ * @returns {Promise<object>} { quality, pool, natStun, selftest, gates, upstreams, ready, flags, errors }
  */
 async function getEngineStatus(deps = telemt) {
     const jobs = {
@@ -27,7 +27,19 @@ async function getEngineStatus(deps = telemt) {
     out.errors = {};
     for (const [key, fn] of Object.entries(jobs)) {
         try {
-            out[key] = await fn();
+            const v = await fn();
+            // Часть эндпоинтов при выключенной фиче отдаёт HTTP 200 с конвертом
+            // {enabled, reason?, generated_at_epoch_secs?, data: null} — разворачиваем
+            if (v && typeof v === 'object' && !Array.isArray(v) && 'data' in v
+                && (v.enabled !== undefined || v.reason !== undefined)) {
+                out[key] = v.data ?? null;
+                if (!out[key]) {
+                    out.errors[key] = v.reason || 'нет данных';
+                }
+            } else {
+                out[key] = v ?? null;
+                if (out[key] == null) out.errors[key] = 'нет данных';
+            }
         } catch (e) {
             out[key] = null;
             out.errors[key] = String(e?.message || e).slice(0, 200);
