@@ -54,6 +54,12 @@ const DEFAULTS = {
     updates_channel: 'stable',           // stable | beta | latest
     updates_auto_install: false,         // только уведомлять / автоустановка
     updates_notify: ['panel', 'telegram'],
+
+    // 🛰 DC-монитор
+    dc_monitor_enabled: true,           // следить за доступностью DC Telegram
+    dc_coverage_threshold: 50,          // покрытие ниже — деградация DC (%)
+    dc_auto_restart: true,              // авторестарт Telemt при тотальной деградации
+    dc_cooldown_min: 30,                // пауза между авторестартами (минут)
 };
 
 /** Читает все настройки, подставляя дефолты. */

@@ -366,6 +366,11 @@ function start() {
     setInterval(() => checkProxies().catch(() => {}), 5 * 60 * 1000).unref();
     checkProxies().catch(() => {});
 
+    // DC-монитор: состояние дата-центров Telegram каждые 2 минуты
+    const dcMonitor = require('./dcMonitor');
+    setInterval(() => dcMonitor.checkDc().catch(() => {}), 2 * 60 * 1000).unref();
+    dcMonitor.checkDc().catch(() => {});
+
     // Ежечасно: истечения, просроченные, тестовые, диск, автопродление, дожим тестов
     setInterval(() => {
         try { checkExpiring(); } catch (e) { logger.error(e); }

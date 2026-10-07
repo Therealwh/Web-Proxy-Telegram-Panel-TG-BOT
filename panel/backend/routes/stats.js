@@ -114,9 +114,18 @@ router.get('/traffic-live', (req, res) => {
     });
 });
 
-// --- Активные подключения: кто сейчас онлайн, с каких IP и стран ---
-router.get('/active', async (req, res, next) => {
+// --- DC-монитор: свежий срез состояния дата-центров Telegram ---
+router.get('/dc', (req, res, next) => {
     try {
+        const dcMonitor = require('../services/dcMonitor');
+        res.json(dcMonitor.getStatus());
+    } catch (err) {
+        next(err);
+    }
+});
+
+// --- Активные подключения: кто сейчас онлайн, с каких IP и стран ---
+router.get('/active', async (req, res, next) => {    try {
         const geo = require('../services/geo');
         const rows = [];
 

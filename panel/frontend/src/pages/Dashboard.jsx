@@ -1,7 +1,7 @@
 // Дашборд: сводка системы в реальном времени
 import React, { useEffect, useState } from 'react';
 import { AreaChart, Area, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
-import { Users, Link2, Wifi, HardDrive, Cpu, MemoryStick, RefreshCw, LayoutDashboard } from 'lucide-react';
+import { Users, Link2, Wifi, HardDrive, Cpu, MemoryStick, RefreshCw, LayoutDashboard, Satellite } from 'lucide-react';
 import { get, post } from '../api';
 import { useAuthStore, useLangStore, toast } from '../store';
 import { useT } from '../i18n';
@@ -52,8 +52,47 @@ function StatCard({ icon: Icon, label, value, sub, spark, sparkColor }) {
     );
 }
 
-export default function Dashboard() {
-    const [data, setData] = useState(null);
+/** Полоса состояния дата-центров Telegram (DC-монитор) */
+function DcStrip({ t }) {
+    const [dc, setDc] = useState(null);
+    useEffect(() => {
+        const load = () => get('/stats/dc').then(setDc).catch(() => {});
+        load();
+        const timer = setInterval(load, 30000);
+        return () => clearInterval(timer);
+    }, []);
+    if (!dc || !dc.enabled || dc.overall === 'unknown' || dc.perDc.length === 0) return null;
+    const style = dc.overall === 'ok'
+        ? 'border-emerald-500/40 bg-emerald-500/5'
+        : dc.overall === 'degraded'
+            ? 'border-red-500/40 bg-red-500/5'
+            : 'border-amber-500/40 bg-amber-500/5';
+    const icon = dc.overall === 'ok' ? '🟢' : dc.overall === 'degraded' ? '🔴' : '🟡';
+    return (
+        <div className={`flex flex-wrap items-center gap-3 p-4 rounded-2xl border transition-colors ${style}`}>
+            <span className="text-2xl">{icon}</span>
+            <div className="flex-1 min-w-[200px]">
+                <div className="font-bold flex items-center gap-2">
+                    <Satellite size={16} /> {t('dashboard.dcTitle')}
+                </div>
+                <div className="flex flex-wrap gap-1.5 mt-1.5">
+                    {dc.perDc.map((d) => (
+                        <span key={d.dc} title={d.rtt_ms != null ? t('dashboard.dcRtt', { n: Math.round(d.rtt_ms) }) : undefined}
+                              className={d.degraded ? 'badge-red' : 'badge-green'}>
+                            DC{d.dc} · {Math.round(d.coverage_pct)}%
+                        </span>
+                    ))}
+                </div>
+            </div>
+            <div className="text-xs text-slate-400">
+                {dc.overall === 'ok' ? t('dashboard.dcOk')
+                    : dc.overall === 'degraded' ? t('dashboard.dcDegraded') : t('dashboard.dcPartial')}
+            </div>
+        </div>
+    );
+}
+
+export default function Dashboard() {    const [data, setData] = useState(null);
     const [live, setLive] = useState(null); // real-time нагрузка из WebSocket
     const [active, setActive] = useState(null); // активные подключения (IP + страна)
     const [error, setError] = useState('');
@@ -187,6 +226,9 @@ export default function Dashboard() {
                     </div>
                 );
             })()}
+
+            {/* DC-монитор: доступность дата-центров Telegram */}
+            <DcStrip t={t} />
 
             {/* Счётчики */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

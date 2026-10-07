@@ -47,6 +47,15 @@ const CATEGORIES = (t) => [
             { key: 'backup_keep_days', label: t('settings.fBackupKeep'), type: 'number' },
         ],
     },
+    {
+        id: 'dc', icon: '🛰️', title: t('settings.catDc'),
+        fields: [
+            { key: 'dc_monitor_enabled', label: t('settings.fDcMonitor'), type: 'toggle' },
+            { key: 'dc_coverage_threshold', label: t('settings.fDcThreshold'), hint: t('settings.fDcThresholdHint'), type: 'number' },
+            { key: 'dc_auto_restart', label: t('settings.fDcRestart'), hint: t('settings.fDcRestartHint'), type: 'toggle' },
+            { key: 'dc_cooldown_min', label: t('settings.fDcCooldown'), hint: t('settings.fDcCooldownHint'), type: 'number' },
+        ],
+    },
 ];
 
 export default function Settings() {

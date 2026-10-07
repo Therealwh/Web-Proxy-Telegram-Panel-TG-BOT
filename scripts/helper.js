@@ -27,6 +27,7 @@ const SCRIPTS = {
     telemt: path.join(SCRIPTS_DIR, 'update-telemt.sh'),
     check: path.join(SCRIPTS_DIR, 'check-updates.sh'),
     domain: path.join(SCRIPTS_DIR, 'change-domain.sh'),
+    'restart-telemt': path.join(SCRIPTS_DIR, 'restart-telemt.sh'),
 };
 
 /** Секрет из install.env (генерируется установщиком/install-helper.sh). */

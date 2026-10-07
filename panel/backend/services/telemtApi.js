@@ -107,6 +107,15 @@ const resetQuota = (username) =>
 /** Сводные счётчики ядра. */
 const getStatsSummary = () => apiRequest('GET', '/v1/stats/summary');
 
+/** Статус дата-центров Telegram (покрытие, RTT, писатели). */
+const getStatsDcs = () => apiRequest('GET', '/v1/stats/dcs');
+
+/** Качество ME-пула (реконнекты, дропы маршрутов, RTT по DC). */
+const getMeQuality = () => apiRequest('GET', '/v1/runtime/me_quality');
+
+/** Состояние гейтов маршрутизации (reroute, readiness). */
+const getRuntimeGates = () => apiRequest('GET', '/v1/runtime/gates');
+
 /** Статистика по пользователям (алиас /v1/users с рантайм-данными). */
 const getUsersStats = () => apiRequest('GET', '/v1/stats/users');
 
@@ -178,7 +187,8 @@ module.exports = {
     apiRequest,
     listUsers, createUser, getUser, patchUser, deleteUser,
     enableUser, disableUser, rotateSecret, resetQuota,
-    getStatsSummary, getUsersStats, getUsersActiveIps,
+    getStatsSummary, getStatsDcs, getMeQuality, getRuntimeGates,
+    getUsersStats, getUsersActiveIps,
     getConnectionsSummary, getRecentEvents,
     getHealth, getSystemInfo, getConfig, patchConfig, reload, getReloadStatus,
     getWebStatus, getWebSessions, closeWebSessions,
