@@ -5,7 +5,7 @@ import { Users, Link2, Wifi, HardDrive, Cpu, MemoryStick, RefreshCw, LayoutDashb
 import { get, post } from '../api';
 import { useAuthStore, toast } from '../store';
 import { connectLive } from '../ws';
-import { Card, StatusDot, Skeleton, formatBytes, deviceInfo, PageHeader, chartTheme } from '../components/ui';
+import { Card, StatusDot, Skeleton, formatBytes, deviceInfo, PageHeader, chartTheme, Avatar, ProtoBadge } from '../components/ui';
 
 const COLORS = ['#0088cc', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316'];
 
@@ -319,8 +319,9 @@ export default function Dashboard() {
                         Сейчас никто не подключён
                     </p>
                 ) : (
-                    <table className="w-full text-sm">
-                        <thead>
+                    <div className="overflow-x-auto">
+                    <table className="w-full text-sm min-w-[560px]">
+                        <thead className="sticky top-0 z-10 bg-white dark:bg-slate-900">
                             <tr className="text-left text-slate-500 border-b border-slate-200 dark:border-slate-700">
                                 <th className="py-2 pr-4 font-medium">Клиент</th>
                                 <th className="py-2 pr-4 font-medium">IP-адрес</th>
@@ -333,17 +334,23 @@ export default function Dashboard() {
                             {active.connections.map((c, i) => {
                                 const dev = deviceInfo(c.user_agent);
                                 return (
-                                    <tr key={`${c.username}-${c.ip}-${i}`} className="border-b border-slate-100 dark:border-slate-800">
-                                        <td className="py-2 pr-4 font-medium">{c.username}</td>
+                                    <tr key={`${c.username}-${c.ip}-${i}`} className="border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                                        <td className="py-2 pr-4">
+                                            <div className="flex items-center gap-2">
+                                                <Avatar name={c.username} className="w-7 h-7 text-[11px]" />
+                                                <span className="font-medium">{c.username}</span>
+                                            </div>
+                                        </td>
                                         <td className="py-2 pr-4 font-mono text-xs">{c.ip}</td>
                                         <td className="py-2 pr-4">{c.country}</td>
                                         <td className="py-2 pr-4 whitespace-nowrap" title={c.user_agent || ''}>{dev.icon} {dev.label}</td>
-                                        <td className="py-2">{c.protocol === 'web' ? '🌐 Web' : '🔌 MTProto'}</td>
+                                        <td className="py-2"><ProtoBadge protocol={c.protocol} /></td>
                                     </tr>
                                 );
                             })}
                         </tbody>
                     </table>
+                    </div>
                 )}
             </Card>
 

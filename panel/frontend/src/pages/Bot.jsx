@@ -3,7 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { Plus, Save, Trash2, Power, Wallet, MessageSquare, ChevronDown, Pencil, Bot as BotIcon } from 'lucide-react';
 import { get, post, put, del } from '../api';
 import { toast } from '../store';
-import { Card, Field, Toggle, Skeleton, Modal, StatusBadge, formatDate, PageHeader } from '../components/ui';
+import { Card, Field, Toggle, Skeleton, Modal, StatusBadge, formatDate, PageHeader, Avatar } from '../components/ui';
 
 /** Строка «настройка → значение» для сводного вида карточек */
 function settingRow(label, value) {
@@ -135,12 +135,13 @@ export default function Bot() {
                       </button>
                   }>
                 {!users ? <Skeleton className="h-24" /> : users.length === 0 ? (
-                    <p className="text-sm text-slate-500 py-4 text-center">Пользователей бота пока нет</p>
+                    <p className="text-sm text-slate-500 py-4 text-center">👥 Пользователей бота пока нет</p>
                 ) : (
-                    <table className="w-full text-sm">
-                        <thead>
+                    <div className="overflow-x-auto">
+                    <table className="w-full text-sm min-w-[720px]">
+                        <thead className="sticky top-0 z-10 bg-white dark:bg-slate-900">
                             <tr className="text-left text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-700">
-                                <th className="py-2 pr-4 font-medium">Telegram ID</th>
+                                <th className="py-2 pr-4 font-medium sticky left-0 bg-white dark:bg-slate-900 z-20">Telegram ID</th>
                                 <th className="py-2 pr-4 font-medium">Прокси</th>
                                 <th className="py-2 pr-4 font-medium">Баланс</th>
                                 <th className="py-2 pr-4 font-medium text-right">Действия</th>
@@ -149,9 +150,10 @@ export default function Bot() {
                         <tbody>
                             {users.map((u) => (
                                 <React.Fragment key={u.telegram_id}>
-                                    <tr className="border-b border-slate-100 dark:border-slate-800">
-                                        <td className="py-2 pr-4">
+                                    <tr className="border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                                        <td className="py-2 pr-4 sticky left-0 bg-white dark:bg-slate-900 z-[5]">
                                             <div className="flex flex-wrap items-center gap-2">
+                                                <Avatar name={u.username || [u.first_name, u.last_name].filter(Boolean).join(' ') || String(u.telegram_id)} className="w-7 h-7 text-[11px]" />
                                                 <button className="flex items-center gap-1 font-mono text-xs hover:text-primary transition-colors"
                                                         onClick={() => setExpanded(expanded === u.telegram_id ? null : u.telegram_id)}>
                                                     <ChevronDown size={14} className={`transition-transform ${expanded === u.telegram_id ? 'rotate-180' : ''}`} />
@@ -226,6 +228,7 @@ export default function Bot() {
                             ))}
                         </tbody>
                     </table>
+                    </div>
                 )}
             </Card>
 

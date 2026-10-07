@@ -3,7 +3,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Plus, Search, Copy, QrCode, Power, Trash2, Pencil, CalendarPlus, KeyRound, Eraser, Download, Users } from 'lucide-react';
 import { get, post, patch, del } from '../api';
 import { toast } from '../store';
-import { Card, StatusBadge, ProgressBar, Modal, Field, Toggle, formatBytes, formatDate, Skeleton, PageHeader } from '../components/ui';
+import { Card, StatusBadge, ProgressBar, Modal, Field, Toggle, formatBytes, formatDate, Skeleton, PageHeader, Avatar, ProtoBadge } from '../components/ui';
 
 // Пустая форма клиента
 const EMPTY_FORM = {
@@ -236,12 +236,12 @@ export default function Clients() {
                 {!clients ? (
                     <div className="p-5 space-y-3">{[...Array(5)].map((_, i) => <Skeleton key={i} className="h-12" />)}</div>
                 ) : clients.length === 0 ? (
-                    <p className="p-8 text-center text-slate-500">Клиенты не найдены. Создайте первого!</p>
+                    <p className="p-8 text-center text-slate-500">👥 Клиенты не найдены. Создайте первого!</p>
                 ) : (
-                    <table className="w-full text-sm">
-                        <thead>
+                    <table className="w-full text-sm min-w-[900px]">
+                        <thead className="sticky top-0 z-10 bg-white dark:bg-slate-900">
                             <tr className="text-left text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-700">
-                                <th className="px-4 py-3">
+                                <th className="px-4 py-3 sticky left-0 bg-white dark:bg-slate-900 z-20">
                                     <input type="checkbox" className="cursor-pointer"
                                            checked={clients.length > 0 && selected.length === clients.length}
                                            onChange={(e) => setSelected(e.target.checked ? clients.map((c) => c.id) : [])} />
@@ -260,18 +260,23 @@ export default function Clients() {
                                 const conns = activeMap[c.username] || [];
                                 return (
                                 <tr key={c.id} className="border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
-                                    <td className="px-4 py-3">
+                                    <td className="px-4 py-3 sticky left-0 bg-white dark:bg-slate-900 z-[5]">
                                         <input type="checkbox" className="cursor-pointer"
                                                checked={selected.includes(c.id)}
                                                onChange={() => toggleSelect(c.id)} />
                                     </td>
                                     <td className="px-4 py-3">
-                                        <button className="font-medium hover:text-primary transition-colors text-left"
-                                                onClick={() => setConnClient(c)}
-                                                title="Показать подключения">
-                                            {c.username}
-                                        </button>
-                                        {c.note && <div className="text-xs text-slate-400">{c.note}</div>}
+                                        <div className="flex items-center gap-2">
+                                            <Avatar name={c.note || c.username} />
+                                            <div>
+                                                <button className="font-medium hover:text-primary transition-colors text-left"
+                                                        onClick={() => setConnClient(c)}
+                                                        title="Показать подключения">
+                                                    {c.username}
+                                                </button>
+                                                {c.note && <div className="text-xs text-slate-400">{c.note}</div>}
+                                            </div>
+                                        </div>
                                     </td>
                                     <td className="px-4 py-3"><StatusBadge status={c.status} /></td>
                                     <td className="px-4 py-3">
@@ -422,10 +427,10 @@ export default function Clients() {
                         </thead>
                         <tbody>
                             {(activeMap[connClient.username] || []).map((c, i) => (
-                                <tr key={`${c.ip}-${i}`} className="border-b border-slate-100 dark:border-slate-800">
+                                <tr key={`${c.ip}-${i}`} className="border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
                                     <td className="py-2 pr-4 font-mono text-xs">{c.ip}</td>
                                     <td className="py-2 pr-4">{c.country}</td>
-                                    <td className="py-2">{c.protocol === 'web' ? '🌐 Web' : '🔌 MTProto'}</td>
+                                    <td className="py-2"><ProtoBadge protocol={c.protocol} /></td>
                                 </tr>
                             ))}
                         </tbody>

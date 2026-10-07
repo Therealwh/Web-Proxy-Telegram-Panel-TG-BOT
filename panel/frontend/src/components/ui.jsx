@@ -111,14 +111,35 @@ export function PageHeader({ icon, title, subtitle, actions }) {
     );
 }
 
-/** Модальное окно */
+/** Аватар-инициалы (цвет стабилен для одного имени) */
+const AVATAR_COLORS = ['bg-blue-500', 'bg-emerald-500', 'bg-violet-500', 'bg-amber-500', 'bg-rose-500', 'bg-cyan-500'];
+export function Avatar({ name, className = 'w-8 h-8 text-xs' }) {
+    const clean = String(name || '?').replace(/^@/, '');
+    const ch = (clean.charAt(0) || '?').toUpperCase();
+    let h = 0;
+    for (const c of clean) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+    return (
+        <div className={`${className} rounded-full ${AVATAR_COLORS[h % AVATAR_COLORS.length]} flex items-center justify-center text-white font-bold shrink-0`} aria-hidden>
+            {ch}
+        </div>
+    );
+}
+
+/** Компактная пилюля протокола */
+export function ProtoBadge({ protocol }) {
+    return protocol === 'web'
+        ? <span className="badge-blue whitespace-nowrap">🌐 Web</span>
+        : <span className="badge-violet whitespace-nowrap">🔌 MTProto</span>;
+}
+
+/** Модальное окно (на телефоне — шторка снизу) */
 export function Modal({ open, onClose, title, children, wide }) {
     if (!open) return null;
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4"
              onClick={onClose} role="dialog" aria-modal="true">
             <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
-            <div className={`relative card w-full ${wide ? 'max-w-3xl' : 'max-w-lg'} max-h-[90vh] overflow-y-auto`}
+            <div className={`relative card w-full ${wide ? 'max-w-3xl' : 'max-w-lg'} !rounded-b-none sm:!rounded-b-2xl max-h-[92vh] overflow-y-auto`}
                  onClick={(e) => e.stopPropagation()}>
                 <div className="flex items-center justify-between mb-4">
                     <h3 className="text-lg font-semibold">{title}</h3>

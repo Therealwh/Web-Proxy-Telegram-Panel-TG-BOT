@@ -4,7 +4,7 @@ import { Download, Pause, Play, ScrollText } from 'lucide-react';
 import { get } from '../api';
 import { useAuthStore, toast } from '../store';
 import { connectLive } from '../ws';
-import { Card, formatDate, deviceInfo, PageHeader } from '../components/ui';
+import { Card, formatDate, deviceInfo, PageHeader, Avatar, ProtoBadge } from '../components/ui';
 
 const STATUS_BADGE = {
     ok: ['badge-green', '✅ успех'],
@@ -84,16 +84,16 @@ export default function Logs() {
 
             {/* Список логов */}
             <Card className="!p-0 overflow-hidden">
-                <div className="max-h-[60vh] overflow-y-auto font-mono text-xs">
+                <div className="max-h-[60vh] overflow-auto font-mono text-xs">
                     {logs.length === 0 ? (
                         <p className="p-8 text-center text-slate-500 font-sans text-sm">
-                            Логов пока нет — они появятся при подключениях клиентов
+                            🔍 Логов пока нет — они появятся при подключениях клиентов
                         </p>
                     ) : (
-                        <table className="w-full">
-                            <thead className="sticky top-0 bg-slate-100 dark:bg-slate-800">
+                        <table className="w-full min-w-[760px]">
+                            <thead className="sticky top-0 bg-slate-100 dark:bg-slate-800 z-10">
                                 <tr className="text-left">
-                                    <th className="px-3 py-2">Время</th>
+                                    <th className="px-3 py-2 sticky left-0 bg-slate-100 dark:bg-slate-800 z-20">Время</th>
                                     <th className="px-3 py-2">Клиент</th>
                                     <th className="px-3 py-2">IP</th>
                                     <th className="px-3 py-2">Устройство</th>
@@ -105,12 +105,17 @@ export default function Logs() {
                                 {logs.map((log, i) => {
                                     const dev = deviceInfo(log.user_agent);
                                     return (
-                                        <tr key={log.id ?? i} className="border-t border-slate-100 dark:border-slate-800">
-                                            <td className="px-3 py-1.5 text-slate-500 whitespace-nowrap">{formatDate(log.created_at)}</td>
-                                            <td className="px-3 py-1.5">{log.username || '—'}</td>
+                                        <tr key={log.id ?? i} className="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                                            <td className="px-3 py-1.5 text-slate-500 whitespace-nowrap sticky left-0 bg-white dark:bg-slate-900 z-[5]">{formatDate(log.created_at)}</td>
+                                            <td className="px-3 py-1.5">
+                                                <div className="flex items-center gap-2">
+                                                    <Avatar name={log.username} className="w-6 h-6 text-[10px]" />
+                                                    <span>{log.username || '—'}</span>
+                                                </div>
+                                            </td>
                                             <td className="px-3 py-1.5">{log.ip || '—'}</td>
                                             <td className="px-3 py-1.5 whitespace-nowrap" title={log.user_agent || ''}>{dev.icon} {dev.label}</td>
-                                            <td className="px-3 py-1.5">{log.protocol === 'web' ? '🌐 web' : '🔌 mtproto'}</td>
+                                            <td className="px-3 py-1.5"><ProtoBadge protocol={log.protocol} /></td>
                                             <td className="px-3 py-1.5">
                                                 <span className={STATUS_BADGE[log.status]?.[0] || 'badge-blue'}>
                                                     {STATUS_BADGE[log.status]?.[1] || log.status}
