@@ -38,8 +38,13 @@ fi
 # Проверка корректности Caddyfile перед применением
 caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
 
-# Применяем конфиг: без этого Caddy продолжит работать по старому
-systemctl reload caddy
+# Применяем конфиг: при свежей установке сервис ещё не запущен —
+# тогда включаем и стартуем его (reload бы упал с "not active")
+if systemctl is-active --quiet caddy; then
+    systemctl reload caddy
+else
+    systemctl enable --now caddy
+fi
 
 echo "[Caddy] Конфигурация применена"
 
