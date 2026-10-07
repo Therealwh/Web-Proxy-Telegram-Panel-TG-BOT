@@ -162,6 +162,18 @@ export function formatBytes(bytes) {
     return `${(bytes / 1024 ** i).toFixed(i > 0 ? 1 : 0)} ${units[i]}`;
 }
 
+/** Единая тема графиков (recharts): сетка, подписи, тултипы, палитра */
+export const chartTheme = {
+    gridColor: '#334155',
+    gridOpacity: 0.3,
+    tick: { fontSize: 11, fill: '#94a3b8' },
+    tooltip: { background: '#1e293b', border: '1px solid #334155', borderRadius: 8, color: '#e2e8f0' },
+    colors: {
+        primary: '#0088cc', green: '#10b981', amber: '#f59e0b',
+        red: '#ef4444', violet: '#8b5cf6', blue: '#3b82f6',
+    },
+};
+
 /** Форматирование даты */
 export function formatDate(iso) {
     if (!iso) return '—';

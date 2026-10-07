@@ -3,7 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { BarChart3 } from 'lucide-react';
 import { get } from '../api';
-import { Card, Skeleton, PageHeader } from '../components/ui';
+import { Card, Skeleton, PageHeader, chartTheme } from '../components/ui';
 
 /** Компактная карточка-метрика */
 function Metric({ value, label, accent }) {
@@ -63,11 +63,11 @@ export default function Sales() {
                                     <stop offset="100%" stopColor="#10b981" stopOpacity={0} />
                                 </linearGradient>
                             </defs>
-                            <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.3} />
-                            <XAxis dataKey="day" tick={{ fontSize: 11, fill: '#94a3b8' }} tickFormatter={(d) => d.slice(5)} />
-                            <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} />
+                            <CartesianGrid strokeDasharray="3 3" stroke={chartTheme.gridColor} opacity={chartTheme.gridOpacity} />
+                            <XAxis dataKey="day" tick={chartTheme.tick} tickFormatter={(d) => d.slice(5)} />
+                            <YAxis tick={chartTheme.tick} />
                             <Tooltip formatter={(v) => [`${v} ₽`, 'Выручка']} labelStyle={{ color: '#e2e8f0' }}
-                                     contentStyle={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 8 }} />
+                                     contentStyle={chartTheme.tooltip} />
                             <Area type="monotone" dataKey="total" stroke="#10b981" strokeWidth={2} fill="url(#rev)" />
                         </AreaChart>
                     </ResponsiveContainer>
@@ -83,9 +83,9 @@ export default function Sales() {
                         <ResponsiveContainer width="100%" height={60 + data.top_tariffs.length * 40}>
                             <BarChart data={data.top_tariffs} layout="vertical">
                                 <XAxis type="number" hide />
-                                <YAxis type="category" dataKey="name" width={140} tick={{ fontSize: 12, fill: '#94a3b8' }} />
+                                <YAxis type="category" dataKey="name" width={140} tick={chartTheme.tick} />
                                 <Tooltip formatter={(v, name) => [v, name === 'revenue' ? 'Выручка ₽' : 'Продаж']}
-                                         contentStyle={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 8 }} />
+                                         contentStyle={chartTheme.tooltip} />
                                 <Bar dataKey="revenue" fill="#3b82f6" radius={[0, 6, 6, 0]} barSize={20} />
                             </BarChart>
                         </ResponsiveContainer>
@@ -100,10 +100,10 @@ export default function Sales() {
                         <ResponsiveContainer width="100%" height={220}>
                             <BarChart data={data.new_clients_by_day}>
                                 <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.3} />
-                                <XAxis dataKey="day" tick={{ fontSize: 11, fill: '#94a3b8' }} tickFormatter={(d) => d.slice(5)} />
-                                <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: '#94a3b8' }} />
+                                <XAxis dataKey="day" tick={chartTheme.tick} tickFormatter={(d) => d.slice(5)} />
+                                <YAxis allowDecimals={false} tick={chartTheme.tick} />
                                 <Tooltip formatter={(v) => [v, 'Новых клиентов']}
-                                         contentStyle={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 8 }} />
+                                         contentStyle={chartTheme.tooltip} />
                                 <Bar dataKey="count" fill="#8b5cf6" radius={[6, 6, 0, 0]} />
                             </BarChart>
                         </ResponsiveContainer>

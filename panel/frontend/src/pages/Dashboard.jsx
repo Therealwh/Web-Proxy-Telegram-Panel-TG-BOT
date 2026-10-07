@@ -5,7 +5,7 @@ import { Users, Link2, Wifi, HardDrive, Cpu, MemoryStick, RefreshCw, LayoutDashb
 import { get, post } from '../api';
 import { useAuthStore, toast } from '../store';
 import { connectLive } from '../ws';
-import { Card, StatusDot, Skeleton, formatBytes, deviceInfo, PageHeader } from '../components/ui';
+import { Card, StatusDot, Skeleton, formatBytes, deviceInfo, PageHeader, chartTheme } from '../components/ui';
 
 const COLORS = ['#0088cc', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316'];
 
@@ -20,18 +20,27 @@ function formatUptime(secs) {
     return `${m} мин`;
 }
 
-/** Карточка-счётчик */
-function StatCard({ icon: Icon, label, value, sub }) {    return (
+/** Карточка-счётчик (опционально: мини-тренд справа) */
+function StatCard({ icon: Icon, label, value, sub, spark, sparkColor }) {
+    return (
         <Card>
             <div className="flex items-center gap-3">
-                <div className="w-11 h-11 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
+                <div className="w-11 h-11 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
                     <Icon size={22} />
                 </div>
-                <div>
+                <div className="flex-1 min-w-0">
                     <div className="text-2xl font-bold leading-tight">{value}</div>
                     <div className="text-sm text-slate-500 dark:text-slate-400">{label}</div>
                     {sub && <div className="text-xs text-slate-400 mt-0.5">{sub}</div>}
                 </div>
+                {spark && spark.length >= 2 && (
+                    <ResponsiveContainer width={96} height={36}>
+                        <LineChart data={spark} margin={{ top: 2, right: 2, bottom: 2, left: 2 }}>
+                            <Line type="monotone" dataKey="v" stroke={sparkColor || chartTheme.colors.primary}
+                                  strokeWidth={2} dot={false} isAnimationActive={false} />
+                        </LineChart>
+                    </ResponsiveContainer>
+                )}
             </div>
         </Card>
     );
@@ -81,6 +90,14 @@ export default function Dashboard() {
         const timer = setInterval(load, 5000);
         return () => clearInterval(timer);
     }, [range]);
+
+    // Мини-тренды для KPI-карточек: новые клиенты по дням (14 дн.)
+    const [trends, setTrends] = useState({ clients: null });
+    useEffect(() => {
+        get('/sales/summary?days=14')
+            .then((d) => setTrends({ clients: (d.new_clients_by_day || []).map((r) => ({ v: r.count })) }))
+            .catch(() => {});
+    }, []);
 
     const approvePayment = async (id) => {
         try {
@@ -134,16 +151,48 @@ export default function Dashboard() {
             <PageHeader icon={<LayoutDashboard size={20} />} title="Дашборд"
                         subtitle="Состояние сервера и сервисов в реальном времени" />
 
+            {/* Hero-полоса: общее состояние сервисов */}
+            {(() => {
+                const items = [
+                    { key: 'telemt', ok: services.telemt, label: 'Telemt' },
+                    { key: 'panel', ok: services.panel, label: 'Панель' },
+                    { key: 'nginx', ok: services.nginx, label: 'Nginx' },
+                    { key: 'caddy', ok: services.caddy, label: 'Caddy' },
+                ];
+                const down = items.filter((i) => !i.ok);
+                const allOk = down.length === 0;
+                return (
+                    <div className={`flex flex-wrap items-center gap-3 p-4 rounded-2xl border transition-colors
+                        ${allOk ? 'border-emerald-500/40 bg-emerald-500/5' : 'border-red-500/40 bg-red-500/5'}`}>
+                        <span className="text-2xl">{allOk ? '🟢' : '🔴'}</span>
+                        <div className="flex-1 min-w-[200px]">
+                            <div className="font-bold">
+                                {allOk ? 'Все системы работают' : `Сбой: ${down.map((d) => d.label).join(', ')}`}
+                            </div>
+                            <div className="text-xs text-slate-500 dark:text-slate-400">
+                                {items.map((i) => `${i.ok ? '✅' : '❌'} ${i.label}`).join(' · ')}
+                            </div>
+                        </div>
+                        <div className="text-xs text-slate-400">
+                            SSL: {ssl ? `${ssl.daysLeft} дн.` : '—'}
+                        </div>
+                    </div>
+                );
+            })()}
+
             {/* Счётчики */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <StatCard icon={Users} label="Клиентов всего" value={clients.total}
-                    sub={`активных сегодня: ${clients.activeToday} · новых за неделю: ${clients.newWeek}`} />
+                    sub={`активных сегодня: ${clients.activeToday} · новых за неделю: ${clients.newWeek}`}
+                    spark={trends.clients} sparkColor={chartTheme.colors.green} />
                 <StatCard icon={Link2} label="Активных ссылок" value={clients.active}
                     sub={`просроченных: ${clients.expired}`} />
                 <StatCard icon={Wifi} label="Подключений сейчас" value={active?.active_total ?? connections.active}
                     sub={`всего за сессию: ${connections.total}`} />
                 <StatCard icon={HardDrive} label="Трафик за месяц" value={formatBytes(traffic.month)}
-                    sub={`день: ${formatBytes(traffic.day)} · неделя: ${formatBytes(traffic.week)}`} />
+                    sub={`день: ${formatBytes(traffic.day)} · неделя: ${formatBytes(traffic.week)}`}
+                    spark={(traffic.daily || []).slice(-14).map((r) => ({ v: r.bytes }))}
+                    sparkColor={chartTheme.colors.primary} />
             </div>
 
             {/* Нагрузка сервера */}
@@ -184,9 +233,10 @@ export default function Dashboard() {
                                     <stop offset="100%" stopColor="#0088cc" stopOpacity={0} />
                                 </linearGradient>
                             </defs>
-                            <XAxis dataKey="date" tick={{ fontSize: 11 }} tickFormatter={(d) => d.slice(5)} />
-                            <YAxis tick={{ fontSize: 11 }} tickFormatter={formatBytes} width={70} />
-                            <Tooltip formatter={(v) => formatBytes(v)} labelFormatter={(d) => `Дата: ${d}`} />
+                            <XAxis dataKey="date" tick={chartTheme.tick} tickFormatter={(d) => d.slice(5)} />
+                            <YAxis tick={chartTheme.tick} tickFormatter={formatBytes} width={70} />
+                            <Tooltip formatter={(v) => formatBytes(v)} labelFormatter={(d) => `Дата: ${d}`}
+                                     contentStyle={chartTheme.tooltip} labelStyle={{ color: '#e2e8f0' }} />
                             <Area type="monotone" dataKey="bytes" stroke="#0088cc" fill="url(#trafficGrad)" name="Трафик" />
                         </AreaChart>
                     </ResponsiveContainer>
@@ -219,14 +269,14 @@ export default function Dashboard() {
                   </div>
                   <ResponsiveContainer width="100%" height={220}>
                       <LineChart data={liveTraffic?.points || []} margin={{ top: 5, right: 5, bottom: 0, left: 5 }}>
-                          <XAxis dataKey="t" type="number" scale="time" domain={['dataMin', 'dataMax']}
-                                 tickFormatter={(t) => new Date(t).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
-                                 tick={{ fontSize: 10 }} stroke="#64748b" />
-                          <YAxis tickFormatter={(v) => formatBytes(v)} tick={{ fontSize: 10 }} stroke="#64748b" width={70} />
-                          <Tooltip
-                              formatter={(v, name) => [`${formatBytes(v)}/с`, name]}
-                              labelFormatter={(t) => new Date(t).toLocaleTimeString('ru-RU')}
-                              contentStyle={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 8, color: '#e2e8f0' }} />
+                           <XAxis dataKey="t" type="number" scale="time" domain={['dataMin', 'dataMax']}
+                                  tickFormatter={(t) => new Date(t).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
+                                  tick={{ fontSize: 10, fill: '#94a3b8' }} stroke="#64748b" />
+                           <YAxis tickFormatter={(v) => formatBytes(v)} tick={{ fontSize: 10, fill: '#94a3b8' }} stroke="#64748b" width={70} />
+                           <Tooltip
+                               formatter={(v, name) => [`${formatBytes(v)}/с`, name]}
+                               labelFormatter={(t) => new Date(t).toLocaleTimeString('ru-RU')}
+                               contentStyle={chartTheme.tooltip} />
                           <Line type="monotone" dataKey="tx" name="Отправка" stroke="#0088cc" strokeWidth={1.5} dot={false} />
                           <Line type="monotone" dataKey="rx" name="Получение" stroke="#f59e0b" strokeWidth={1.5} dot={false} />
                       </LineChart>
