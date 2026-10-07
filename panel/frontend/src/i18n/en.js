@@ -650,6 +650,11 @@ curl -X POST -H "Authorization: Bearer tgk_your_key" \\
         timeskew: 'Clock skew',
         upsTitle: '🔌 Upstreams',
         upsHealthy: 'Healthy / unhealthy',
+        fpTitle: '🕵️ Client TLS fingerprints',
+        fpSearch: 'Search fingerprint...',
+        fpEmpty: 'No fingerprints yet',
+        fpTotal: 'Total',
+        fpBad: 'Suspicious',
     },
     login: {
         subtitle: 'Telegram Gate — proxy control panel',

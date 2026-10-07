@@ -131,6 +131,10 @@ const getUpstreams = () => apiRequest('GET', '/v1/stats/upstreams');
 /** Готовность принимать нагрузку. */
 const getHealthReady = () => apiRequest('GET', '/v1/health/ready');
 
+/** TLS-отпечатки клиентов (JA3/JA4). @param {number} [limit=1000] */
+const getTlsFingerprints = (limit = 1000) =>
+    apiRequest('GET', `/v1/runtime/tls-fingerprints?limit=${limit}`);
+
 /** Статистика по пользователям (алиас /v1/users с рантайм-данными). */
 const getUsersStats = () => apiRequest('GET', '/v1/stats/users');
 
@@ -204,6 +208,7 @@ module.exports = {
     enableUser, disableUser, rotateSecret, resetQuota,
     getStatsSummary, getStatsDcs, getMeQuality, getRuntimeGates,
     getMePoolState, getNatStun, getMeSelftest, getUpstreams, getHealthReady,
+    getTlsFingerprints,
     getUsersStats, getUsersActiveIps,
     getConnectionsSummary, getRecentEvents,
     getHealth, getSystemInfo, getConfig, patchConfig, reload, getReloadStatus,

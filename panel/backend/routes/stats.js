@@ -155,6 +155,16 @@ router.get('/engine', async (req, res, next) => {
     }
 });
 
+// --- TLS-отпечатки: накопленные записи ---
+router.get('/tls-fingerprints', (req, res, next) => {
+    try {
+        const tlsFp = require('../services/tlsFp');
+        res.json({ fingerprints: tlsFp.getAll() });
+    } catch (err) {
+        next(err);
+    }
+});
+
 // --- Активные подключения: кто сейчас онлайн, с каких IP и стран ---
 router.get('/active', async (req, res, next) => {    try {
         const geo = require('../services/geo');

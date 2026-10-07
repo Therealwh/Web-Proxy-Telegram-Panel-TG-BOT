@@ -377,6 +377,11 @@ function start() {
     setInterval(() => availability.runCheck().catch(() => {}), availEvery).unref();
     availability.runCheck().catch(() => {});
 
+    // TLS-отпечатки: снимок из Telemt каждые 5 минут с накоплением в БД
+    const tlsFp = require('./tlsFp');
+    setInterval(() => tlsFp.syncOnce().catch(() => {}), 5 * 60 * 1000).unref();
+    tlsFp.syncOnce().catch(() => {});
+
     // Ежечасно: истечения, просроченные, тестовые, диск, автопродление, дожим тестов
     setInterval(() => {
         try { checkExpiring(); } catch (e) { logger.error(e); }

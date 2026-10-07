@@ -650,6 +650,11 @@ curl -X POST -H "Authorization: Bearer tgk_ваш_ключ" \\
         timeskew: 'Расхождение часов',
         upsTitle: '🔌 Апстримы',
         upsHealthy: 'Здоровых / больных',
+        fpTitle: '🕵️ TLS-отпечатки клиентов',
+        fpSearch: 'Поиск по отпечатку...',
+        fpEmpty: 'Отпечатков пока нет',
+        fpTotal: 'Всего',
+        fpBad: 'Подозрительных',
     },
     login: {
         subtitle: 'Telegram Gate — панель управления прокси',

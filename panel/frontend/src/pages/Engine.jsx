@@ -29,6 +29,8 @@ function Section({ title, data, children }) {
 
 export default function Engine() {
     const [data, setData] = useState(null);
+    const [fp, setFp] = useState(null);
+    const [fpQuery, setFpQuery] = useState('');
     const t = useT();
 
     useEffect(() => {
@@ -36,6 +38,10 @@ export default function Engine() {
         load();
         const timer = setInterval(load, 30000);
         return () => clearInterval(timer);
+    }, []);
+
+    useEffect(() => {
+        get('/stats/tls-fingerprints').then((d) => setFp(d.fingerprints || [])).catch(() => setFp([]));
     }, []);
 
     if (!data) return <div className="space-y-4">{[...Array(3)].map((_, i) => <Skeleton key={i} className="h-40" />)}</div>;
@@ -115,6 +121,33 @@ export default function Engine() {
                              value={`${u.healthy ? '✅' : '❌'} ${u.effective_latency_ms != null ? `${Math.round(u.effective_latency_ms)} мс` : ''}`}
                              bad={!u.healthy} />
                     ))}
+                </Section>
+
+                <Section title={t('engine.fpTitle')} data={fp}>
+                    <input className="input mb-3" placeholder={t('engine.fpSearch')}
+                           value={fpQuery} onChange={(e) => setFpQuery(e.target.value)} />
+                    {(fp || []).filter((f) => !fpQuery || (f.fp || '').includes(fpQuery)).length === 0 ? (
+                        <p className="text-sm text-slate-500 py-2 text-center">{t('engine.fpEmpty')}</p>
+                    ) : (
+                        <table className="w-full text-sm">
+                            <thead>
+                                <tr className="text-left text-slate-500 border-b border-slate-200 dark:border-slate-700">
+                                    <th className="py-2 pr-4 font-medium">JA4</th>
+                                    <th className="py-2 pr-4 font-medium">{t('engine.fpTotal')}</th>
+                                    <th className="py-2 font-medium">{t('engine.fpBad')}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {(fp || []).filter((f) => !fpQuery || (f.fp || '').includes(fpQuery)).slice(0, 50).map((f) => (
+                                    <tr key={f.fp} className="border-b border-slate-100 dark:border-slate-800">
+                                        <td className="py-1.5 pr-4 font-mono text-xs break-all">{(f.ja4 || f.ja3 || '').slice(0, 40)}</td>
+                                        <td className="py-1.5 pr-4">{f.total}</td>
+                                        <td className={`py-1.5 ${f.bad_or_probe > 0 ? 'text-red-500 font-medium' : ''}`}>{f.bad_or_probe}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    )}
                 </Section>
             </div>
         </div>
