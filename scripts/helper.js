@@ -27,6 +27,7 @@ const SCRIPTS = {
     telemt: path.join(SCRIPTS_DIR, 'update-telemt.sh'),
     check: path.join(SCRIPTS_DIR, 'check-updates.sh'),
     domain: path.join(SCRIPTS_DIR, 'change-domain.sh'),
+    'web-domain': path.join(SCRIPTS_DIR, 'setup-web-domain.sh'),
     'restart-telemt': path.join(SCRIPTS_DIR, 'restart-telemt.sh'),
 };
 
@@ -102,7 +103,7 @@ const server = http.createServer((req, res) => {
         }
 
         // Смена домена: аргумент — строго валидный домен (execFile, без shell)
-        if (parsed.key === 'domain') {
+        if (parsed.key === 'domain' || parsed.key === 'web-domain') {
             const d = String(parsed.domain || '').toLowerCase().trim();
             const DOMAIN_RE = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/;
             if (!DOMAIN_RE.test(d) || d.length > 253) {
@@ -110,7 +111,7 @@ const server = http.createServer((req, res) => {
                 return res.end(JSON.stringify({ ok: false, error: 'bad domain' }));
             }
             busy = true;
-            log(`Смена домена → ${d}`);
+            log(`Смена домена (${parsed.key}) → ${d}`);
             execFile('bash', [script, d], { timeout: 180000 }, (err, stdout, stderr) => {
                 busy = false;
                 log(`Смена домена завершена: ${err ? 'ОШИБКА: ' + (stderr || err.message).slice(0, 500) : 'успех'}`);

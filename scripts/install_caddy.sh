@@ -35,6 +35,33 @@ STATUSBLOCK
     echo "[Caddy] Добавлен статус-домен: ${STATUS_DOMAIN}"
 fi
 
+# Отдельный домен Web Proxy (WEB_DOMAIN в install.env, настраивается из панели).
+# Тот же reverse_proxy на Nginx: Nginx маршрутизирует WEB-пути на Telemt по путям,
+# поэтому второй vhost — точная копия основного с другим server_name.
+WEB_DOMAIN="$(grep '^WEB_DOMAIN=' "${CONFIG_DIR}/install.env" 2>/dev/null | cut -d'"' -f2 || true)"
+if [[ -n "${WEB_DOMAIN}" ]]; then
+    cat >> /etc/caddy/Caddyfile <<WEBBLOCK
+
+${WEB_DOMAIN} {
+	reverse_proxy 127.0.0.1:${NGINX_LOCAL_PORT} {
+		header_up X-Real-IP {remote_host}
+		header_up X-Forwarded-For {remote_host}
+		header_up Host {host}
+	}
+
+	header {
+		-Server
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+	}
+
+	log {
+		level ERROR
+	}
+}
+WEBBLOCK
+    echo "[Caddy] Добавлен домен Web Proxy: ${WEB_DOMAIN}"
+fi
+
 # Проверка корректности Caddyfile перед применением
 caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
 

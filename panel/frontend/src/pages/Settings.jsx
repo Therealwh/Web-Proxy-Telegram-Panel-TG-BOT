@@ -16,6 +16,8 @@ const CATEGORIES = (t) => [
             { key: 'ad_tag_global', label: t('settings.fAdTag'), hint: t('settings.fAdTagHint') },
             { key: 'web_proxy_enabled', label: t('settings.fWebOn'), type: 'toggle' },
             { key: 'mtproto_enabled', label: t('settings.fMtprotoOn'), type: 'toggle' },
+            { key: 'web_domain', label: t('settings.fWebDomain'), hint: t('settings.fWebDomainHint') },
+            { key: 'mtproto_domain', label: t('settings.fMtprotoDomain'), hint: t('settings.fMtprotoDomainHint') },
         ],
     },
     {
@@ -234,6 +236,9 @@ export default function Settings() {
 
             {/* Резервное копирование: экспорт/импорт всех данных */}
             <BackupCard />
+
+            {/* Отдельный домен Web Proxy (под Cloudflare) */}
+            <WebDomainCard />
         </div>
     );
 }
@@ -386,6 +391,68 @@ function DomainCard() {
                     </p>
                 </div>
             )}
+        </Card>
+    );
+}
+
+/** Карточка отдельного домена Web Proxy (для прятанья за Cloudflare) */
+function WebDomainCard() {
+    const [domain, setDomain] = useState('');
+    const [current, setCurrent] = useState(null);
+    const [force, setForce] = useState(false);
+    const [busy, setBusy] = useState(false);
+    const t = useT();
+
+    useEffect(() => {
+        get('/settings').then((d) => setCurrent(d.settings?.web_domain ?? null)).catch(() => {});
+    }, []);
+
+    const apply = async () => {
+        const d = domain.trim().toLowerCase();
+        if (!confirm(t('settings.wdConfirm', { d: d || t('settings.wdDisable') }))) return;
+        setBusy(true);
+        try {
+            const r = await post('/settings/web-domain', { domain: d, force });
+            toast.success(r.message || t('settings.wdDone'));
+            setCurrent(d || null);
+            setDomain('');
+        } catch (e) {
+            toast.error(e.message);
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    return (
+        <Card title={t('settings.wdTitle')}
+              subtitle={t('settings.wdCur', { d: current || t('settings.wdNone') })}>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
+                <Field label={t('settings.fWebDomain')}
+                       hint={t('settings.wdHint')}>
+                    <input className="input font-mono" placeholder="web.example.com"
+                           value={domain}
+                           onChange={(e) => setDomain(e.target.value)} />
+                </Field>
+                <div className="space-y-3">
+                    <Toggle label={t('settings.tForce')}
+                            checked={force}
+                            onChange={setForce} />
+                    <div className="flex gap-2">
+                        <button className="btn-primary flex-1" disabled={busy || !domain.trim()} onClick={apply}>
+                            {t('settings.wdApply')}
+                        </button>
+                        {current && (
+                            <button className="btn-secondary" disabled={busy}
+                                    onClick={() => { setDomain(''); setTimeout(apply, 50); }}>
+                                {t('settings.wdDisable')}
+                            </button>
+                        )}
+                    </div>
+                </div>
+            </div>
+            <p className="text-xs text-slate-400 mt-3">
+                {t('settings.wdNote')}
+            </p>
         </Card>
     );
 }

@@ -54,6 +54,13 @@ sed -e "s|{{DOMAIN}}|${DOMAIN}|g" \
     -e "s|{{NGINX_LOCAL_PORT}}|${NGINX_LOCAL_PORT}|g" \
     "${INSTALL_DIR}/templates/nginx.conf.tmpl" > /etc/nginx/sites-available/tggate.conf
 
+# Отдельный домен Web Proxy: добавляем в server_name (WEB_DOMAIN из install.env)
+WEB_DOMAIN="$(grep '^WEB_DOMAIN=' "${CONFIG_DIR}/install.env" 2>/dev/null | cut -d'"' -f2 || true)"
+if [[ -n "${WEB_DOMAIN}" ]]; then
+    sed -i "s|server_name ${DOMAIN};|server_name ${DOMAIN} ${WEB_DOMAIN};|" /etc/nginx/sites-available/tggate.conf
+    echo "[Nginx] Добавлен домен Web Proxy: ${WEB_DOMAIN}"
+fi
+
 ln -sf /etc/nginx/sites-available/tggate.conf /etc/nginx/sites-enabled/tggate.conf
 
 # Убираем дефолтный сайт, чтобы он не перехватывал запросы

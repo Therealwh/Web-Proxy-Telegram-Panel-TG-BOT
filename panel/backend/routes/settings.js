@@ -23,6 +23,8 @@ const DEFAULTS = {
     ad_tag_global: null,                 // глобальный Ad Tag
     web_proxy_enabled: true,             // Web Proxy вкл/выкл
     mtproto_enabled: true,               // MTProto вкл/выкл
+    web_domain: null,                    // отдельный домен Web Proxy (null = общий domain)
+    mtproto_domain: null,                // отдельный домен MTProto (null = общий domain)
 
     // 🔒 Безопасность: лимит попыток входа фиксируется в коде (routes/auth.js),
     // а ip_whitelist требует доступа к sudoers — поэтому здесь не настраиваются.
@@ -84,6 +86,14 @@ function getAll() {
     return { ...DEFAULTS, ...stored };
 }
 
+/** Записывает одну настройку. */
+function setValue(key, value) {
+    db.prepare(
+        'INSERT INTO settings (key, value) VALUES (?, ?) ' +
+        'ON CONFLICT(key) DO UPDATE SET value = excluded.value'
+    ).run(key, JSON.stringify(value));
+}
+
 // --- Получить все настройки ---
 router.get('/', (req, res) => {
     const settings = getAll();
@@ -113,6 +123,20 @@ router.put('/', (req, res, next) => {
 
         // Разрешаем менять только известные ключи; секрет «••••» не перезаписываем
         const allowed = new Set(Object.keys(DEFAULTS));
+
+        // Домены протоколов: пусто/пробел → null; иначе валидный FQDN в нижнем регистре
+        const normalizeDomain = (v) => {
+            const s = String(v ?? '').trim().toLowerCase();
+            if (!s) return null;
+            if (s.length > 253 || !DOMAIN_RE.test(s)) {
+                throw httpError(400, `Некорректный домен: ${s}`);
+            }
+            return s;
+        };
+        for (const dk of ['web_domain', 'mtproto_domain']) {
+            if (data[dk] !== undefined) data[dk] = normalizeDomain(data[dk]);
+        }
+
         db.transaction(() => {
             for (const [key, value] of Object.entries(data)) {
                 if (!allowed.has(key)) continue;
@@ -177,6 +201,60 @@ router.post('/domain', async (req, res, next) => {
         res.json({
             ok: true,
             message: 'Смена домена запущена. Панель перезапустится через несколько секунд — обновите страницу через 30–60 секунд.',
+        });
+    } catch (err) {
+        next(err);
+    }
+});
+
+// --- Отдельный домен Web Proxy (через root-Helper, без переустановки) ---
+router.post('/web-domain', async (req, res, next) => {
+    try {
+        const schema = z.object({
+            domain: z.string().max(253).optional(), // пусто → отключить
+            force: z.boolean().optional(),
+        });
+        const { domain: rawDomain, force } = schema.parse(req.body);
+        const domain = String(rawDomain || '').toLowerCase().trim();
+
+        // Отключение: сохраняем null, Caddy-блок остаётся (безвреден)
+        if (!domain) {
+            setValue('web_domain', null);
+            return res.json({ ok: true, message: 'Отдельный домен Web Proxy отключён — ссылки снова используют общий домен.' });
+        }
+
+        if (!DOMAIN_RE.test(domain)) throw httpError(400, `Некорректный домен: ${domain}`);
+
+        // DNS-проверка: без A-записи сертификат не выпустится
+        let ips = [];
+        try { ips = await dns.resolve4(domain); } catch { /* DNS ещё не обновился */ }
+        if (ips.length === 0 && !force) {
+            return res.status(400).json({
+                error: 'Домен ещё не указывает на сервер (A-запись не найдена). Добавьте A-запись (для Cloudflare — с включённым прокси) и повторите через 5–30 минут, либо включите «Принудительно».',
+            });
+        }
+
+        if (!config.helperUrl || !config.helperSecret) {
+            throw httpError(500, 'Хелпер не настроен. Выполните на сервере: bash /opt/tggate/scripts/install-helper.sh');
+        }
+
+        const hres = await fetch(`${config.helperUrl}/run`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ secret: config.helperSecret, key: 'web-domain', domain }),
+            signal: AbortSignal.timeout(15000),
+        });
+        if (!hres.ok) {
+            const text = await hres.text().catch(() => '');
+            throw httpError(502, `Хелпер отклонил запрос: HTTP ${hres.status} ${text.slice(0, 100)}`);
+        }
+
+        // Сохраняем настройку — ссылки обновятся сразу (clientLinks читает на лету)
+        setValue('web_domain', domain);
+        logger.info('Настроен отдельный домен Web Proxy', { domain });
+        res.json({
+            ok: true,
+            message: `Домен ${domain} настроен. Новые ссылки (панель, бот, QR) уже используют его — существующим клиентам разошлите ссылки заново.`,
         });
     } catch (err) {
         next(err);
