@@ -3,7 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import {
     LayoutDashboard, Users, BarChart3, ScrollText, Settings, QrCode, Globe,
-    KeyRound, Bot, RefreshCw, Code2, Moon, Sun, LogOut, Menu, X,
+    KeyRound, Bot, RefreshCw, Code2, Moon, Sun, LogOut, Menu, X, Activity,
 } from 'lucide-react';
 import { useAuthStore, useThemeStore, useLangStore } from '../store';
 import { get, post, put } from '../api';
@@ -23,6 +23,7 @@ const NAV = [
     { to: '/api-keys', icon: KeyRound, label: 'nav.apikeys' },
     { to: '/developers', icon: Code2, label: 'nav.developers' },
     { to: '/updates', icon: RefreshCw, label: 'nav.updates' },
+    { to: '/engine', icon: Activity, label: 'nav.engine' },
     { to: '/settings', icon: Settings, label: 'nav.settings' },
 ];
 

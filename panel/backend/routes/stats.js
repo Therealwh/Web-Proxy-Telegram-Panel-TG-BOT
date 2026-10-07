@@ -145,6 +145,16 @@ router.post('/availability/check', (req, res, next) => {
     }
 });
 
+// --- Движок: расширенная телеметрия Telemt ---
+router.get('/engine', async (req, res, next) => {
+    try {
+        const engine = require('../services/engine');
+        res.json(await engine.getEngineStatus());
+    } catch (err) {
+        next(err);
+    }
+});
+
 // --- Активные подключения: кто сейчас онлайн, с каких IP и стран ---
 router.get('/active', async (req, res, next) => {    try {
         const geo = require('../services/geo');

@@ -116,6 +116,21 @@ const getMeQuality = () => apiRequest('GET', '/v1/runtime/me_quality');
 /** Состояние гейтов маршрутизации (reroute, readiness). */
 const getRuntimeGates = () => apiRequest('GET', '/v1/runtime/gates');
 
+/** Состояние ME-пула (писатели, refill по DC). */
+const getMePoolState = () => apiRequest('GET', '/v1/runtime/me_pool_state');
+
+/** NAT/STUN: серверы, рефлексия адресов. */
+const getNatStun = () => apiRequest('GET', '/v1/runtime/nat_stun');
+
+/** Самопроверка движка (KDF, часы, IP, порты). */
+const getMeSelftest = () => apiRequest('GET', '/v1/runtime/me-selftest');
+
+/** Egress-апстримы (здоровье, задержки). */
+const getUpstreams = () => apiRequest('GET', '/v1/stats/upstreams');
+
+/** Готовность принимать нагрузку. */
+const getHealthReady = () => apiRequest('GET', '/v1/health/ready');
+
 /** Статистика по пользователям (алиас /v1/users с рантайм-данными). */
 const getUsersStats = () => apiRequest('GET', '/v1/stats/users');
 
@@ -188,6 +203,7 @@ module.exports = {
     listUsers, createUser, getUser, patchUser, deleteUser,
     enableUser, disableUser, rotateSecret, resetQuota,
     getStatsSummary, getStatsDcs, getMeQuality, getRuntimeGates,
+    getMePoolState, getNatStun, getMeSelftest, getUpstreams, getHealthReady,
     getUsersStats, getUsersActiveIps,
     getConnectionsSummary, getRecentEvents,
     getHealth, getSystemInfo, getConfig, patchConfig, reload, getReloadStatus,
