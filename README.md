@@ -104,6 +104,22 @@ API-ключи с разделением прав, Swagger UI на `/panel-api/d
 с HMAC-подписью, примеры для Python и Node.js. Создание клиентов
 со всеми лимитами (IP, скорости, трафик), ссылки, QR, продление.
 
+## 📸 Скриншоты
+
+| Дашборд | Клиенты |
+|---|---|
+| ![Дашборд](docs/screenshots/01-dashboard.png) | ![Клиенты](docs/screenshots/02-clients.png) |
+
+| Продажи и аналитика | Живые логи |
+|---|---|
+| ![Продажи](docs/screenshots/03-sales.png) | ![Логи](docs/screenshots/04-logs.png) |
+
+| Telegram-бот | Статус сервиса |
+|---|---|
+| ![Бот](docs/screenshots/07-bot.png) | ![Статус](docs/screenshots/12-status-public.png) |
+
+Полная галерея всех 13 разделов (вход, QR-коды, сайт, API-ключи, разработчики, обновления, настройки, светлая тема) — в [docs/SCREENSHOTS.md](docs/SCREENSHOTS.md).
+
 ## 🛠 Управление
 
 ```bash
@@ -145,6 +161,7 @@ sudo TGGATE
 
 ## 📚 Документация
 
+- [Скриншоты панели](docs/SCREENSHOTS.md)
 - [Установка](docs/INSTALL.md)
 - [API панели](docs/API.md)
 - [Публичный API](docs/API_PUBLIC.md)
