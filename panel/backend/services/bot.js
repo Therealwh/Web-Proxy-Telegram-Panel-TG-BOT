@@ -131,7 +131,8 @@ function mainReplyKeyboard(ctx) {
     const kb = new Keyboard().resized().persistent()
         .text('🚀 Тарифы').row()
         .text('🎁 Тест 3 часа').text('📱 Личный кабинет').row()
-        .text('🤝 Рефералы').text('🛟 Поддержка').row();
+        .text('🤝 Рефералы').text('🛟 Поддержка').row()
+        .text('📱 Как подключить').row();
     if (isAdmin(ctx)) kb.text('👑 Админ-панель').row();
     return kb;
 }
@@ -704,6 +705,38 @@ async function start() {
         const statusUrl = getBotSettings().status_url;
         const statusLine = statusUrl ? `\n\n🟢 <a href="${statusUrl}">Проверить, работает ли сервис</a>` : '';
         ctx.reply(`🛟 <b>Поддержка</b>\n\nПо любым вопросам пишите:\n👤 ${SUPPORT_USERNAME}${statusLine}`, { parse_mode: 'HTML' });
+    });
+
+    // ═══ Инструкции подключения: выбор платформы → шаги ═══
+    bot.hears('📱 Как подключить', async (ctx) => {
+        const kb = new InlineKeyboard()
+            .text('🖥 Windows', 'guide:win').text('🍎 macOS', 'guide:mac').row()
+            .text('📱 iOS (iPhone)', 'guide:ios').text('🤖 Android', 'guide:android');
+        await ctx.reply(
+            '📱 <b>Как подключить прокси</b>\n\nСамый простой способ — нажать на ссылку подключения ' +
+            'в «📱 Личном кабинете»: Telegram сам предложит добавить прокси.\n\nВыберите вашу платформу для подробной инструкции:',
+            { parse_mode: 'HTML', reply_markup: kb }
+        );
+    });
+
+    bot.callbackQuery(/^guide:(win|mac|ios|android)$/, async (ctx) => {
+        await ctx.answerCallbackQuery();
+        const guides = {
+            win: `🖥 <b>Windows (Telegram Desktop)</b>\n\n` +
+                `1️⃣ В «📱 Личном кабинете» нажмите «🌐 Подключить ВЕБ прокси» или «🔌 Подключить MTProto» — Telegram сам предложит добавить прокси.\n\n` +
+                `2️⃣ Вручную: ☰ → Настройки → Продвинутые настройки → Тип соединения → «Использовать свой прокси» → Добавить прокси → вставьте сервер, порт и секрет из кабинета.`,
+            mac: `🍎 <b>macOS</b>\n\n` +
+                `1️⃣ В «📱 Личном кабинете» нажмите «🌐 Подключить ВЕБ прокси» или «🔌 Подключить MTProto» — Telegram сам предложит добавить прокси.\n\n` +
+                `2️⃣ Вручную: Настройки → Продвинутые → Тип соединения → «Использовать свой прокси» → Добавьте сервер, порт и секрет из кабинета.`,
+            ios: `📱 <b>iPhone (iOS)</b>\n\n` +
+                `⚠️ Web Proxy на iOS может не работать — используйте ссылку <b>MTProto</b> из кабинета.\n\n` +
+                `1️⃣ В «📱 Личном кабинете» нажмите «🔌 Подключить MTProto».\n\n` +
+                `2️⃣ Вручную: Настройки → Данные и хранилище → Прокси → Добавить прокси → вставьте сервер, порт и секрет.`,
+            android: `🤖 <b>Android</b>\n\n` +
+                `1️⃣ В «📱 Личном кабинете» нажмите ссылку подключения — Telegram предложит добавить прокси.\n\n` +
+                `2️⃣ Вручную: Настройки → Данные и память → Настройки прокси → Добавить прокси → вставьте данные из кабинета.`,
+        };
+        await ctx.reply(guides[ctx.match[1]], { parse_mode: 'HTML', disable_web_page_preview: true });
     });
 
     bot.hears('👑 Админ-панель', async (ctx) => {
@@ -1326,4 +1359,7 @@ function getBotSettings() {
 /** Работает ли бот сейчас. */
 const isRunning = () => bot !== null;
 
-module.exports = { start, stop, isRunning, getBotSettings, issueAccessFor, notifyDeposit, sendMessageTo, broadcastNewLinks, sendFileTo, totalBalance, deductBalance };
+/** Telegram Bot API для фоновых задач планировщика (null — бот выключен). */
+const getApi = () => (bot ? bot.api : null);
+
+module.exports = { start, stop, isRunning, getApi, tariffsKeyboard, getBotSettings, issueAccessFor, notifyDeposit, sendMessageTo, broadcastNewLinks, sendFileTo, totalBalance, deductBalance };

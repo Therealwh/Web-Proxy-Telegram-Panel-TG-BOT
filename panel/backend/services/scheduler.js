@@ -107,6 +107,53 @@ function checkExpiring() {
     }
 }
 
+/** Напоминание об окончании бесплатного теста (один раз): купить прокси в любом формате. */
+function testFollowup() {
+    const rows = db.prepare(
+        `SELECT * FROM clients
+         WHERE username GLOB 'test[0-9]*' AND telegram_id IS NOT NULL
+           AND expires_at IS NOT NULL
+           AND expires_at <= datetime('now', '-2 hours')`
+    ).all();
+    if (rows.length === 0) return;
+
+    const bot = require('./bot');
+    const api = bot.getApi && bot.getApi();
+    if (!api) return;
+
+    const notified = (username) => db.prepare(
+        "SELECT COUNT(*) AS c FROM audit_log WHERE action = 'notify.testend' AND details LIKE ?"
+    ).get(`%${username}%`).c > 0;
+
+    (async () => {
+        for (const client of rows) {
+            try {
+                // Уже купил прокси — дожим не нужен
+                const bought = db.prepare(
+                    `SELECT COUNT(*) AS c FROM clients
+                     WHERE telegram_id = ? AND username NOT GLOB 'test[0-9]*'`
+                ).get(client.telegram_id).c;
+                if (bought > 0 || notified(client.username)) continue;
+
+                const text =
+                    `⏰ <b>Тестовый доступ закончился</b>\n\n` +
+                    `Понравилось? Прокси доступны в любом формате:\n` +
+                    `🌐 Web Proxy · 🔌 MTProto · 📦 Web + MTProto сразу\n\n` +
+                    `Нажмите «🚀 Тарифы» — доступ откроется сразу после оплаты.`;
+                await api.sendMessage(client.telegram_id, text, {
+                    parse_mode: 'HTML', reply_markup: bot.tariffsKeyboard(),
+                });
+                db.prepare("INSERT INTO audit_log (admin, action, details) VALUES ('system', 'notify.testend', ?)")
+                    .run(`Напоминание об окончании теста: ${client.username}`);
+                logger.info('Напоминание об окончании теста отправлено', { username: client.username });
+                await new Promise((r) => setTimeout(r, 200));
+            } catch (err) {
+                logger.warn('Напоминание об окончании теста не отправлено', { username: client.username, error: err.message });
+            }
+        }
+    })().catch((e) => logger.error('Ошибка дожатия тестов', { error: e.message }));
+}
+
 /** Автоматическая блокировка просроченных клиентов. */
 async function disableExpired() {
     const rows = db.prepare(
@@ -319,13 +366,14 @@ function start() {
     setInterval(() => checkProxies().catch(() => {}), 5 * 60 * 1000).unref();
     checkProxies().catch(() => {});
 
-    // Ежечасно: истечения, просроченные, тестовые, диск, автопродление
+    // Ежечасно: истечения, просроченные, тестовые, диск, автопродление, дожим тестов
     setInterval(() => {
         try { checkExpiring(); } catch (e) { logger.error(e); }
         disableExpired().catch(() => {});
         cleanupTestClients().catch(() => {});
         try { checkDisk(); } catch (e) { logger.error(e); }
         autoRenew().catch((e) => logger.error('Ошибка автопродления', { error: e.message }));
+        try { testFollowup(); } catch (e) { logger.error(e); }
     }, 60 * 60 * 1000).unref();
     // Первый прогон через 2 минуты после старта
     setTimeout(() => {
@@ -333,6 +381,7 @@ function start() {
         disableExpired().catch(() => {});
         cleanupTestClients().catch(() => {});
         autoRenew().catch((e) => logger.error('Ошибка автопродления', { error: e.message }));
+        try { testFollowup(); } catch (e) { logger.error(e); }
     }, 2 * 60 * 1000).unref();
 
     // Ежедневно: автобэкап (в 03:30 по локальному времени)
