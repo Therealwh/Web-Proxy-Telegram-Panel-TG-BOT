@@ -91,7 +91,7 @@ async function sslExpiry() {
 function serviceUptime(name) {
     try {
         const out = execSync(
-            `systemctl show ${name} -p ActiveEnterTimestamp --value`,
+            `LC_ALL=C systemctl show ${name} -p ActiveEnterTimestamp --value`,
             { timeout: 5000 }
         ).toString().trim();
         if (!out) return null;
