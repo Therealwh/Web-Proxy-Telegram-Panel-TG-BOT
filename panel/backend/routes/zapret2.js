@@ -68,6 +68,18 @@ router.get('/', (req, res) => {
     });
 });
 
+// --- Хвост лога хелпера: что делалась/почему упала установка (диагностика из панели) ---
+router.get('/log', (req, res) => {
+    let text = '';
+    try {
+        text = fs.readFileSync('/var/log/tggate/helper.log', 'utf8');
+    } catch { /* файла нет или нет доступа */ }
+    const lines = text.split('\n')
+        .filter((l) => l.includes('zapret2'))
+        .slice(-30);
+    res.json({ lines });
+});
+
 async function runHelper(action) {
     if (!config.helperUrl || !config.helperSecret) {
         throw httpError(500, 'Хелпер не настроен. Выполните на сервере: bash /opt/tggate/scripts/install-helper.sh');

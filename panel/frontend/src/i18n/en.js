@@ -699,6 +699,9 @@ curl -X POST -H "Authorization: Bearer tgk_your_key" \\
         safety1: 'The module is optional: without it the proxy works as before, and if it crashes traffic just bypasses the queue (fail-open).',
         safety2: 'nftables rules apply to the MTProto port only — panel, website and other services are untouched.',
         safety3: 'Removal removes all rules and restores network defaults. MTProto port: {port}.',
+        logTitle: '📋 Action log',
+        logEmpty: 'Log is empty — no actions yet.',
+        logHint: 'If installation does not finish — the reason will show here. Send these lines to support.',
     },
     login: {
         subtitle: 'Telegram Gate — proxy control panel',

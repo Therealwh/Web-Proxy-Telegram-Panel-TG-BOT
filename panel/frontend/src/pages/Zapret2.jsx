@@ -8,11 +8,13 @@ import { Card, Skeleton, PageHeader } from '../components/ui';
 
 export default function Zapret2() {
     const [status, setStatus] = useState(null);
+    const [log, setLog] = useState([]);
     const [busy, setBusy] = useState('');
     const t = useT();
 
     const load = useCallback(() => {
         get('/zapret2').then(setStatus).catch((e) => toast.error(e.message));
+        get('/zapret2/log').then((d) => setLog(d.lines || [])).catch(() => {});
     }, []);
     useEffect(() => {
         load();
@@ -26,7 +28,12 @@ export default function Zapret2() {
         try {
             await post(`/zapret2/${action}`);
             toast.success(t('zapret2.started', { action }));
-            setTimeout(load, 3000);
+            // Пока идёт установка/удаление — опрашиваем статус и лог чаще
+            let n = 0;
+            const iv = setInterval(() => {
+                load();
+                if (++n >= 20) clearInterval(iv);
+            }, 3000);
         } catch (e) {
             toast.error(e.message);
         } finally {
@@ -99,6 +106,18 @@ export default function Zapret2() {
                 <p className="text-sm text-slate-600 dark:text-slate-300">{t('zapret2.safety1')}</p>
                 <p className="text-sm text-slate-600 dark:text-slate-300 mt-2">{t('zapret2.safety2')}</p>
                 <p className="text-sm text-slate-600 dark:text-slate-300 mt-2">{t('zapret2.safety3', { port: status.port })}</p>
+            </Card>
+
+            {/* Лог действий — для диагностики установки прямо из панели */}
+            <Card title={t('zapret2.logTitle')}>
+                {log.length === 0 ? (
+                    <p className="text-sm text-slate-500">{t('zapret2.logEmpty')}</p>
+                ) : (
+                    <pre className="text-xs font-mono bg-slate-100 dark:bg-slate-800 rounded-lg p-3 overflow-x-auto max-h-56 overflow-y-auto whitespace-pre-wrap">
+                        {log.join('\n')}
+                    </pre>
+                )}
+                <p className="text-xs text-slate-400 mt-2">{t('zapret2.logHint')}</p>
             </Card>
         </div>
     );
