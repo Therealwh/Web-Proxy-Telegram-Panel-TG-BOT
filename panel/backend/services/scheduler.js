@@ -360,6 +360,55 @@ function checkDisk() {
     } catch { /* df недоступен — пропускаем */ }
 }
 
+
+/** Плановый сброс квот: daily/weekly/monthly по настройке (см. settings). */
+function checkQuotaReset() {
+    const settings = getAll();
+    const mode = settings.quota_reset_mode;
+    if (!mode || mode === 'off') return;
+
+    const now = new Date();
+    let periodKey = '';
+    if (mode === 'daily') {
+        periodKey = now.toISOString().slice(0, 10);
+    } else if (mode === 'weekly') {
+        const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+        const dayNum = (d.getUTCDay() + 6) % 7;
+        d.setUTCDate(d.getUTCDate() - dayNum + 1); // понедельник
+        periodKey = 'W' + d.toISOString().slice(0, 10);
+    } else {
+        periodKey = now.toISOString().slice(0, 7); // YYYY-MM
+        const day = now.getDate();
+        const target = Math.min(Math.max(Number(settings.quota_reset_day) || 1, 1), 28);
+        if (day < target) return; // до дня сброса — ждём
+    }
+
+    const lastKey = `quota_reset:${mode}`;
+    const done = db.prepare('SELECT value FROM settings WHERE key = ?').get(lastKey);
+    if (done && done.value === JSON.stringify(periodKey)) return; // уже сброшено в этом периоде
+
+    const targets = db.prepare(
+        'SELECT id, username FROM clients WHERE quota_bytes IS NOT NULL AND quota_auto_reset = 1'
+    ).all();
+    let processed = 0;
+    const upd = db.prepare('UPDATE clients SET traffic_used = 0 WHERE id = ?');
+    for (const c of targets) {
+        try {
+            upd.run(c.id);
+            processed += 1;
+        } catch (e) {
+            logger.error('Плановый сброс квоты не удался', { username: c.username, error: e.message });
+        }
+    }
+    db.prepare(
+        'INSERT INTO settings (key, value) VALUES (?, ?) ' +
+        'ON CONFLICT(key) DO UPDATE SET value = excluded.value'
+    ).run(lastKey, JSON.stringify(periodKey));
+    db.prepare('INSERT INTO audit_log (admin, action, details) VALUES (?, ?, ?)')
+        .run('system', 'quota.auto_reset', `period=${periodKey} сброшено: ${processed}`);
+    logger.info(`Плановый сброс квот: ${processed} клиентов (период ${periodKey})`);
+}
+
 /** Запускает все фоновые задачи с их интервалами. */
 function start() {
     // Проверка доступности каждые 5 минут
@@ -388,6 +437,7 @@ function start() {
         disableExpired().catch(() => {});
         cleanupTestClients().catch(() => {});
         try { checkDisk(); } catch (e) { logger.error(e); }
+        try { checkQuotaReset(); } catch (e) { logger.error(e); }
         autoRenew().catch((e) => logger.error('Ошибка автопродления', { error: e.message }));
         try { testFollowup(); } catch (e) { logger.error(e); }
     }, 60 * 60 * 1000).unref();
@@ -396,6 +446,7 @@ function start() {
         try { checkExpiring(); } catch (e) { logger.error(e); }
         disableExpired().catch(() => {});
         cleanupTestClients().catch(() => {});
+        try { checkQuotaReset(); } catch (e) { logger.error(e); }
         autoRenew().catch((e) => logger.error('Ошибка автопродления', { error: e.message }));
         try { testFollowup(); } catch (e) { logger.error(e); }
     }, 2 * 60 * 1000).unref();

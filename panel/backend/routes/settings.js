@@ -18,6 +18,10 @@ const DOMAIN_RE = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])
 
 // Дефолтные значения всех настроек с описанием категорий
 const DEFAULTS = {
+    // ♻️ Плановый сброс квот
+    quota_reset_mode: 'off',             // off | daily | weekly | monthly
+    quota_reset_day: 1,                  // день месяца для monthly (1-28)
+
     // 🌐 Сеть и протоколы
     mask_domain: 'www.cloudflare.com',   // домен маскировки Fake-TLS
     ad_tag_global: null,                 // глобальный Ad Tag

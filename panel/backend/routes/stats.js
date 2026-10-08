@@ -310,4 +310,14 @@ router.get('/uptime', (req, res) => {
     res.json({ uptime: rows });
 });
 
+
+// --- События для таймлайна дашборда (последние записи аудита) ---
+router.get('/events', (req, res) => {
+    const rows = db.prepare(
+        'SELECT admin, action, details, created_at FROM audit_log ORDER BY id DESC LIMIT 20'
+    ).all();
+    res.json({ events: rows });
+});
+
 module.exports = router;
+

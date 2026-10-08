@@ -59,6 +59,12 @@ function log(msg) {
     try { fs.appendFileSync(LOG_FILE, line); } catch { /* ignore */ }
 }
 
+let systemdRunAvailable = false;
+try {
+    execFileSync('systemd-run', ['--version'], { stdio: 'ignore' });
+    systemdRunAvailable = true;
+} catch { /* нет systemd-run — обновления пойдут как раньше */ }
+
 const server = http.createServer((req, res) => {
     if (req.method !== 'POST' || !req.url.startsWith('/run')) {
         res.statusCode = 404;
@@ -152,6 +158,17 @@ const server = http.createServer((req, res) => {
         }
 
         const args = parsed.version ? [String(parsed.version)] : [];
+        // Долгие обновления отвязываем от cgroup хелпера (systemd-run):
+        // рестарт хелпера больше не убивает установку пакетов посреди пути
+        if ((parsed.key === 'panel' || parsed.key === 'telemt') && systemdRunAvailable) {
+            const unit = `tggate-update-${parsed.key}-${Date.now()}`;
+            log(`Обновление в отдельном юните: ${unit}`);
+            execFile('systemd-run', ['--collect', `--unit=${unit}`, 'bash', script, ...args],
+                { timeout: 30000 }, (err) => {
+                    if (err) log(`systemd-run не удался (${err.message}) — скрипт продолжит в cgroup хелпера`);
+                });
+            return res.end(JSON.stringify({ ok: true }));
+        }
         log(`Запуск: ${script} ${args.join(' ')}`);
 
         // Скрипты сами пишут результат в БД и живут до 10 минут.
