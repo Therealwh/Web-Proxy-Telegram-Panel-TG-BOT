@@ -706,6 +706,8 @@ curl -X POST -H "Authorization: Bearer tgk_ваш_ключ" \\
         procYes: 'процесс nfqws2 жив',
         procNo: 'процесс nfqws2 не найден',
         failedHint: 'Служба в состоянии failed. Проверьте лог: journalctl -u tggate-zapret2 -n 50',
+        journalTitle: '💻 Журнал службы',
+        journalHint: 'Последние строки из journald — здесь видно, почему nfqws2 не работает.',
     },
     login: {
         subtitle: 'Telegram Gate — панель управления прокси',

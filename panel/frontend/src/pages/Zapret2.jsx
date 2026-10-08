@@ -102,6 +102,16 @@ export default function Zapret2() {
                 </div>
             </Card>
 
+            {/* Журнал службы — видно, почему nfqws2 не живой */}
+            {status.journal && status.journal.length > 0 && (
+                <Card title={t('zapret2.journalTitle')}>
+                    <pre className="text-xs font-mono bg-slate-100 dark:bg-slate-800 rounded-lg p-3 overflow-x-auto max-h-64 overflow-y-auto whitespace-pre-wrap">
+                        {status.journal.join('\n')}
+                    </pre>
+                    <p className="text-xs text-slate-400 mt-2">{t('zapret2.journalHint')}</p>
+                </Card>
+            )}
+
             {/* Что делает */}
             <Card title={t('zapret2.howTitle')}>
                 <ol className="list-decimal pl-5 space-y-1 text-sm text-slate-600 dark:text-slate-300">

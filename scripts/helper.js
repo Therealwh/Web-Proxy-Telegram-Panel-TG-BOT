@@ -123,12 +123,13 @@ const server = http.createServer((req, res) => {
         // Zapret2: мгновенный статус через systemd (достоверный ответ, без флага busy).
         // Показывает active/inactive/failed и жив ли процесс nfqws2.
         if (parsed.key === 'zapret2-status') {
-            execFile('bash', ['-c', 'systemctl is-active tggate-zapret2.service 2>/dev/null; pgrep -x nfqws2 >/dev/null 2>&1 && echo PROC=1 || echo PROC=0'], (err, stdout) => {
+            execFile('bash', ['-c', 'systemctl is-active tggate-zapret2.service 2>/dev/null; pgrep -x nfqws2 >/dev/null 2>&1 && echo PROC=1 || echo PROC=0; echo ---JOURNAL---; journalctl -u tggate-zapret2 -n 20 --no-pager -o short-iso 2>/dev/null'], (err, stdout) => {
                 const out = String(stdout || '');
                 const active = /^active$/m.test(out);
                 const failed = /failed|inactive/.test(out);
                 const proc = /PROC=1/.test(out);
-                res.end(JSON.stringify({ ok: true, active, failed, proc }));
+                const journal = out.split('---JOURNAL---\n')[1] || '';
+                res.end(JSON.stringify({ ok: true, active, failed, proc, journal }));
             });
             return;
         }

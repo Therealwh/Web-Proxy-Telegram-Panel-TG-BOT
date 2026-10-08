@@ -706,6 +706,8 @@ curl -X POST -H "Authorization: Bearer tgk_your_key" \\
         procYes: 'nfqws2 process alive',
         procNo: 'nfqws2 process not found',
         failedHint: 'Service is in failed state. Check the log: journalctl -u tggate-zapret2 -n 50',
+        journalTitle: '💻 Service journal',
+        journalHint: 'Latest lines from journald — shows why nfqws2 is not running.',
     },
     login: {
         subtitle: 'Telegram Gate — proxy control panel',

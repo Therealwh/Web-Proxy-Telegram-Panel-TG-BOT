@@ -60,6 +60,7 @@ router.get('/', async (req, res, next) => {
     try { queueText = fs.readFileSync(QUEUE_PROC, 'utf8'); } catch { /* модуль не загружен */ }
     let service = null;   // 'active' | 'inactive' | 'failed' | null (не определено)
     let proc = false;
+    let journal = [];
     if (config.helperUrl && config.helperSecret) {
         try {
             const hr = await fetch(`${config.helperUrl}/run`, {
@@ -71,6 +72,9 @@ router.get('/', async (req, res, next) => {
             const hd = await hr.json().catch(() => ({}));
             service = hd.active ? 'active' : (hd.failed ? 'failed' : 'inactive');
             proc = !!hd.proc;
+            journal = Array.isArray(hd.journal)
+                ? hd.journal
+                : String(hd.journal || '').split('\n').map((l) => l.trim()).filter(Boolean);
         } catch {
             /* хелпер недоступен — статус ниже через локальные проверки */
         }
@@ -84,6 +88,7 @@ router.get('/', async (req, res, next) => {
         running,
         service,
         proc,
+        journal,
         port: config.mtprotoPort,
         queue,
         table: 'TGGATE',
