@@ -702,6 +702,10 @@ curl -X POST -H "Authorization: Bearer tgk_ваш_ключ" \\
         logTitle: '📋 Лог действий',
         logEmpty: 'Лог пуст — действий ещё не было.',
         logHint: 'Если установка не завершается — здесь будет причина. Скиньте эти строки в поддержку.',
+        svcState: 'Служба systemd: {state}',
+        procYes: 'процесс nfqws2 жив',
+        procNo: 'процесс nfqws2 не найден',
+        failedHint: 'Служба в состоянии failed. Проверьте лог: journalctl -u tggate-zapret2 -n 50',
     },
     login: {
         subtitle: 'Telegram Gate — панель управления прокси',

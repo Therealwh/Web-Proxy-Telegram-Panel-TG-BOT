@@ -51,17 +51,39 @@ function isProcRunning() {
 }
 
 // --- Статус: установлен ли, работает ли, какой порт/очередь ---
-router.get('/', (req, res) => {
+router.get('/', async (req, res, next) => {
     const installed = fs.existsSync(BIN);
     let conf = '';
     try { conf = fs.readFileSync(CONF, 'utf8'); } catch { /* не установлен */ }
     const queue = Number(parseConf(conf, 'qnum') || 200);
     let queueText = '';
     try { queueText = fs.readFileSync(QUEUE_PROC, 'utf8'); } catch { /* модуль не загружен */ }
-    const running = installed && isProcRunning() && queueBound(queueText, queue);
+    let service = null;   // 'active' | 'inactive' | 'failed' | null (не определено)
+    let proc = false;
+    if (config.helperUrl && config.helperSecret) {
+        try {
+            const hr = await fetch(`${config.helperUrl}/run`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ secret: config.helperSecret, key: 'zapret2-status' }),
+                signal: AbortSignal.timeout(5000),
+            });
+            const hd = await hr.json().catch(() => ({}));
+            service = hd.active ? 'active' : (hd.failed ? 'failed' : 'inactive');
+            proc = !!hd.proc;
+        } catch {
+            /* хелпер недоступен — статус ниже через локальные проверки */
+        }
+    }
+    const localProc = isProcRunning();
+    const running = installed
+        && (service === 'active' ? proc : (proc || localProc))
+        && queueBound(queueText, queue);
     res.json({
         installed,
         running,
+        service,
+        proc,
         port: config.mtprotoPort,
         queue,
         table: 'TGGATE',

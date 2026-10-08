@@ -120,6 +120,19 @@ const server = http.createServer((req, res) => {
             return res.end(JSON.stringify({ ok: true }));
         }
 
+        // Zapret2: мгновенный статус через systemd (достоверный ответ, без флага busy).
+        // Показывает active/inactive/failed и жив ли процесс nfqws2.
+        if (parsed.key === 'zapret2-status') {
+            execFile('bash', ['-c', 'systemctl is-active tggate-zapret2.service 2>/dev/null; pgrep -x nfqws2 >/dev/null 2>&1 && echo PROC=1 || echo PROC=0'], (err, stdout) => {
+                const out = String(stdout || '');
+                const active = /^active$/m.test(out);
+                const failed = /failed|inactive/.test(out);
+                const proc = /PROC=1/.test(out);
+                res.end(JSON.stringify({ ok: true, active, failed, proc }));
+            });
+            return;
+        }
+
         // Смена домена: аргумент — строго валидный домен (execFile, без shell)
         if (parsed.key === 'domain' || parsed.key === 'web-domain') {
             const d = String(parsed.domain || '').toLowerCase().trim();

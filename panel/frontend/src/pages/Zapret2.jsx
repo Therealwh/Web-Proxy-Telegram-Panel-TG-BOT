@@ -64,6 +64,16 @@ export default function Zapret2() {
                     <span className="text-sm text-slate-500">{t('zapret2.portInfo', { port: status.port })}</span>
                     <span className="text-sm text-slate-500">{t('zapret2.queueInfo', { q: status.queue })}</span>
                 </div>
+                {status.installed && status.service && (
+                    <div className="mt-2 text-xs text-slate-400">
+                        {t('zapret2.svcState', { state: status.service })}
+                        {' · '}
+                        {status.proc ? t('zapret2.procYes') : t('zapret2.procNo')}
+                    </div>
+                )}
+                {status.installed && status.service === 'failed' && (
+                    <div className="mt-1 text-xs text-red-500">{t('zapret2.failedHint')}</div>
+                )}
                 <div className="flex flex-wrap gap-2 mt-4">
                     {!status.installed ? (
                         <button className="btn-primary" disabled={busy === 'install'} onClick={() => run('install', t('zapret2.confirmInstall'))}>
