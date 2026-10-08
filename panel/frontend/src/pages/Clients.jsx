@@ -11,6 +11,7 @@ const EMPTY_FORM = {
     username: '', quota_gb: '', expires_at: '', max_ips: '',
     rate_down_mbps: '', rate_up_mbps: '', ad_tag: '',
     web_enabled: true, mtproto_enabled: true, note: '',
+    quota_auto_reset: false,
 };
 
 /** Переводит значения формы в тело API-запроса */
@@ -26,6 +27,7 @@ function formToPayload(f) {
         web_enabled: f.web_enabled,
         mtproto_enabled: f.mtproto_enabled,
         note: f.note || null,
+        quota_auto_reset: !!f.quota_auto_reset,
     };
 }
 
@@ -100,6 +102,7 @@ export default function Clients() {
             web_enabled: !!c.web_enabled,
             mtproto_enabled: !!c.mtproto_enabled,
             note: c.note ?? '',
+            quota_auto_reset: c.quota_auto_reset !== 0,
         });
         setModal(c);
     };
@@ -296,7 +299,12 @@ export default function Clients() {
                                         )}
                                     </td>
                                     <td className="px-4 py-3 min-w-[170px]">
-                                        <div className="text-base font-bold leading-tight">{formatBytes(c.traffic_used, lang)}{c.quota_bytes ? '' : ` / ${t('common.infinity')}`}</div>
+                                        <div className="text-base font-bold leading-tight">
+                                            {formatBytes(c.traffic_used, lang)}{c.quota_bytes ? '' : ` / ${t('common.infinity')}`}
+                                            {c.quota_auto_reset ? (
+                                                <span className="ml-1 text-xs align-middle" title={t('clients.autoResetOn')}>♻️</span>
+                                            ) : null}
+                                        </div>
                                         {c.quota_bytes ? (
                                             <>
                                                 <div className="text-xs text-slate-500 mb-1">
@@ -379,6 +387,12 @@ export default function Clients() {
                         <Toggle checked={form.web_enabled} onChange={(v) => setForm({ ...form, web_enabled: v })} label={t('clients.protoWebFull')} />
                         <Toggle checked={form.mtproto_enabled} onChange={(v) => setForm({ ...form, mtproto_enabled: v })} label={t('clients.protoMtprotoFull')} />
                     </div>
+                    {modal !== 'create' && (
+                        <div className="sm:col-span-2">
+                            <Toggle checked={!!form.quota_auto_reset} onChange={(v) => setForm({ ...form, quota_auto_reset: v })} label={t('clients.fAutoReset')} />
+                            <span className="block text-xs text-slate-500 mt-1">{t('clients.fAutoResetHint')}</span>
+                        </div>
+                    )}
                 </div>
                 <div className="flex justify-end gap-2 mt-6">
                     <button className="btn-secondary" onClick={() => setModal(null)}>{t('common.cancel')}</button>

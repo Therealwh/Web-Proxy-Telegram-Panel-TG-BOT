@@ -7,13 +7,16 @@ import { useT } from '../i18n';
 import { Card, Skeleton, PageHeader } from '../components/ui';
 
 /** Строка «метрика → значение» */
-function Row({ label, value, bad }) {
+function Row({ label, value, bad, hint }) {
     return (
         <div className="flex flex-wrap items-baseline justify-between gap-2 py-1.5 border-b border-slate-100 dark:border-slate-800/60 last:border-0">
             <span className="text-sm text-slate-500 dark:text-slate-400">{label}</span>
-            <span className={`text-sm font-medium text-right break-all ${bad ? 'text-red-500' : ''}`}>
-                {value ?? '—'}
-            </span>
+            <div className="text-right">
+                <span className={`text-sm font-medium break-all ${bad ? 'text-red-500' : ''}`}>
+                    {value ?? '—'}
+                </span>
+                {hint && <span className="block text-[11px] text-slate-400">{hint}</span>}
+            </div>
         </div>
     );
 }
@@ -104,18 +107,20 @@ export default function Engine() {
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <Section title={t('engine.qualityTitle')} data={q} error={data.errors?.quality}>
-                    <Row label={t('engine.reconnects')} value={q.counters ? `${q.counters.reconnect_success ?? '—'} / ${q.counters.reconnect_attempt ?? '—'}` : null} />
-                    <Row label={t('engine.kdfDrift')} value={q.counters?.kdf_drift} />
-                    <Row label={t('engine.routeDrops')} value={q.route_drops ? Object.values(q.route_drops).reduce((a, b) => a + (Number(b) || 0), 0) : null} />
+                    <Row label={t('engine.reconnects')} value={q.counters ? `${q.counters.reconnect_success ?? '—'} / ${q.counters.reconnect_attempt ?? '—'}` : null}
+                         hint={t('engine.h_reconnects')} />
+                    <Row label={t('engine.kdfDrift')} value={q.counters?.kdf_drift} hint={t('engine.h_kdf')} />
+                    <Row label={t('engine.routeDrops')} value={q.route_drops ? Object.values(q.route_drops).reduce((a, b) => a + (Number(b) || 0), 0) : null}
+                         hint={t('engine.h_drops')} />
                     <Row label={t('engine.reroute')} value={gates ? (gates.reroute_active ? t('engine.on') : t('engine.off')) : null}
-                         bad={!!gates?.reroute_active} />
+                         bad={!!gates?.reroute_active} hint={t('engine.h_reroute')} />
                     <Row label={t('engine.readyState')} value={ready ? (ready.ready ? t('engine.on') : t('engine.off')) : null}
-                         bad={ready && !ready.ready} />
+                         bad={ready && !ready.ready} hint={t('engine.h_ready')} />
                 </Section>
 
                 <Section title={t('engine.poolTitle')} data={pool} error={data.errors?.pool}>
-                    <Row label={t('engine.writersAlive')} value={pool.writers?.alive} />
-                    <Row label={t('engine.writersDegraded')} value={pool.writers?.degraded} bad={(pool.writers?.degraded || 0) > 0} />
+                    <Row label={t('engine.writersAlive')} value={pool.writers?.alive} hint={t('engine.h_writers')} />
+                    <Row label={t('engine.writersDegraded')} value={pool.writers?.degraded} bad={(pool.writers?.degraded || 0) > 0} hint={t('engine.h_writers')} />
                     <Row label={t('engine.writersTotal')} value={pool.writers?.total} />
                 </Section>
 
@@ -145,20 +150,20 @@ export default function Engine() {
                 </Section>
 
                 <Section title={t('engine.natTitle')} data={nat} error={data.errors?.natStun}>
-                    <Row label={t('engine.stunServers')} value={nat.servers ? (nat.servers.live ?? '—') : null} />
+                    <Row label={t('engine.stunServers')} value={nat.servers ? (nat.servers.live ?? '—') : null} hint={t('engine.h_stun')} />
                     <Row label="IPv4" value={nat.reflection?.v4?.addr} />
                     <Row label="IPv6" value={nat.reflection?.v6?.addr} />
                 </Section>
 
                 <Section title={t('engine.selfTitle')} data={self} error={data.errors?.selftest}>
-                    <Row label="KDF" value={self.kdf?.state} bad={self.kdf?.state === 'error'} />
-                    <Row label={t('engine.timeskew')} value={self.timeskew?.state} bad={self.timeskew && self.timeskew.state !== 'ok'} />
+                    <Row label="KDF" value={self.kdf?.state} bad={self.kdf?.state === 'error'} hint={t('engine.h_selfkdf')} />
+                    <Row label={t('engine.timeskew')} value={self.timeskew?.state} bad={self.timeskew && self.timeskew.state !== 'ok'} hint={t('engine.h_skew')} />
                     <Row label="IPv4" value={self.ip?.v4?.state} />
                     <Row label="IPv6" value={self.ip?.v6?.state} />
                 </Section>
 
                 <Section title={t('engine.upsTitle')} data={ups} error={data.errors?.upstreams}>
-                    <Row label={t('engine.upsHealthy')} value={ups.summary ? `${ups.summary.healthy_total ?? '—'} / ${ups.summary.unhealthy_total ?? 0}` : null} />
+                    <Row label={t('engine.upsHealthy')} value={ups.summary ? `${ups.summary.healthy_total ?? '—'} / ${ups.summary.unhealthy_total ?? 0}` : null} hint={t('engine.h_ups')} />
                     {(ups.upstreams || []).slice(0, 8).map((u) => (
                         <Row key={u.upstream_id || u.address} label={`${u.route_kind || ''} ${u.address || u.upstream_id || ''}`}
                              value={`${u.healthy ? '✅' : '❌'} ${u.effective_latency_ms != null ? `${Math.round(u.effective_latency_ms)} мс` : ''}`}

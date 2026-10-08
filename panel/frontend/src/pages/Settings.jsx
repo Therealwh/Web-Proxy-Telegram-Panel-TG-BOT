@@ -34,6 +34,13 @@ const CATEGORIES = (t) => [
         ],
     },
     {
+        id: 'quotareset', icon: '♻️', title: t('settings.catQuotaReset'),
+        fields: [
+            { key: 'quota_reset_mode', label: t('settings.fQrMode'), type: 'select', options: [['off', t('settings.qrOff')], ['daily', t('settings.qrDaily')], ['weekly', t('settings.qrWeekly')], ['monthly', t('settings.qrMonthly')]] },
+            { key: 'quota_reset_day', label: t('settings.fQrDay'), hint: t('settings.fQrDayHint'), type: 'number' },
+        ],
+    },
+    {
         id: 'appearance', icon: '🎨', title: t('settings.catAppearance'),
         fields: [
             { key: 'brand_name', label: t('settings.fBrand') },

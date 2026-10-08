@@ -50,6 +50,7 @@ const clientSchema = z.object({
     ad_tag: z.string().regex(/^[0-9a-f]{32}$/, 'Ad Tag — 32 hex-символа').nullable().optional(),
     web_enabled: z.boolean().optional(),
     mtproto_enabled: z.boolean().optional(),
+    quota_auto_reset: z.boolean().optional(), // панельное поле: участвует в плановом сбросе
     note: z.string().max(500).nullable().optional(),
 });
 
@@ -215,6 +216,7 @@ router.patch('/:id', async (req, res, next) => {
         if (!row) throw httpError(404, 'Клиент не найден');
 
         const data = patchSchema.parse(req.body);
+        const { quota_auto_reset: qar, ...telemtPatch } = data;
 
         // Обновляем в Telemt (null — снять ограничение)
         const patch = {};
@@ -225,7 +227,7 @@ router.patch('/:id', async (req, res, next) => {
         if ('rate_up_bps' in data) patch.rate_limit_up_bps = data.rate_up_bps;
         if ('ad_tag' in data) patch.user_ad_tag = data.ad_tag;
         if (Object.keys(patch).length > 0) {
-            await telemt.patchUser(row.username, patch);
+            await telemt.patchUser(row.username, patch); // quota_auto_reset — локальное поле панели
         }
 
         const fields = [];
@@ -237,6 +239,7 @@ router.patch('/:id', async (req, res, next) => {
                 params.push(data[key]);
             }
         }
+        if ('quota_auto_reset' in data) { fields.push('quota_auto_reset = ?'); params.push(data.quota_auto_reset ? 1 : 0); }
         if ('web_enabled' in data) { fields.push('web_enabled = ?'); params.push(data.web_enabled ? 1 : 0); }
         if ('mtproto_enabled' in data) { fields.push('mtproto_enabled = ?'); params.push(data.mtproto_enabled ? 1 : 0); }
 
