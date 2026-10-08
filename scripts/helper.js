@@ -29,6 +29,7 @@ const SCRIPTS = {
     domain: path.join(SCRIPTS_DIR, 'change-domain.sh'),
     'web-domain': path.join(SCRIPTS_DIR, 'setup-web-domain.sh'),
     'restart-telemt': path.join(SCRIPTS_DIR, 'restart-telemt.sh'),
+    zapret2: path.join(SCRIPTS_DIR, 'zapret2-ctl.sh'),
 };
 
 /** Секрет из install.env (генерируется установщиком/install-helper.sh). */
@@ -99,6 +100,23 @@ const server = http.createServer((req, res) => {
             const line = parsed.frequency === 'off' ? '' : `${cronMap[parsed.frequency]} root ${SCRIPTS.check} >/dev/null 2>&1\n`;
             fs.writeFileSync('/etc/cron.d/tggate-updates', line);
             log(`Cron обновлён: ${parsed.frequency}`);
+            return res.end(JSON.stringify({ ok: true }));
+        }
+
+        // Zapret2: действие строго из белого списка (install/remove/start/stop/restart)
+        if (parsed.key === 'zapret2') {
+            const allowed = ['install', 'remove', 'start', 'stop', 'restart'];
+            const action = String(parsed.action || '');
+            if (!allowed.includes(action)) {
+                res.statusCode = 400;
+                return res.end(JSON.stringify({ ok: false, error: 'bad action' }));
+            }
+            busy = true;
+            log(`zapret2: ${action}`);
+            execFile('bash', [script, action], { timeout: 600000 }, (err, stdout, stderr) => {
+                busy = false;
+                log(`zapret2 ${action} завершено: ${err ? 'ОШИБКА: ' + (stderr || err.message).slice(0, 500) : 'успех'}`);
+            });
             return res.end(JSON.stringify({ ok: true }));
         }
 

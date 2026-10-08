@@ -19,6 +19,7 @@ const ApiKeys = lazy(() => import('./pages/ApiKeys'));
 const Developers = lazy(() => import('./pages/Developers'));
 const Updates = lazy(() => import('./pages/Updates'));
 const Engine = lazy(() => import('./pages/Engine'));
+const Zapret2 = lazy(() => import('./pages/Zapret2'));
 
 /** Обертка: пускает только авторизованных */
 function Protected({ children }) {
@@ -51,6 +52,7 @@ export default function App() {
                 <Route path="developers" element={<Suspense fallback={PageLoader}><Developers /></Suspense>} />
                 <Route path="updates" element={<Suspense fallback={PageLoader}><Updates /></Suspense>} />
                 <Route path="engine" element={<Suspense fallback={PageLoader}><Engine /></Suspense>} />
+                <Route path="zapret2" element={<Suspense fallback={PageLoader}><Zapret2 /></Suspense>} />
                 <Route path="settings" element={<Suspense fallback={PageLoader}><Settings /></Suspense>} />
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />
