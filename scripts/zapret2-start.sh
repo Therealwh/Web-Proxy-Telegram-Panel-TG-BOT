@@ -42,7 +42,7 @@ nft "add chain ip $TABLE postrouting { type filter hook postrouting priority src
 nft "add rule ip $TABLE postrouting $BYPASS_MATCH ct mark $CT_MARK counter accept"
 nft "add rule ip $TABLE postrouting meta mark and $FWMARK == 0x00000000 tcp sport $PORT counter queue num $QNUM bypass"
 
-nft "add chain ip $TABLE prerouting { type route hook input priority mangle; policy accept; }"
+nft "add chain ip $TABLE prerouting { type filter hook input priority mangle; policy accept; }"
 nft "add rule ip $TABLE prerouting $BYPASS_MATCH ct mark $CT_MARK counter accept"
 nft "add rule ip $TABLE prerouting meta mark and $FWMARK == 0x00000000 tcp dport $PORT counter queue num $QNUM bypass"
 
