@@ -281,12 +281,18 @@ async function cabinetView(ctx, selectedId = null) {
         text += `\n👥 <b>Мои прокси (${clients.length}):</b>\n`;
     }
     const kb = new InlineKeyboard();
+const shortDate = (iso) => {
+        const d = new Date(iso);
+        return `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getFullYear()).slice(2)}`;
+    };
+
     for (const c of clients) {
         const until = c.expires_at ? fmtMSK(c.expires_at, false) : '∞';
         const icon = c.status === 'active' ? '🟢' : c.status === 'blocked' ? '🔴' : '⚠️';
         const short = until.replace(':00 МСК', '');
         text += `${icon} <b>${c.username}</b> — до ${short}\n`;
-        kb.text(`${icon} ${c.username}`, `sel:${c.id}`).row();
+        const proto = [c.web_enabled ? '🌐' : '', c.mtproto_enabled ? '🔌' : ''].filter(Boolean).join('') || '🌐';
+        kb.text(`${icon} ${c.username} · ${proto} · ${c.expires_at ? shortDate(c.expires_at) : '∞'}`, `sel:${c.id}`).row();
     }
     kb.text('💳 Пополнить счёт', 'topup').row();
     kb.text('🚀 Тарифы', 'tariffs');
