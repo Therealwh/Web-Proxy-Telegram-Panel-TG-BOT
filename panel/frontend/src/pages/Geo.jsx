@@ -99,21 +99,46 @@ export default function Geo() {
 
             {/* Карта */}
             <Card>
-                <svg viewBox={`0 0 ${W} ${H}`} className="w-full rounded-xl bg-slate-100 dark:bg-slate-900/60">
+                <svg viewBox={`0 0 ${W} ${H}`} className="w-full rounded-xl">
+                <defs>
+                    <radialGradient id="ocean" cx="50%" cy="40%" r="80%">
+                        <stop offset="0%" className="stop-slate-200" stopColor="#e2e8f0" />
+                        <stop offset="100%" className="stop-slate-300" stopColor="#cbd5e1" />
+                    </radialGradient>
+                    <radialGradient id="oceanDark" cx="50%" cy="40%" r="80%">
+                        <stop offset="0%" stopColor="#1e293b" />
+                        <stop offset="100%" stopColor="#0f172a" />
+                    </radialGradient>
+                </defs>
+                <rect x="0" y="0" width={W} height={H} className="dark:hidden" fill="url(#ocean)" />
+                <rect x="0" y="0" width={W} height={H} className="hidden dark:block" fill="url(#oceanDark)" />
                     {WORLD_PATHS.map((d, i) => (
                         <path key={i} d={d} className="fill-slate-200/70 dark:fill-slate-800/80 stroke-slate-300/40 dark:stroke-slate-600/30" strokeWidth="0.5" />
                     ))}
                     {bubbles.map((c) => {
-                        const r = 6 + 18 * Math.sqrt(c.conns / maxConns);
+                        const r = 7 + 20 * Math.sqrt(c.conns / maxConns);
+                        const name = countryName(c.code, c.country);
                         return (
-                            <g key={c.code}>
-                                <circle cx={px(c.lng)} cy={py(c.lat)} r={r + 6}
-                                        className="fill-primary/10" />
+                            <g key={c.code} className="cursor-pointer">
+                                <title>{`${flag(c.code)} ${name} — ${t('geo.connections')}: ${c.conns}, ${t('geo.ipsN', { n: c.ips })}`}</title>
+                                {/* Пульс: расходящееся кольцо */}
+                                <circle cx={px(c.lng)} cy={py(c.lat)} r={r} className="fill-primary/25">
+                                    <animate attributeName="r" values={`${r};${r * 2.2}`} dur="2.2s" repeatCount="indefinite" />
+                                    <animate attributeName="opacity" values="0.55;0" dur="2.2s" repeatCount="indefinite" />
+                                </circle>
+                                {/* Свечение под ядром */}
+                                <circle cx={px(c.lng)} cy={py(c.lat)} r={r + 3} className="fill-primary/20" />
+                                {/* Ядро */}
                                 <circle cx={px(c.lng)} cy={py(c.lat)} r={r}
-                                        className="fill-primary/30 stroke-primary" strokeWidth="1.5" />
-                                <text x={px(c.lng)} y={py(c.lat) - r - 8} textAnchor="middle"
-                                      className="fill-slate-500 dark:fill-slate-300" fontSize="15">
+                                        className="fill-primary/40 stroke-primary hover:fill-primary/60" strokeWidth="2" />
+                                {/* Подписи: сверху флаг+подключения, снизу страна по-русски */}
+                                <text x={px(c.lng)} y={py(c.lat) - r - 10} textAnchor="middle"
+                                      className="fill-slate-600 dark:fill-slate-200" fontSize="16" fontWeight="600">
                                     {flag(c.code)} {c.conns}
+                                </text>
+                                <text x={px(c.lng)} y={py(c.lat) + r + 18} textAnchor="middle"
+                                      className="fill-slate-500 dark:fill-slate-400" fontSize="14">
+                                    {name}
                                 </text>
                             </g>
                         );
