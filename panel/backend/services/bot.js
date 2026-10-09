@@ -173,6 +173,20 @@ function adminKeyboard() {
 }
 
 /** Текст кабинета + клавиатура. */
+async /** Красит inline-кнопки: [подстрока текста, style] (Bot API 9.4+, поле style) */
+function styleButtons(kb, mapping) {
+    try {
+        for (const row of kb.inline_keyboard || []) {
+            for (const btn of row) {
+                for (const [needle, style] of mapping) {
+                    if (btn.text && btn.text.includes(needle)) btn.style = style;
+                }
+            }
+        }
+    } catch { /* некритично */ }
+    return kb;
+}
+
 async function cabinetView(ctx) {
     const clients = db.prepare(
         'SELECT * FROM clients WHERE telegram_id = ? ORDER BY id'
@@ -227,7 +241,7 @@ async function cabinetView(ctx) {
             const parts = [`<b>${ips.length}</b> из ${c.max_ips ?? '∞'}`];
             if (types.length) parts.push(types.join(' · '));
             else if (ips.length > 0) parts.push('🔌 MTProto');
-            text += `&nbsp;&nbsp;&nbsp;📱 Устройства: ${parts.join(' — ')}
+            text += `  └ 📱 Устройства: ${parts.join(' — ')}
 `;
         }
         text += `${icon} <b>${c.username}</b> — до ${until}\n`;
@@ -529,6 +543,7 @@ async function createAndSendDeposit(ctx, amount) {
             const kb = new InlineKeyboard()
                 .url(label, pay.url).row()
                 .text('🏦 Карта админа', `manualpay:${paymentId}`);
+            try { for (const row of kb.inline_keyboard) for (const btn of row) if (btn.url && btn.url.startsWith('https://t.me/')) btn.style = 'success'; } catch { /* ignore */ }
             await ctx.reply(`🧾 Счёт #${paymentId} на ${amount} ${currencySign(settings.currency)}.\nВыберите способ оплаты:`, { reply_markup: kb });
         } else {
             await sendManualInstructions(ctx, paymentId, `${amount} ${currencySign(settings.currency)}`);
@@ -853,6 +868,7 @@ async function start() {
             .text(`100 ${sign}`, 'deposit:100').text(`300 ${sign}`, 'deposit:300').row()
             .text(`500 ${sign}`, 'deposit:500').text(`1000 ${sign}`, 'deposit:1000').row()
             .text('✏️ Своя сумма', 'deposit:custom');
+        try { for (const row of kb.inline_keyboard) for (const btn of row) if (btn.callback_data?.startsWith('deposit:')) btn.style = 'primary'; } catch { /* ignore */ }
         await ctx.reply('💳 <b>Пополнение счёта</b>\n\nВыберите сумму:', {
             parse_mode: 'HTML', reply_markup: kb,
         });
