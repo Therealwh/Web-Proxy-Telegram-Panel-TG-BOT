@@ -13,6 +13,8 @@ set -euo pipefail
 # Защита от двойного запуска: flock держится, пока скрипт жив;
 # при смерти процесса блокировка снимается сама
 exec 9>/run/tggate-panel-update.lock
+# В detached-юните (systemd-run) окружение чистое — npm требует HOME для кэша
+export HOME="${HOME:-/root}"
 flock -n 9 || { echo "[update] Другое обновление уже выполняется" >&2; exit 2; }
 
 source /etc/tggate/install.env
