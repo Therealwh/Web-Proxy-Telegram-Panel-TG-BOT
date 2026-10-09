@@ -6,7 +6,7 @@ import {
     PieChart, Pie, Cell, Legend,
 } from 'recharts';
 import {
-    AlertTriangle, CheckCircle2, Lock, Signal, Timer, Wallet,
+    AlertTriangle, CheckCircle2, Lock, RefreshCw, Signal, Timer, Wallet,
 } from 'lucide-react';
 import { get, post } from '../api';
 import { toast, useLangStore } from '../store';
