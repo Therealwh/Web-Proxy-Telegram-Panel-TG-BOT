@@ -257,7 +257,7 @@ async function cabinetView(ctx, selectedId = null) {
             if (links.web_https) text += `• Web Proxy — <a href="${links.web_https}">подключить</a>\n`;
             if (links.mtproto_https) text += `• MTProto — <a href="${links.mtproto_https}">подключить</a>\n`;
         }
-        kb.text('♻️ Продлить', `renew:${selected.id}`);
+        kb.text('♻️ Продлить', `renew:${selected.id}`, { style: 'success' });
         if (settings.auto_renew_enabled) {
             kb.text(selected.auto_renew ? '♻️ Автопродление: ✅' : '♻️ Автопродление: ❌', `autorenew:${selected.id}`);
         }
