@@ -241,6 +241,20 @@ export default function Dashboard() {
     const loadPayments = () => get('/payments').then(setPay).catch(() => {});
 
     // Подтвердить платёж — выдать доступ
+    const [restarting, setRestarting] = useState('');
+    const restartSvc = async (what, conf) => {
+        if (!confirm(conf)) return;
+        setRestarting(what);
+        try {
+            await post(`/stats/services/restart/${what}`);
+            toast.success(t('dashboard.restarted'));
+        } catch (e) {
+            toast.error(e.message);
+        } finally {
+            setRestarting('');
+        }
+    };
+
     const approvePayment = async (id) => {
         try {
             await post(`/payments/${id}/confirm`);
@@ -325,6 +339,19 @@ export default function Dashboard() {
                         <div className="text-[11px] text-slate-500 dark:text-slate-400">{t('dashboard.statOnline')}</div>
                         <div className="font-bold">{active?.active_total ?? '—'}</div>
                     </div>
+                </div>
+                <div className="flex flex-wrap gap-2 w-full lg:w-auto">
+                    {[
+                        ['telemt', t('dashboard.restartTelemt'), t('dashboard.rConfirmT'), 'btn-secondary'],
+                        ['panel', t('dashboard.restartPanel'), t('dashboard.rConfirmP'), 'btn-secondary'],
+                        ['all', t('dashboard.restartAll'), t('dashboard.rConfirmA'), 'btn-danger'],
+                    ].map(([what, label, conf, cls]) => (
+                        <button key={what} className={cls + ' !min-h-0 !py-1.5 !px-3 text-xs'}
+                                disabled={restarting === what}
+                                onClick={() => restartSvc(what, conf)}>
+                            <RefreshCw size={13} className={restarting === what ? 'animate-spin' : ''} /> {label}
+                        </button>
+                    ))}
                 </div>
             </div>
 
@@ -604,6 +631,33 @@ export default function Dashboard() {
                     </Card>
 
                     {/* Сервисы */}
+                    {/* Нагрузка сервера */}
+                    <Card title={t('dashboard.loadTitle')} subtitle={t('dashboard.loadSubtitle')}>
+                        {live ? (
+                            <div className="space-y-3">
+                                <div>
+                                    <div className="flex justify-between text-sm mb-1">
+                                        <span className="text-slate-500">{t('dashboard.loadCpu')}</span>
+                                        <span className="font-medium">{live.cpu}%</span>
+                                    </div>
+                                    <ProgressBar percent={live.cpu} />
+                                </div>
+                                <div>
+                                    <div className="flex justify-between text-sm mb-1">
+                                        <span className="text-slate-500">{t('dashboard.loadRam')}</span>
+                                        <span className="font-medium">{live.ram?.percent ?? '—'}%</span>
+                                    </div>
+                                    <ProgressBar percent={live.ram?.percent ?? 0} />
+                                    <div className="text-xs text-slate-400 mt-1">
+                                        {t('dashboard.loadRamSub', { u: formatBytes(live.ram?.used || 0, lang), t: formatBytes(live.ram?.total || 0, lang) })}
+                                    </div>
+                                </div>
+                            </div>
+                        ) : (
+                            <p className="text-sm text-slate-500 py-2 text-center">—</p>
+                        )}
+                    </Card>
+
                     <Card title={t('dashboard.svcTitle')} subtitle={t('dashboard.svcSubtitle')}>
                         <div className="space-y-2">
                             {['telemt', 'panel', 'nginx', 'caddy'].map((k) => (

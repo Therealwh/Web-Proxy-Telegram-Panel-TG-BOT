@@ -29,6 +29,8 @@ const SCRIPTS = {
     domain: path.join(SCRIPTS_DIR, 'change-domain.sh'),
     'web-domain': path.join(SCRIPTS_DIR, 'setup-web-domain.sh'),
     'restart-telemt': path.join(SCRIPTS_DIR, 'restart-telemt.sh'),
+    'restart-panel': path.join(SCRIPTS_DIR, 'restart-panel.sh'),
+    'restart-all': path.join(SCRIPTS_DIR, 'restart-all.sh'),
     zapret2: path.join(SCRIPTS_DIR, 'zapret2-ctl.sh'),
 };
 

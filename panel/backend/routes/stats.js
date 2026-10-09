@@ -322,5 +322,44 @@ router.get('/events', (req, res) => {
     res.json({ events: rows });
 });
 
+
+// --- Службы: статус + рестарт через root-хелпер ---
+const SERVICE_KEYS = { telemt: 'restart-telemt', panel: 'restart-panel', all: 'restart-all' };
+
+router.get('/services/status', (req, res) => {
+    const out = {};
+    for (const svc of ['telemt', 'tggate-panel', 'nginx', 'caddy']) {
+        try {
+            execSync(`systemctl is-active --quiet ${svc}`, { stdio: 'ignore', timeout: 5000 });
+            out[svc] = true;
+        } catch {
+            out[svc] = false;
+        }
+    }
+    res.json({ telemt: out.telemt || false, panel: out['tggate-panel'] || false, nginx: out.nginx || false, caddy: out.caddy || false });
+});
+
+router.post('/services/restart/:what', async (req, res, next) => {
+    try {
+        const what = req.params.what;
+        const key = SERVICE_KEYS[what];
+        if (!key) throw httpError(400, 'Неизвестная цель рестарта');
+        if (!config.helperUrl || !config.helperSecret) {
+            throw httpError(500, 'Хелпер не настроен. Выполните на сервере: bash /opt/tggate/scripts/install-helper.sh');
+        }
+        const r = await fetch(`${config.helperUrl}/run`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ secret: config.helperSecret, key }),
+            signal: AbortSignal.timeout(15000),
+        });
+        if (!r.ok) throw httpError(502, `Хелпер: HTTP ${r.status}`);
+        logger.info(`Рестарт через панель: ${what}`);
+        res.json({ ok: true });
+    } catch (err) {
+        next(err);
+    }
+});
+
 module.exports = router;
 
