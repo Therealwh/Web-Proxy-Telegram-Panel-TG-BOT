@@ -796,6 +796,7 @@ curl -X POST -H "Authorization: Bearer tgk_ваш_ключ" \\
         countries: 'Стран',
         uniqueIps: 'Уникальных IP',
         connections: 'Подключений',
+        showAll: '← Все страны',
         listTitle: 'Рейтинг стран',
         empty: 'Нет данных',
         ipsN: '{n} IP',
