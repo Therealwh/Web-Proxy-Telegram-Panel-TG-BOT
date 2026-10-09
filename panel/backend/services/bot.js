@@ -173,7 +173,7 @@ function adminKeyboard() {
 }
 
 /** Текст кабинета + клавиатура. */
-function cabinetView(ctx) {
+async function cabinetView(ctx) {
     const clients = db.prepare(
         'SELECT * FROM clients WHERE telegram_id = ? ORDER BY id'
     ).all(ctx.from.id);
@@ -189,9 +189,47 @@ function cabinetView(ctx) {
     const kb = new InlineKeyboard();
     const settings = getAll();
     const maskDomain = settings.mask_domain;
+
+    // 📱 Устройства: активные IP из Telemt + типы из WEB-сессий (user_agent)
+    const activeMap = new Map();   // username -> [ip]
+    const webTypes = new Map();    // username -> Set<тип>
+    try {
+        const telemt = require('./telemtApi');
+        const [ipsRaw, sessionsRaw] = await Promise.all([
+            telemt.getUsersActiveIps().catch(() => []),
+            telemt.getWebSessions({ limit: 200 }).catch(() => []),
+        ]);
+        for (const u of ipsRaw || []) activeMap.set(u.username, u.active_ips || []);
+        const uaType = (ua) => {
+            const s = String(ua || '');
+            if (/iPhone|iPad/i.test(s)) return '📱 iOS';
+            if (/Android/i.test(s)) return '🤖 Android';
+            if (/Windows/i.test(s)) return '🖥 Windows';
+            if (/Macintosh|Mac OS/i.test(s)) return '💻 macOS';
+            if (/Linux/i.test(s)) return '🐧 Linux';
+            return null;
+        };
+        const sessList = Array.isArray(sessionsRaw) ? sessionsRaw : sessionsRaw?.sessions || [];
+        for (const s of sessList) {
+            if (!s.user) continue;
+            const type = uaType(s.user_agent);
+            if (!type) continue;
+            if (!webTypes.has(s.user)) webTypes.set(s.user, new Set());
+            webTypes.get(s.user).add(type);
+        }
+    } catch { /* Telemt недоступен — строка устройств покажет 0 */ }
     for (const c of clients) {
         const until = c.expires_at ? fmtMSK(c.expires_at, false) : '∞';
         const icon = c.status === 'active' ? '🟢' : '🔴';
+        { // 📱 Устройства
+            const ips = activeMap.get(c.username) || [];
+            const types = [...(webTypes.get(c.username) || [])];
+            const parts = [`<b>${ips.length}</b> из ${c.max_ips ?? '∞'}`];
+            if (types.length) parts.push(types.join(' · '));
+            else if (ips.length > 0) parts.push('🔌 MTProto');
+            text += `&nbsp;&nbsp;&nbsp;📱 Устройства: ${parts.join(' — ')}
+`;
+        }
         text += `${icon} <b>${c.username}</b> — до ${until}\n`;
         const links = clientLinks(c, maskDomain);
         if (links.web_https) kb.url('🌐 Подключить ВЕБ прокси', links.web_https);
@@ -666,14 +704,14 @@ async function start() {
     );
 
     bot.hears('📱 Личный кабинет', async (ctx) => {
-        const view = cabinetView(ctx);
+        const view = await cabinetView(ctx);
         await ctx.reply(view.text, { parse_mode: 'HTML', reply_markup: view.kb, disable_web_page_preview: true });
     });
 
     // «⬅️ Назад» из экранов кабинета
     bot.callbackQuery('cabinet', async (ctx) => {
         await ctx.answerCallbackQuery();
-        const view = cabinetView(ctx);
+        const view = await cabinetView(ctx);
         await ctx.reply(view.text, { parse_mode: 'HTML', reply_markup: view.kb, disable_web_page_preview: true });
     });
 
@@ -799,7 +837,7 @@ async function start() {
         const next = client.auto_renew ? 0 : 1;
         db.prepare('UPDATE clients SET auto_renew = ? WHERE id = ?').run(next, client.id);
         await ctx.answerCallbackQuery(next ? '✅ Автопродление включено' : 'Автопродление выключено');
-        const view = cabinetView(ctx);
+        const view = await cabinetView(ctx);
         await ctx.reply(view.text, { parse_mode: 'HTML', reply_markup: view.kb, disable_web_page_preview: true });
     });
 
@@ -1101,7 +1139,7 @@ async function start() {
     });
 
     bot.callbackQuery('my', async (ctx) => {
-        const view = cabinetView(ctx);
+        const view = await cabinetView(ctx);
         await ctx.answerCallbackQuery();
         await ctx.reply(view.text, { parse_mode: 'HTML', reply_markup: view.kb, disable_web_page_preview: true });
     });
