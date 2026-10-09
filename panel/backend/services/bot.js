@@ -187,7 +187,7 @@ function styleButtons(kb, mapping) {
     return kb;
 }
 
-async function cabinetView(ctx) {
+async function cabinetView(ctx, selectedId = null) {
     const clients = db.prepare(
         'SELECT * FROM clients WHERE telegram_id = ? ORDER BY id'
     ).all(ctx.from.id);
@@ -199,14 +199,12 @@ async function cabinetView(ctx) {
         return { text: '📱 <b>Личный кабинет</b>\n\nУ вас пока нет прокси.\nВыберите тариф или возьмите бесплатный тест!', kb };
     }
 
-    let text = `📱 <b>Личный кабинет</b>\n💰 Баланс: <b>${balance.toFixed(2)}</b>\n\n<b>Мои прокси:</b>\n`;
-    const kb = new InlineKeyboard();
     const settings = getAll();
     const maskDomain = settings.mask_domain;
 
-    // 📱 Устройства: активные IP из Telemt + типы из WEB-сессий (user_agent)
-    const activeMap = new Map();   // username -> [ip]
-    const webTypes = new Map();    // username -> Set<тип>
+    // Данные устройств (активные IP + типы из WEB-сессий) — только для выбранного
+    let activeMap = new Map();
+    let webTypes = new Map();
     try {
         const telemt = require('./telemtApi');
         const [ipsRaw, sessionsRaw] = await Promise.all([
@@ -216,7 +214,8 @@ async function cabinetView(ctx) {
         for (const u of ipsRaw || []) activeMap.set(u.username, u.active_ips || []);
         const uaType = (ua) => {
             const s = String(ua || '');
-            if (/iPhone|iPad/i.test(s)) return '📱 iOS';
+            if (/iPhone|iPad/i.test(s)) return '📱 iPhone';
+            if (/iPad/i.test(s)) return '📱 iPad';
             if (/Android/i.test(s)) return '🤖 Android';
             if (/Windows/i.test(s)) return '🖥 Windows';
             if (/Macintosh|Mac OS/i.test(s)) return '💻 macOS';
@@ -231,31 +230,61 @@ async function cabinetView(ctx) {
             if (!webTypes.has(s.user)) webTypes.set(s.user, new Set());
             webTypes.get(s.user).add(type);
         }
-    } catch { /* Telemt недоступен — строка устройств покажет 0 */ }
+    } catch { /* Telemt недоступен */ }
+
+    const selected = clients.find((c) => c.id === selectedId) || null;
+
+    // ── Экран выбранного прокси: действия по нему ──
+    if (selected) {
+        const kb = new InlineKeyboard();
+        const links = clientLinks(selected, maskDomain);
+        const until = selected.expires_at ? fmtMSK(selected.expires_at, false) : '∞';
+        const statusIcon = selected.status === 'active' ? '🟢 Активен' : selected.status === 'blocked' ? '🔴 Заблокирован' : '⚠️ Истёк';
+        let text =
+            `📱 <b>${selected.username}</b>\n${statusIcon}\n` +
+            `📅 Действует до: <b>${until}</b>\n` +
+            `💰 Баланс этого прокси: <b>${(selected.balance || 0).toFixed(2)}</b>\n`;
+        if (selected.status === 'active') {
+            const ips = activeMap.get(selected.username) || [];
+            const types = [...(webTypes.get(selected.username) || [])];
+            text += `\n📱 <b>Устройства:</b> ${ips.length} из ${selected.max_ips ?? '∞'}\n`;
+            if (types.length) {
+                text += types.map((ty) => `&nbsp;&nbsp;${ty}`).join('\n') + '\n';
+            } else if (ips.length > 0) {
+                text += '&nbsp;&nbsp;🔌 MTProto-клиент\n';
+            }
+            text += `\n🔗 <b>Подключение:</b>\n`;
+            if (links.web_https) text += `• Web Proxy — <a href="${links.web_https}">подключить</a>\n`;
+            if (links.mtproto_https) text += `• MTProto — <a href="${links.mtproto_https}">подключить</a>\n`;
+        }
+        kb.text('♻️ Продлить', `renew:${selected.id}`);
+        if (settings.auto_renew_enabled) {
+            kb.text(selected.auto_renew ? '♻️ Автопродление: ✅' : '♻️ Автопродление: ❌', `autorenew:${selected.id}`);
+        }
+        kb.row();
+        kb.text('⬅️ Все мои прокси', 'my');
+        styleButtons(kb, [['Продлить', 'primary'], ['Автопродление', 'primary']]);
+        return { text, kb, disable_web_page_preview: true };
+    }
+
+    // ── Список всех прокси: компактно, без кнопок ──
+    let text = `📱 <b>Личный кабинет</b>\n💰 Баланс: <b>${balance.toFixed(2)}</b>\n`;
+    if (activeMap.size > 0 || clients.some((c) => c.status === 'active')) {
+        text += `\n👥 <b>Мои прокси (${clients.length}):</b> — нажми, чтобы управлять\n`;
+    } else {
+        text += `\n👥 <b>Мои прокси (${clients.length}):</b>\n`;
+    }
+    const kb = new InlineKeyboard();
     for (const c of clients) {
         const until = c.expires_at ? fmtMSK(c.expires_at, false) : '∞';
-        const icon = c.status === 'active' ? '🟢' : '🔴';
-        { // 📱 Устройства
-            const ips = activeMap.get(c.username) || [];
-            const types = [...(webTypes.get(c.username) || [])];
-            const parts = [`<b>${ips.length}</b> из ${c.max_ips ?? '∞'}`];
-            if (types.length) parts.push(types.join(' · '));
-            else if (ips.length > 0) parts.push('🔌 MTProto');
-            text += `  └ 📱 Устройства: ${parts.join(' — ')}
-`;
-        }
-        text += `${icon} <b>${c.username}</b> — до ${until}\n`;
-        const links = clientLinks(c, maskDomain);
-        if (links.web_https) kb.url('🌐 Подключить ВЕБ прокси', links.web_https);
-        if (links.mtproto_https) kb.url('🔌 Подключить MTProto прокси', links.mtproto_https);
-        if (links.web_https || links.mtproto_https) kb.row();
-        kb.text(`♻️ Продлить: ${c.username}`, `renew:${c.id}`).row();
-        if (settings.auto_renew_enabled) {
-            kb.text(c.auto_renew ? '♻️ Автопродление: ✅ вкл' : '♻️ Автопродление: ❌ выкл', `autorenew:${c.id}`).row();
-        }
+        const icon = c.status === 'active' ? '🟢' : c.status === 'blocked' ? '🔴' : '⚠️';
+        const short = until.replace(':00 МСК', '');
+        text += `${icon} <b>${c.username}</b> — до ${short}\n`;
+        kb.text(`${icon} ${c.username}`, `sel:${c.id}`).row();
     }
     kb.text('💳 Пополнить счёт', 'topup').row();
     kb.text('🚀 Тарифы', 'tariffs');
+    styleButtons(kb, [['Пополнить счёт', 'danger']]);
     return { text, kb };
 }
 
@@ -727,6 +756,12 @@ async function start() {
     bot.callbackQuery('cabinet', async (ctx) => {
         await ctx.answerCallbackQuery();
         const view = await cabinetView(ctx);
+        await ctx.reply(view.text, { parse_mode: 'HTML', reply_markup: view.kb, disable_web_page_preview: true });
+    });
+
+    bot.callbackQuery(/^sel:(\d+)$/, async (ctx) => {
+        await ctx.answerCallbackQuery();
+        const view = await cabinetView(ctx, Number(ctx.match[1]));
         await ctx.reply(view.text, { parse_mode: 'HTML', reply_markup: view.kb, disable_web_page_preview: true });
     });
 
