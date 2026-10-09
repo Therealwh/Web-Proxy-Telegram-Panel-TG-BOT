@@ -136,7 +136,7 @@ export default function Updates() {
         get('/updates/status').then(setStatus).catch((e) => toast.error(e.message));
         get('/updates/history').then((d) => setHistory(d.history)).catch(() => {});
     };
-    useEffect(() => { load(); }, [$1]);
+    useEffect(() => { load(); }, [[]]);
 
     // Живой прогресс: опрос каждые 2.5 секунды
     useEffect(() => {
@@ -175,7 +175,7 @@ export default function Updates() {
             setReleases({ panel: p.releases, telemt: tm.releases });
         }).catch(() => {}).finally(() => setRelLoading(false));
     };
-    useEffect(() => { loadReleases(); }, [$1]);
+    useEffect(() => { loadReleases(); }, [[]]);
 
     const run = async (action, version, label) => {
         setBusy(action);
