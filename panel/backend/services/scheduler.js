@@ -409,6 +409,36 @@ function checkQuotaReset() {
     logger.info(`Плановый сброс квот: ${processed} клиентов (период ${periodKey})`);
 }
 
+
+/** Синхронизация лимитов из Telemt: заполняет пустые max_ips/quota_bytes
+ *  (клиенты, купленные/продлённые до того, как панель начала их сохранять). */
+async function syncLimits() {
+    try {
+        const telemt = require('./telemtApi');
+        const users = await telemt.listUsers();
+        if (!Array.isArray(users)) return;
+        const sel = db.prepare('SELECT id, max_ips, quota_bytes FROM clients WHERE username = ?');
+        const upd = db.prepare('UPDATE clients SET max_ips = ?, quota_bytes = ? WHERE id = ?');
+        let n = 0;
+        for (const u of users) {
+            if (!u.username) continue;
+            const row = sel.get(u.username);
+            if (!row) continue;
+            const tIps = u.max_unique_ips ?? null;
+            const tQuota = u.data_quota_bytes ?? null;
+            const needIps = row.max_ips == null && tIps != null;
+            const needQuota = row.quota_bytes == null && tQuota != null;
+            if (needIps || needQuota) {
+                upd.run(needIps ? tIps : row.max_ips, needQuota ? tQuota : row.quota_bytes, row.id);
+                n += 1;
+            }
+        }
+        if (n > 0) logger.info(`Лимиты синхронизированы из Telemt: ${n} клиентов`);
+    } catch (e) {
+        logger.warn('Синхронизация лимитов не удалась', { error: e.message });
+    }
+}
+
 /** Запускает все фоновые задачи с их интервалами. */
 function start() {
     // Проверка доступности каждые 5 минут
@@ -437,7 +467,9 @@ function start() {
         disableExpired().catch(() => {});
         cleanupTestClients().catch(() => {});
         try { checkDisk(); } catch (e) { logger.error(e); }
+        syncLimits().catch((e) => logger.warn('syncLimits', { error: e.message }));
         try { checkQuotaReset(); } catch (e) { logger.error(e); }
+        syncLimits().catch((e) => logger.warn('syncLimits', { error: e.message }));
         autoRenew().catch((e) => logger.error('Ошибка автопродления', { error: e.message }));
         try { testFollowup(); } catch (e) { logger.error(e); }
     }, 60 * 60 * 1000).unref();
