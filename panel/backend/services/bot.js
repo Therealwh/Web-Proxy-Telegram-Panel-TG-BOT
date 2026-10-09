@@ -173,7 +173,7 @@ function adminKeyboard() {
 }
 
 /** Текст кабинета + клавиатура. */
-async /** Красит inline-кнопки: [подстрока текста, style] (Bot API 9.4+, поле style) */
+/** Красит inline-кнопки: [подстрока текста, style] (Bot API 9.4+, поле style) */
 function styleButtons(kb, mapping) {
     try {
         for (const row of kb.inline_keyboard || []) {
