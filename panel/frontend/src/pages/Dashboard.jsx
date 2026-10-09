@@ -151,6 +151,30 @@ export default function Dashboard() {
     /** Действие без HTTP-метода */
     const actOnly = (a) => String(a || '').replace(/^(GET|POST|PUT|PATCH|DELETE)\s+/i, '');
 
+    /** Человекочитаемое событие из action/details аудита */
+    const eventInfo = (e) => {
+        const parts = String(e.action || '').split(' ');
+        const method = parts[0];
+        const path = parts.slice(1).join(' ') || e.action;
+        let d = {};
+        try { d = JSON.parse(e.details || '{}'); } catch { /* нет деталей */ }
+        if (path.startsWith('/api/updates/panel')) return d.version ? t('dashboard.evUpdPanel', { v: d.version }) : t('dashboard.evUpdCheck');
+        if (path.startsWith('/api/updates/telemt')) return d.version ? t('dashboard.evUpdTelemt', { v: d.version }) : t('dashboard.evUpdCheck');
+        if (path.startsWith('/api/updates/check')) return t('dashboard.evUpdCheck');
+        if (path.startsWith('/api/updates')) return t('dashboard.evUpdCheck');
+        if (path.startsWith('/api/clients/bulk')) return t('dashboard.evBulk', { n: Array.isArray(d.ids) ? d.ids.length : '—' });
+        if (path.endsWith('/rotate')) return t('dashboard.evRotate', { u: d.username || '—' });
+        if (path.endsWith('/reset-quota')) return t('dashboard.evQuotaReset', { u: d.username || '—' });
+        if (path.startsWith('/api/clients/') && method === 'DELETE') return t('dashboard.evUserDeleted', { u: d.username || '—' });
+        if (path.startsWith('/api/clients/') && method === 'PATCH') return t('dashboard.evUserUpdated', { u: d.username || '—' });
+        if (path.startsWith('/api/clients') && method === 'POST') return t('dashboard.evUserCreated', { u: d.username || '—' });
+        if (path.startsWith('/api/settings/domain')) return t('dashboard.evDomain');
+        if (path.startsWith('/api/settings')) return t('dashboard.evSettings');
+        if (path.startsWith('/api/bot')) return t('dashboard.evBot');
+        if (path.startsWith('/api/zapret2')) return t('dashboard.evZapret', { a: path.split('/').pop() });
+        return path;
+    };
+
     /** Время HH:MM */
     const hhmm = (iso) => new Date(iso).toLocaleTimeString(lang === 'en' ? 'en-GB' : 'ru-RU', {
         hour: '2-digit', minute: '2-digit',
@@ -498,11 +522,11 @@ export default function Dashboard() {
                                         <span className="mt-1.5 w-2.5 h-2.5 rounded-full bg-primary/70 ring-4 ring-primary/10 shrink-0" />
                                         <div className="min-w-0 flex-1">
                                             <div className="flex items-baseline justify-between gap-2">
-                                                <span className="text-sm font-medium truncate">{actOnly(e.action)}</span>
+                                                <span className="text-sm font-medium truncate">{eventInfo(e)}</span>
                                                 <span className="text-[11px] text-slate-400 shrink-0">{hhmm(e.created_at)}</span>
                                             </div>
                                             <div className="text-xs text-slate-500 dark:text-slate-400 truncate">
-                                                {e.details ? `${e.details} · ` : ''}{ago(e.created_at)}
+                                                {ago(e.created_at)}
                                             </div>
                                         </div>
                                     </div>

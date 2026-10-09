@@ -5,6 +5,7 @@
  */
 
 const express = require('express');
+const fs = require('fs');
 const { execSync } = require('child_process');
 const db = require('../db');
 const config = require('../config');
@@ -90,13 +91,15 @@ async function sslExpiry() {
  */
 function serviceUptime(name) {
     try {
-        const out = execSync(
-            `LC_ALL=C systemctl show ${name} -p ActiveEnterTimestamp --value`,
+        // ActiveEnterTimestampMonotonic — микросекунды от загрузки ОС:
+        // не зависит от локали и парсинга дат (см. 1.11.4)
+        const mono = Number(execSync(
+            `LC_ALL=C systemctl show ${name} -p ActiveEnterTimestampMonotonic --value`,
             { timeout: 5000 }
-        ).toString().trim();
-        if (!out) return null;
-        const start = new Date(out).getTime();
-        if (Number.isNaN(start)) return null;
+        ).toString().trim());
+        if (!Number.isFinite(mono)) return null;
+        const upUs = parseFloat(fs.readFileSync('/proc/uptime', 'utf8')) * 1e6;
+        return Math.max(0, Math.round((upUs - mono) / 1e6));
         return Math.max(0, Math.floor((Date.now() - start) / 1000));
     } catch {
         return null;

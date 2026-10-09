@@ -4,6 +4,8 @@ import { Globe2, RefreshCw } from 'lucide-react';
 import { get } from '../api';
 import { useT } from '../i18n';
 import { Card, Skeleton, PageHeader } from '../components/ui';
+import { feature } from 'topojson-client';
+import worldData from '../assets/world-110m.json';
 
 /** Флаг-эмодзи из ISO2 кода */
 function flag(iso) {
@@ -28,13 +30,35 @@ const W = 1000, H = 500;
 const px = (lng) => ((Number(lng) + 180) / 360) * W;
 const py = (lat) => ((78 - Number(lat)) / 136) * H;
 
-// Фоновая сетка точек (абстрактная «карта мира»)
-const GRID = [];
-for (let y = 10; y < H; y += 22) {
-    for (let x = 10; x < W; x += 22) {
-        GRID.push([x, y]);
+const project = ([lng, lat]) => [((lng + 180) / 360) * W, ((78 - lat) / 136) * H];
+
+// Контуры стран из world-atlas (110m) — строим один раз
+const WORLD_PATHS = (() => {
+    try {
+        const fc = feature(worldData, worldData.objects.countries);
+        const paths = [];
+        for (const f of fc.features) {
+            if (f.id === '010') continue; // Антарктида
+            const geom = f.geometry;
+            if (!geom) continue;
+            const polys = geom.type === 'Polygon' ? [geom.coordinates] : geom.coordinates;
+            let d = '';
+            for (const poly of polys) {
+                for (const ring of poly) {
+                    ring.forEach(([lng, lat], i) => {
+                        const [x, y] = project([lng, lat]);
+                        d += (i === 0 ? 'M' : 'L') + x.toFixed(1) + ',' + y.toFixed(1);
+                    });
+                    d += 'Z';
+                }
+            }
+            if (d) paths.push(d);
+        }
+        return paths;
+    } catch {
+        return [];
     }
-}
+})();
 
 const RANGES = ['24h', '7d', '30d'];
 
