@@ -130,7 +130,7 @@ function isAdmin(ctx) {
 function mainReplyKeyboard(ctx) {
     const kb = new Keyboard().resized().persistent()
         .text('🚀 Тарифы').row()
-        .text('🎁 Тест 3 часа').text('📱 Личный кабинет').row()
+        .text('🎁 Тест 3 часа').text('📱 Личный кабинет', { style: 'primary' }).row()
         .text('🤝 Рефералы').text('🛟 Поддержка').row()
         .text('📱 Как подключить').row();
     if (isAdmin(ctx)) kb.text('👑 Админ-панель').row();
@@ -249,9 +249,9 @@ async function cabinetView(ctx, selectedId = null) {
             const types = [...(webTypes.get(selected.username) || [])];
             text += `\n📱 <b>Устройства:</b> ${ips.length} из ${selected.max_ips ?? '∞'}\n`;
             if (types.length) {
-                text += types.map((ty) => `&nbsp;&nbsp;${ty}`).join('\n') + '\n';
+                text += types.map((ty) => `   ${ty}`).join('\n') + '\n';
             } else if (ips.length > 0) {
-                text += '&nbsp;&nbsp;🔌 MTProto-клиент\n';
+                text += '   🔌 MTProto-клиент\n';
             }
             text += `\n🔗 <b>Подключение:</b>\n`;
             if (links.web_https) text += `• Web Proxy — <a href="${links.web_https}">подключить</a>\n`;
@@ -674,6 +674,19 @@ async function start() {
         return next();
     });
 
+    // ═══ 0. Своя сумма пополнения — до гейта подписки, чтобы текст не проглатывался ═══
+    bot.on('message:text', async (ctx, next) => {
+        if (!depositCustom.has(ctx.from.id)) return next();
+        logger.info('deposit: получена сумма', { tgId: ctx.from.id, text: ctx.message.text });
+        const amount = parseInt(String(ctx.message.text).trim(), 10);
+        if (!Number.isFinite(amount) || amount <= 0 || amount > 1000000) {
+            return ctx.reply('⚠️ Введите сумму одним числом от 1 до 1 000 000, например: 250');
+        }
+        depositCustom.delete(ctx.from.id);
+        logger.info('deposit: создаю счёт', { tgId: ctx.from.id, amount });
+        await createAndSendDeposit(ctx, amount);
+    });
+
     // ═══ 1. ГЕЙТ ПОДПИСКИ — первым ═══
     bot.use(async (ctx, next) => {
         const s = getBotSettings();
@@ -913,18 +926,6 @@ async function start() {
         await ctx.answerCallbackQuery();
         depositCustom.set(ctx.from.id, true);
         await ctx.reply('✏️ Введите сумму пополнения одним числом (например: 250):');
-    });
-
-    // Своя сумма пополнения: ждём число после кнопки «Своя сумма»
-    bot.on('message:text', async (ctx, next) => {
-        if (!depositCustom.has(ctx.from.id)) return next();
-        const amount = parseInt(String(ctx.message.text).trim(), 10);
-        if (!Number.isFinite(amount) || amount <= 0 || amount > 1000000) {
-            return ctx.reply('⚠️ Введите сумму одним числом от 1 до 1 000 000, например: 250');
-        }
-        depositCustom.delete(ctx.from.id);
-        await ctx.answerCallbackQuery().catch(() => {});
-        await createAndSendDeposit(ctx, amount);
     });
 
     bot.callbackQuery(/^deposit:(\d+)$/, async (ctx) => {
