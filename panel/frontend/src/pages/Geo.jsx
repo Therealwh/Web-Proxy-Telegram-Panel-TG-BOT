@@ -100,8 +100,8 @@ export default function Geo() {
             {/* Карта */}
             <Card>
                 <svg viewBox={`0 0 ${W} ${H}`} className="w-full rounded-xl bg-slate-100 dark:bg-slate-900/60">
-                    {GRID.map(([x, y], i) => (
-                        <circle key={i} cx={x} cy={y} r="1.4" className="fill-slate-300/40 dark:fill-slate-700/40" />
+                    {WORLD_PATHS.map((d, i) => (
+                        <path key={i} d={d} className="fill-slate-200/70 dark:fill-slate-800/80 stroke-slate-300/40 dark:stroke-slate-600/30" strokeWidth="0.5" />
                     ))}
                     {bubbles.map((c) => {
                         const r = 6 + 18 * Math.sqrt(c.conns / maxConns);

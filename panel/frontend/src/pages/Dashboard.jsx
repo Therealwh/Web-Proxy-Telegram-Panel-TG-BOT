@@ -135,8 +135,14 @@ export default function Dashboard() {
         const days = Math.floor(sec / 86400);
         const h = Math.floor((sec % 86400) / 3600);
         const m = Math.floor((sec % 3600) / 60);
-        const hhmm = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-        return days > 0 ? t('dashboard.upDays', { d: days, t: hhmm }) : hhmm;
+        if (lang === 'en') {
+            if (days > 0) return `${days}d ${h}h ${m}m`;
+            if (h > 0) return `${h}h ${m}m`;
+            return `${m} min`;
+        }
+        if (days > 0) return `${days} дн. ${h} ч ${m} мин`;
+        if (h > 0) return `${h} ч ${m} мин`;
+        return `${m} мин`;
     };
 
     /** «N мин. назад» */
@@ -389,11 +395,11 @@ export default function Dashboard() {
                         {writers ? (
                             <>
                                 <div className="flex items-baseline gap-2">
-                                    <span className="text-3xl font-bold">{writers.alive}/{writers.total}</span>
+                                    <span className="text-3xl font-bold">{writers.alive ?? writers.healthy ?? ((writers.total || 0) - (writers.degraded || 0))}/{writers.total}</span>
                                     <span className="text-xs text-slate-400">{t('dashboard.meAvailSub')}</span>
                                 </div>
                                 <div className="flex flex-wrap gap-2 mt-3">
-                                    <span className="badge-green">{t('dashboard.meHealthy')}: {writers.alive}</span>
+                                    <span className="badge-green">{t('dashboard.meHealthy')}: {writers.alive ?? writers.healthy ?? ((writers.total || 0) - (writers.degraded || 0))}</span>
                                     <span className={(writers.degraded || 0) > 0 ? 'badge-red' : 'badge-green'}>
                                         {t('dashboard.meDegraded')}: {writers.degraded ?? 0}
                                     </span>
