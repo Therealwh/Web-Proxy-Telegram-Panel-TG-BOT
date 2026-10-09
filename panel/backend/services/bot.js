@@ -253,14 +253,20 @@ async function cabinetView(ctx, selectedId = null) {
             } else if (ips.length > 0) {
                 text += '   🔌 MTProto-клиент\n';
             }
-            text += `\n🔗 <b>Подключение:</b>\n`;
-            if (links.web_https) text += `• Web Proxy — <a href="${links.web_https}">подключить</a>\n`;
-            if (links.mtproto_https) text += `• MTProto — <a href="${links.mtproto_https}">подключить</a>\n`;
         }
-        kb.text('♻️ Продлить', `renew:${selected.id}`, { style: 'success' });
+        if (links.web_https) kb.url('🌐 Подключить Web Proxy', links.web_https).row();
+        if (links.mtproto_https) kb.url('🔌 Подключить MTProto', links.mtproto_https);
+        kb.text('♻️ Продлить', `renew:${selected.id}`);
         if (settings.auto_renew_enabled) {
             kb.text(selected.auto_renew ? '♻️ Автопродление: ✅' : '♻️ Автопродление: ❌', `autorenew:${selected.id}`);
         }
+        styleButtons(kb, [
+            ['Подключить Web Proxy', 'success'],
+            ['Подключить MTProto', 'primary'],
+            ['Продлить', 'success'],
+            ['Автопродление: ✅', 'success'],
+            ['Автопродление: ❌', 'danger'],
+        ]);
         kb.row();
         kb.text('⬅️ Все мои прокси', 'my');
         styleButtons(kb, [['Продлить', 'primary'], ['Автопродление', 'primary']]);
@@ -335,15 +341,24 @@ async function issueAccessFor(tgId, tariff, paymentId) {
         || db.prepare('SELECT referrer_id FROM referral_pending WHERE telegram_id = ?').get(tgId)?.referrer_id
         || null;
 
-    const created = await telemt.createUser({ username, expiration_rfc3339: expires });
+    const created = await telemt.createUser({
+        username,
+        expiration_rfc3339: expires,
+        ...(tariff.max_ips ? { max_unique_ips: tariff.max_ips } : {}),
+        ...(tariff.quota_gb ? { data_quota_bytes: Math.round(tariff.quota_gb * 1024 ** 3) } : {}),
+        ...(tariff.rate_down_mbps ? { rate_limit_down_bps: Math.round(tariff.rate_down_mbps * 1e6) } : {}),
+        ...(tariff.rate_up_mbps ? { rate_limit_up_bps: Math.round(tariff.rate_up_mbps * 1e6) } : {}),
+    });
     const result = db.prepare(
-        `INSERT INTO clients (username, secret, expires_at, telegram_id, web_enabled, mtproto_enabled, referrer_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO clients (username, secret, expires_at, telegram_id, web_enabled, mtproto_enabled, referrer_id, max_ips, quota_bytes)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
         username, created.secret, expires, tgId,
         ['web', 'both'].includes(tariff.protocols) ? 1 : 0,
         ['mtproto', 'both'].includes(tariff.protocols) ? 1 : 0,
-        referrerId
+        referrerId,
+        tariff.max_ips ?? null,
+        tariff.quota_gb ? Math.round(tariff.quota_gb * 1024 ** 3) : null
     );
     const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(result.lastInsertRowid);
     refPending.delete(tgId);
@@ -1170,8 +1185,8 @@ async function start() {
                 || db.prepare('SELECT referrer_id FROM referral_pending WHERE telegram_id = ?').get(tgId)?.referrer_id
                 || null;
             db.prepare(
-                `INSERT INTO clients (username, secret, expires_at, telegram_id, web_enabled, mtproto_enabled, referrer_id)
-                 VALUES (?, ?, ?, ?, 1, 1, ?)`
+                `INSERT INTO clients (username, secret, expires_at, telegram_id, web_enabled, mtproto_enabled, referrer_id, max_ips)
+                 VALUES (?, ?, ?, ?, 1, 1, ?, 2)`
             ).run(`test${tgId}`, created.secret, expires, tgId, referrerId);
             refPending.delete(tgId);
             db.prepare('DELETE FROM referral_pending WHERE telegram_id = ?').run(tgId);
@@ -1232,7 +1247,13 @@ async function start() {
             if (tariff.max_ips) patch.max_unique_ips = tariff.max_ips;
             if (tariff.quota_gb) patch.data_quota_bytes = Math.round(tariff.quota_gb * 1024 ** 3);
             await telemt.patchUser(client.username, patch).catch(() => {});
-            db.prepare("UPDATE clients SET expires_at = ?, status = 'active' WHERE id = ?").run(newExpiry, client.id);
+            const lim = [];
+            if (tariff.max_ips) lim.push('max_ips = ?');
+            if (tariff.quota_gb) lim.push('quota_bytes = ?');
+            const limParams = [];
+            if (tariff.max_ips) limParams.push(tariff.max_ips);
+            if (tariff.quota_gb) limParams.push(Math.round(tariff.quota_gb * 1024 ** 3));
+            db.prepare(`UPDATE clients SET expires_at = ?, status = 'active'${lim.length ? ', ' + lim.join(', ') : ''} WHERE id = ?`).run(newExpiry, ...limParams, client.id);
             if (mode && modeFlags[mode]) db.prepare(modeSql).run(...modeFlags[mode], client.id);
             await ctx.answerCallbackQuery();
             const modeText = mode === 'web' ? ' (только Web Proxy)'
