@@ -232,6 +232,11 @@ async function cabinetView(ctx, selectedId = null) {
         }
     } catch { /* Telemt недоступен */ }
 
+    const shortDate = (iso) => {
+        const d = new Date(iso);
+        return `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getFullYear()).slice(2)}`;
+    };
+
     const selected = clients.find((c) => c.id === selectedId) || null;
 
     // ── Экран выбранного прокси: действия по нему ──
@@ -269,19 +274,24 @@ async function cabinetView(ctx, selectedId = null) {
         ]);
         kb.row();
         kb.text('⬅️ Все мои прокси', 'my');
+        // Переключение между прокси — список всегда внизу карточки
+        const others = clients.filter((cl) => cl.id !== selected.id).slice(0, 10);
+        if (others.length > 0) {
+            kb.row();
+            for (const o of others) {
+                const st = o.status === 'active' ? '🟢' : '🔴';
+                const proto = (o.web_enabled ? 'WEB' : '') + (o.mtproto_enabled ? '+MTProto' : '') || 'WEB';
+                kb.text(`${st} ${o.username} · ${proto} · ${o.expires_at ? shortDate(o.expires_at) : '∞'}`, `sel:${o.id}`).row();
+            }
+        }
         styleButtons(kb, [['Продлить', 'primary'], ['Автопродление', 'primary']]);
         return { text, kb, disable_web_page_preview: true };
     }
 
     // ── Список всех прокси: компактно, без кнопок ──
-    let text = `📱 <b>Личный кабинет</b>\n💰 Баланс: <b>${balance.toFixed(2)}</b>\n`;
+    let text = `📱 <b>Личный кабинет</b>\n💰 Баланс: <b>${balance.toFixed(2)}</b>\n\n👇 <b>Выберите прокси из списка</b> — продление, подключение и подробности\n`;
 
     const kb = new InlineKeyboard();
-const shortDate = (iso) => {
-        const d = new Date(iso);
-        return `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getFullYear()).slice(2)}`;
-    };
-
     for (const c of clients) {
         const proto = (c.web_enabled ? 'WEB' : '') + (c.mtproto_enabled ? ' + MTProto' : '') || 'WEB';
         const icon = c.status === 'active' ? '🟢' : '🔴';
