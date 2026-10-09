@@ -243,7 +243,7 @@ async function cabinetView(ctx, selectedId = null) {
         let text =
             `📱 <b>${selected.username}</b>\n${statusIcon}\n` +
             `📅 Действует до: <b>${until}</b>\n` +
-            `💰 Баланс этого прокси: <b>${(selected.balance || 0).toFixed(2)}</b>\n`;
+            `💰 Баланс: <b>${balance.toFixed(2)}</b>\n`;
         if (selected.status === 'active') {
             const ips = activeMap.get(selected.username) || [];
             const types = [...(webTypes.get(selected.username) || [])];
@@ -275,11 +275,7 @@ async function cabinetView(ctx, selectedId = null) {
 
     // ── Список всех прокси: компактно, без кнопок ──
     let text = `📱 <b>Личный кабинет</b>\n💰 Баланс: <b>${balance.toFixed(2)}</b>\n`;
-    if (activeMap.size > 0 || clients.some((c) => c.status === 'active')) {
-        text += `\n👥 <b>Мои прокси (${clients.length}):</b> — нажми, чтобы управлять\n`;
-    } else {
-        text += `\n👥 <b>Мои прокси (${clients.length}):</b>\n`;
-    }
+
     const kb = new InlineKeyboard();
 const shortDate = (iso) => {
         const d = new Date(iso);
