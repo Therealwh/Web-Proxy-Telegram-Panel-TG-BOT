@@ -187,18 +187,9 @@ router.get('/active', async (req, res, next) => {    try {
         const geo = require('../services/geo');
         const rows = [];
 
-        // MTProto: активные source-IP из Telemt
-        try {
-            const users = await telemt.getUsersActiveIps(); // [{username, active_ips:[]}]
-            for (const u of users || []) {
-                for (const ip of u.active_ips || []) {
-                    rows.push({ username: u.username, ip, protocol: 'mtproto' });
-                }
-            }
-        } catch { /* Telemt недоступен — покажем только WEB */ }
-
         // WEB: активные сессии (IP клиента в Telemt — client_ip)
         let webSessionCount = 0;
+        const webSeen = new Set(); // "username|ip" — чтобы не дублировать в MTProto-строках
         try {
             const sessions = await telemt.getWebSessions({ limit: 200 });
             const list = Array.isArray(sessions) ? sessions : sessions?.sessions || [];
@@ -213,8 +204,22 @@ router.get('/active', async (req, res, next) => {    try {
                     carrier: s.carrier || null,
                     user_agent: s.user_agent || null,
                 });
+                if (s.user) webSeen.add(`${s.user}|${ip}`);
             }
         } catch { /* WEB-рантайм недоступен */ }
+
+        // MTProto: активные source-IP из Telemt. Эндпоинт отдаёт IP пользователя
+        // независимо от протокола, поэтому WEB-подключения тут пропускаем —
+        // иначе у каждого веб-клиента появляется фантомная строка «MTProto».
+        try {
+            const users = await telemt.getUsersActiveIps(); // [{username, active_ips:[]}]
+            for (const u of users || []) {
+                for (const ip of u.active_ips || []) {
+                    if (u.username && webSeen.has(`${u.username}|${ip}`)) continue;
+                    rows.push({ username: u.username, ip, protocol: 'mtproto' });
+                }
+            }
+        } catch { /* Telemt недоступен — покажем только WEB */ }
 
         // Страны по уникальным IP (с кэшем)
         const geoMap = await geo.lookupMany(rows.map((r) => r.ip));

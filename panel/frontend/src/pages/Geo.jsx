@@ -65,7 +65,7 @@ export default function Geo() {
     const t = useT();
 
     const load = () => get(`/geo/summary?range=${range}`).then(setData).catch(() => {});
-    useEffect(load, [range]);
+    useEffect(() => { load(); }, [range]);
     useEffect(() => {
         const iv = setInterval(load, 30000);
         return () => clearInterval(iv);
@@ -137,10 +137,16 @@ export default function Geo() {
                                         <circle cx={px(c.lng)} cy={py(c.lat)} r={r} className="fill-primary/30 stroke-primary" strokeWidth={isSel ? 3 : 2} />
                                         {showLabels && (
                                             <>
-                                                <text x={px(c.lng)} y={py(c.lat) - r - 10} textAnchor="middle"
-                                                      className="fill-slate-600 dark:fill-slate-200" fontSize="16" fontWeight="600">
-                                                    {flag(c.code)} {c.conns}
-                                                </text>
+                                                <g transform={`translate(${px(c.lng) - 26}, ${py(c.lat) - r - 34})`}>
+                                                    <image href={flagUrl(c.code)} x="0" y="0" width="30" height="20"
+                                                           preserveAspectRatio="xMidYMid slice"
+                                                           clipPath="inset(0 round 3px)"
+                                                           className="drop-shadow" />
+                                                    <text x="36" y="15" className="fill-slate-600 dark:fill-slate-100"
+                                                          fontSize="16" fontWeight="700">
+                                                        {c.conns}
+                                                    </text>
+                                                </g>
                                                 <text x={px(c.lng)} y={py(c.lat) + r + 20} textAnchor="middle"
                                                       className="fill-slate-500 dark:fill-slate-400" fontSize="14">
                                                     {countryName(c.code, c.country)}
@@ -176,7 +182,7 @@ export default function Geo() {
                                             className={`w-full text-left rounded-lg px-2 py-1.5 transition-colors ${active ? 'bg-primary/10 ring-1 ring-primary/40' : 'hover:bg-slate-100 dark:hover:bg-slate-800'}`}
                                             onClick={() => setSel(active ? null : c.code)}>
                                         <div className="flex items-center gap-2">
-                                            <span className="text-lg w-6 text-center">{flag(c.code)}</span>
+                                            <img src={flagUrl(c.code)} alt="" className="w-7 h-5 rounded-[3px] object-cover shrink-0 ring-1 ring-black/10" />
                                             <span className="text-sm font-medium flex-1 truncate">{countryName(c.code, c.country)}</span>
                                             <span className="text-xs text-slate-400">{pct}%</span>
                                         </div>
