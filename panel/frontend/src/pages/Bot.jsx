@@ -49,7 +49,7 @@ export default function Bot() {
         get('/bot/stats').then(setStats).catch(() => {});
         get('/bot/users').then((d) => setUsers(d.users)).catch(() => {});
     };
-    useEffect(load, []);
+    useEffect(() => { load(); }, [$1]);
 
     const saveSettings = async () => {
         try {

@@ -24,7 +24,7 @@ export default function Sales() {
     const load = () => {
         get(`/sales/summary?days=${days}`).then(setData).catch(() => {});
     };
-    useEffect(load, [days]);
+    useEffect(() => { load(); }, [$1]);
 
     if (!data) return <div className="space-y-4">{[...Array(3)].map((_, i) => <Skeleton key={i} className="h-40" />)}</div>;
 

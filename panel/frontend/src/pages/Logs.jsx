@@ -28,7 +28,7 @@ export default function Logs() {
         params.set('limit', '200');
         get(`/logs?${params}`).then((d) => setLogs(d.logs)).catch((e) => toast.error(e.message));
     };
-    useEffect(load, [filters]);
+    useEffect(() => { load(); }, [$1]);
 
     // Живой поток через WebSocket (с автопереподключением)
     useEffect(() => {

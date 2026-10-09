@@ -15,7 +15,7 @@ export default function ApiKeys() {
     const t = useT();
 
     const load = () => get('/api-keys').then((d) => setKeys(d.keys)).catch((e) => toast.error(e.message));
-    useEffect(load, []);
+    useEffect(() => { load(); }, [$1]);
 
     const create = async () => {
         try {

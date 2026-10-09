@@ -18,7 +18,7 @@ export default function Website() {
         get('/website/files').then((d) => setFiles(d.files)).catch((e) => toast.error(e.message));
         get('/website/templates').then((d) => setTemplates(d.templates)).catch(() => {});
     };
-    useEffect(load, []);
+    useEffect(() => { load(); }, [$1]);
 
     const openFile = async (name) => {
         try {
