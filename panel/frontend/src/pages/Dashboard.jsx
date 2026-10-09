@@ -214,17 +214,24 @@ export default function Dashboard() {
         if (dc?.enabled && dc?.overall === 'degraded') {
             list.push({ kind: 'bad', text: t('dashboard.dcDegraded') });
         }
+        if (dc?.enabled && dc?.overall === 'partial') {
+            list.push({ kind: 'warn', text: t('dashboard.dcPartial') });
+        }
+        if (quality != null && quality < 95) {
+            list.push({ kind: 'warn', text: t('dashboard.pQuality', { p: quality.toFixed(1) }) });
+        }
+        if (ssl?.daysLeft != null && ssl.daysLeft < 14) {
+            list.push({ kind: 'warn', text: t('dashboard.pSsl', { d: ssl.daysLeft }) });
+        }
         if (downSvc.length > 0) {
             list.push({ kind: 'bad', text: t('dashboard.pSvc', { list: downSvc.map((s) => svcLabel[s] || s).join(', ') }) });
         }
         return list;
-    }, [clients, dc, downSvc.join(','), lang]);
+    }, [clients, dc, downSvc.join(','), quality, ssl, lang]);
 
     // Уровень статус-баннера: red — сервисы упали, yellow — есть предупреждения
-    const warnings = (dc?.enabled && dc?.overall && dc.overall !== 'ok')
-        || (ssl?.daysLeft != null && ssl.daysLeft < 14)
-        || (quality != null && quality < 95);
-    const level = downSvc.length > 0 ? 'bad' : warnings ? 'partial' : 'ok';
+    const hasBad = problems.some((p) => p.kind === 'bad');
+    const level = downSvc.length > 0 || hasBad ? 'bad' : problems.length > 0 ? 'partial' : 'ok';
     const bannerStyle = {
         ok: { border: 'border-emerald-500/40 bg-emerald-500/5', dot: 'bg-emerald-500', text: 'text-emerald-600 dark:text-emerald-400' },
         partial: { border: 'border-amber-500/40 bg-amber-500/5', dot: 'bg-amber-500', text: 'text-amber-600 dark:text-amber-400' },
