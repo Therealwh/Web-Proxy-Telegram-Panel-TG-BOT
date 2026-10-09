@@ -162,8 +162,14 @@ const server = http.createServer((req, res) => {
         // рестарт хелпера больше не убивает установку пакетов посреди пути
         if ((parsed.key === 'panel' || parsed.key === 'telemt') && systemdRunAvailable) {
             const unit = `tggate-update-${parsed.key}-${Date.now()}`;
+            // Передаём ПОЛНОЕ окружение хелпера (HOME, PATH и т.д.) —
+            // иначе npm в чистом юните падает без кэша и переменных
+            const envArgs = [];
+            for (const [k, v] of Object.entries(process.env)) {
+                if (v !== undefined) envArgs.push('--setenv', `${k}=${v}`);
+            }
             log(`Обновление в отдельном юните: ${unit}`);
-            execFile('systemd-run', ['--collect', `--unit=${unit}`, 'bash', script, ...args],
+            execFile('systemd-run', ['--collect', `--unit=${unit}`, ...envArgs, 'bash', script, ...args],
                 { timeout: 30000 }, (err) => {
                     if (err) log(`systemd-run не удался (${err.message}) — скрипт продолжит в cgroup хелпера`);
                 });
