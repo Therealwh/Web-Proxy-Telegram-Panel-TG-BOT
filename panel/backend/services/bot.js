@@ -596,7 +596,7 @@ async function createAndSendDeposit(ctx, amount) {
             const kb = new InlineKeyboard()
                 .url(label, pay.url).row()
                 .text('🏦 Карта админа', `manualpay:${paymentId}`);
-            styleButtons(kb, [['Оплатить', 'success']]);
+            styleButtons(kb, [['Оплатить', 'success'], ['Карта админа', 'success']]);
             try { for (const row of kb.inline_keyboard) for (const btn of row) if (btn.url && btn.url.startsWith('https://t.me/')) btn.style = 'success'; } catch { /* ignore */ }
             await ctx.reply(`🧾 Счёт #${paymentId} на ${amount} ${currencySign(settings.currency)}.\nВыберите способ оплаты:`, { reply_markup: kb });
         } else {
@@ -1293,7 +1293,7 @@ async function start() {
 
         const kb = new InlineKeyboard();
         if (settings.cryptobot_token) kb.text('🪙 Оплатить через CryptoBot', `cbpay:${result.lastInsertRowid}:${tariff.id}:cryptobot`).row();
-        styleButtons(kb, [['CryptoBot', 'success']]);
+        styleButtons(kb, [['CryptoBot', 'success'], ['Карта админа', 'success']]);
         if (settings.yookassa_shop_id && settings.yookassa_secret_key) kb.text('💳 Оплатить через ЮKassa', `cbpay:${result.lastInsertRowid}:${tariff.id}:yookassa`).row();
         const stars = starsPrice(tariff, settings);
         if (stars) kb.text(`⭐ Оплатить звёздами (${stars} ⭐)`, `starspay:${result.lastInsertRowid}`).row();
