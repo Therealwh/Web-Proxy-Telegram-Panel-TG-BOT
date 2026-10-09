@@ -64,7 +64,9 @@ log_history() {
 rollback() {
     local failed_cmd="${BASH_COMMAND:-неизвестно}"
     echo "[update] ОШИБКА (команда: ${failed_cmd})! Откатываюсь на бэкап ${BACKUP_PATH}..." >&2
-    cp -a "${BACKUP_PATH}/panel/." "${INSTALL_DIR}/panel/" 2>/dev/null || true
+    # Откат: возвращаем ДЕРЕВО на тег версии, что работала до обновления
+    # (cp из бэкапа оставлял бы старые файлы поверх новых — «отравление» дерева)
+    git -C "${INSTALL_DIR}" checkout -f "v${PANEL_VERSION}" 2>/dev/null || true
     cp -a "${BACKUP_PATH}/tggate.db" "${DATA_DIR}/tggate.db" 2>/dev/null || true
     cp -a "${BACKUP_PATH}/etc-tggate/." "${CONFIG_DIR}/" 2>/dev/null || true
     [[ -f "${BACKUP_PATH}/VERSION" ]] && cp -a "${BACKUP_PATH}/VERSION" "${INSTALL_DIR}/VERSION"
