@@ -283,12 +283,9 @@ const shortDate = (iso) => {
     };
 
     for (const c of clients) {
-        const until = c.expires_at ? fmtMSK(c.expires_at, false) : '∞';
-        const icon = c.status === 'active' ? '🟢' : c.status === 'blocked' ? '🔴' : '⚠️';
-        const short = until.replace(':00 МСК', '');
-        text += `${icon} <b>${c.username}</b> — до ${short}\n`;
-        const proto = [c.web_enabled ? '🌐' : '', c.mtproto_enabled ? '🔌' : ''].filter(Boolean).join('') || '🌐';
-        kb.text(`${icon} ${c.username} · ${proto} · ${c.expires_at ? shortDate(c.expires_at) : '∞'}`, `sel:${c.id}`).row();
+        const proto = (c.web_enabled ? 'WEB' : '') + (c.mtproto_enabled ? ' + MTProto' : '') || 'WEB';
+        const icon = c.status === 'active' ? '🟢' : '🔴';
+        kb.text(`${icon} ${c.username} · ${proto} · до ${c.expires_at ? shortDate(c.expires_at) : '∞'}`, `sel:${c.id}`).row();
     }
     kb.text('💳 Пополнить счёт', 'topup').row();
     kb.text('🚀 Тарифы', 'tariffs');
