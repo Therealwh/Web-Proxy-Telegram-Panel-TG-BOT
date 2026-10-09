@@ -129,7 +129,7 @@ function isAdmin(ctx) {
 /** Reply-клавиатура снизу (постоянная). */
 function mainReplyKeyboard(ctx) {
     const kb = new Keyboard().resized().persistent()
-        .text('🚀 Тарифы').row()
+        .text('🚀 Тарифы', { style: 'success' }).row()
         .text('🎁 Тест 3 часа').text('📱 Личный кабинет', { style: 'primary' }).row()
         .text('🤝 Рефералы').text('🛟 Поддержка').row()
         .text('📱 Как подключить').row();
