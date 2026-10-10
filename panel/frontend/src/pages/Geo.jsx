@@ -13,6 +13,8 @@ function flag(iso) {
     return String.fromCodePoint(...[...iso].map((ch) => 0x1f1e6 + ch.charCodeAt(0) - 65));
 }
 
+const flagUrl = (iso) => `https://flagcdn.com/w80/${String(iso || '').toLowerCase()}.svg`;
+
 const dnCache = {};
 function countryName(iso, fallback) {
     if (!iso || iso === '—') return fallback || '—';
