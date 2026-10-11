@@ -219,6 +219,8 @@ export default {
         qrWeb: '🌐 Web Proxy',
         qrMtproto: '🔌 MTProto',
         qrCopy: 'Copy link',
+        qrFakeTls: '🛡 MTProto Fake TLS',
+        fakeTlsHint: 'Fallback option if regular MTProto will not connect',
         connTitle: 'Connections: {username}',
         connEmpty: 'No active connections right now',
         connNote: 'Auto-refreshes every 5 seconds — feel free to keep the modal open',

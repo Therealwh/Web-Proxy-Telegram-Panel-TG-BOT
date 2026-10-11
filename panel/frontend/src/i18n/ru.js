@@ -219,6 +219,8 @@ export default {
         qrWeb: '🌐 Web Proxy',
         qrMtproto: '🔌 MTProto',
         qrCopy: 'Копировать ссылку',
+        qrFakeTls: '🛡 MTProto Fake TLS',
+        fakeTlsHint: 'Запасной вариант, если обычный MTProto не подключается',
         connTitle: 'Подключения: {username}',
         connEmpty: 'Сейчас нет активных подключений',
         connNote: 'Обновляется автоматически каждые 5 секунд — модал можно оставить открытым',

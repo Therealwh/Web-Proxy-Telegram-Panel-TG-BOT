@@ -39,6 +39,9 @@ jobs:
       - name: ESLint
         working-directory: panel/frontend
         run: npm run lint
+      - name: Проверка ключей перевода
+        working-directory: panel/frontend
+        run: npm run check:i18n
       - name: Сборка
         working-directory: panel/frontend
         run: npm run build
