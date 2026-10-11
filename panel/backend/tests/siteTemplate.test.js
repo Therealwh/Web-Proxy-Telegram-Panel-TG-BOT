@@ -243,6 +243,38 @@ describe('игровая логика', () => {
         }
     });
 
+    test('число уровней в тексте страницы совпадает с реальным', () => {
+        // Регрессия: уровней стало 55, а в description, og:description,
+        // разметке и видимом тексте осталось «20 уровней» — страника
+        // врала о себе и для посетителя, и для поисковика.
+        const levels = parseLevels(read('game.js'));
+        const real = String(levels.length);
+        const html = read('index.html');
+
+        const mentions = [...html.matchAll(/(\d+)\s+уровн/g)].map((m) => m[1]);
+        assert.ok(mentions.length >= 4, `ожидали несколько упоминаний, нашли: ${mentions.length}`);
+        for (const m of mentions) {
+            assert.equal(m, real,
+                `на странице написано «${m} уровней», а в игре ${real}. ` +
+                'Число в тексте должно совпадать с реальным — иначе страница врёт.');
+        }
+    });
+
+    test('полноэкранный режим подключён', () => {
+        const html = read('index.html');
+        const js = read('game.js');
+        assert.ok(/id="fs-btn"/.test(html), 'нет кнопки полного экрана');
+        assert.ok(/getElementById\('fs-btn'\)/.test(js), 'скрипт не подключает кнопку');
+        assert.ok(/requestFullscreen/.test(js), 'нет вызова полноэкранного API');
+    });
+
+    test('шаблон помечен версией', () => {
+        // Без версии панель не может предупредить об устаревшей копии
+        const meta = JSON.parse(read('template.json'));
+        assert.equal(meta.id, 'tanks');
+        assert.ok(meta.version, 'не указана версия шаблона');
+    });
+
     test('уровни не повторяются — иначе это не «много уровней»', () => {
         const levels = parseLevels(read('game.js'));
         const sig = levels.map((l) => l.mode + '|' + l.rows.join(','));
