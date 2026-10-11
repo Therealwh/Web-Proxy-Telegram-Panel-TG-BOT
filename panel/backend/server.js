@@ -41,6 +41,8 @@ const zapret2Router = require('./routes/zapret2');
 const geoRouter = require('./routes/geo');
 const webhooksModule = require('./routes/webhooks');
 const auditRouter = require('./routes/audit');
+const onboardingRouter = require('./routes/onboarding');
+const diagnosticsRouter = require('./routes/diagnostics');
 const publicPagesRouter = require('./routes/publicPages');
 const openapiSpec = require('./public-api/docs/openapi');
 
@@ -124,6 +126,8 @@ app.use('/api/zapret2', requireAuth, csrfProtection, audit(db), zapret2Router.ro
 app.use('/api/geo', requireAuth, geoRouter);
 app.use('/api/webhooks', requireAuth, csrfProtection, audit(db), webhooksModule.router);
 app.use('/api/audit', requireAuth, auditRouter);
+app.use('/api/onboarding', requireAuth, onboardingRouter);
+app.use('/api/diagnostics', requireAuth, diagnosticsRouter);
 app.use('/api/sales', requireAuth, salesRouter);
 app.use('/api/payments', paymentsRouter.router); // внутри: вебхуки публичны, админское — JWT
 

@@ -1,5 +1,5 @@
 // Базовые UI-компоненты TGGATE (стилистика shadcn/ui на Tailwind)
-import React from 'react';
+import React, { useEffect, useId, useRef } from 'react';
 import { useToastStore } from '../store';
 import { useT } from '../i18n';
 import { CheckCircle, XCircle, Info } from 'lucide-react';
@@ -136,18 +136,65 @@ export function ProtoBadge({ protocol }) {
 }
 
 /** Модальное окно (на телефоне — шторка снизу) */
+const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
 export function Modal({ open, onClose, title, children, wide }) {
     const t = useT();
+    const panelRef = useRef(null);
+    const openerRef = useRef(null);
+    const titleId = useId();
+
+    // Esc закрывает, Tab не уводит фокус за пределы окна, при закрытии фокус
+    // возвращается на кнопку, которая окно открыла. Без этого диалог «ловушка»
+    // для клавиатуры: уйти из него нечем.
+    useEffect(() => {
+        if (!open) return undefined;
+
+        openerRef.current = document.activeElement;
+        const focusables = () => (panelRef.current
+            ? [...panelRef.current.querySelectorAll(FOCUSABLE)].filter((el) => el.offsetParent !== null)
+            : []);
+
+        focusables()[0]?.focus();
+
+        const onKey = (e) => {
+            if (e.key === 'Escape') {
+                e.stopPropagation();
+                onClose();
+                return;
+            }
+            if (e.key !== 'Tab') return;
+            const items = focusables();
+            if (items.length === 0) return;
+            const first = items[0];
+            const last = items[items.length - 1];
+            if (e.shiftKey && document.activeElement === first) {
+                e.preventDefault();
+                last.focus();
+            } else if (!e.shiftKey && document.activeElement === last) {
+                e.preventDefault();
+                first.focus();
+            }
+        };
+
+        document.addEventListener('keydown', onKey, true);
+        return () => {
+            document.removeEventListener('keydown', onKey, true);
+            openerRef.current?.focus?.();
+        };
+    }, [open, onClose]);
+
     if (!open) return null;
     return (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4"
-             onClick={onClose} role="dialog" aria-modal="true">
+             onClick={onClose} role="dialog" aria-modal="true" aria-labelledby={titleId}>
             <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
-            <div className={`relative card w-full ${wide ? 'max-w-3xl' : 'max-w-lg'} !rounded-b-none sm:!rounded-b-2xl max-h-[92vh] overflow-y-auto`}
+            <div ref={panelRef}
+                 className={`relative card w-full ${wide ? 'max-w-3xl' : 'max-w-lg'} !rounded-b-none sm:!rounded-b-2xl max-h-[92vh] overflow-y-auto`}
                  onClick={(e) => e.stopPropagation()}>
                 <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-lg font-semibold">{title}</h3>
-                    <button onClick={onClose} className="btn-ghost !min-h-0 !p-2" aria-label={t('common.close')}>✕</button>
+                    <h3 id={titleId} className="text-lg font-semibold">{title}</h3>
+                    <button onClick={onClose} className="btn-ghost !min-h-0 !p-2" aria-label={t('common.close')}>×</button>
                 </div>
                 {children}
             </div>

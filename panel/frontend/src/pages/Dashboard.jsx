@@ -15,6 +15,7 @@ import { connectLive } from '../ws';
 import {
     Card, StatusDot, ProgressBar, Skeleton, ProtoBadge, formatBytes, chartTheme,
 } from '../components/ui';
+import OnboardingCard from '../components/OnboardingCard';
 
 /** Спарклайн без осей (для KPI-карточек) */
 function Spark({ data, dataKey = 'v', color = '#0088cc' }) {
@@ -314,6 +315,9 @@ export default function Dashboard() {
 
     return (
         <div className="space-y-4">
+            {/* 0. Первоначальная настройка: исчезает, когда всё готово */}
+            <OnboardingCard />
+
             {/* 1. Статус-баннер */}
             <div className={`rounded-2xl border p-4 flex flex-wrap items-center gap-4 justify-between ${bannerStyle.border}`}>
                 <div className="flex items-center gap-3 min-w-0">

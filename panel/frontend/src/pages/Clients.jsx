@@ -43,6 +43,10 @@ async function copyText(text, t) {
 
 export default function Clients() {
     const [clients, setClients] = useState(null);
+    const [page, setPage] = useState(1);
+    const [limit, setLimit] = useState(50);
+    const [total, setTotal] = useState(0);
+    const [pages, setPages] = useState(1);
     const [search, setSearch] = useState('');
     const [statusFilter, setStatusFilter] = useState('');
     const [modal, setModal] = useState(null); // null | 'create' | client-объект
@@ -60,20 +64,22 @@ export default function Clients() {
         const params = new URLSearchParams();
         if (search) params.set('search', search);
         if (statusFilter) params.set('status', statusFilter);
-        params.set('limit', '200'); // максимум бэкенда; при >200 покажем уведомление
+        params.set('page', String(page));
+        params.set('limit', String(limit));
         get(`/clients?${params}`).then((d) => {
-            if (d.total > d.clients.length) {
-                toast.info(t('clients.shownOf', { shown: d.clients.length, total: d.total }));
-            }
             setClients(d.clients);
+            setTotal(d.total ?? d.clients.length);
+            setPages(Math.max(1, d.pages ?? 1));
+            // Если фильтр сузил выборку, текущая страница могла выйти за её пределы
+            if (page > Math.max(1, d.pages ?? 1)) setPage(Math.max(1, d.pages ?? 1));
         }).catch((e) => toast.error(e.message));
     };
 
-    // Поиск с debounce 300 мс
+    // Поиск с debounce 300 мс; смена фильтра всегда возвращает на первую страницу
     useEffect(() => {
-        const t = setTimeout(load, 300);
-        return () => clearTimeout(t);
-    }, [search, statusFilter]);
+        const timer = setTimeout(load, 300);
+        return () => clearTimeout(timer);
+    }, [search, statusFilter, page, limit]);
 
     // Активные подключения (кто онлайн, IP, страна) — каждые 5 секунд
     useEffect(() => {
@@ -166,6 +172,9 @@ export default function Clients() {
         setSelected((s) => s.includes(id) ? s.filter((x) => x !== id) : [...s, id]);
     };
 
+    // Идентификаторы текущей страницы — для галочки «выбрать страницу»
+    const pageIds = (clients || []).map((c) => c.id);
+
     const bulkActionLabel = (action) => action === 'renew' ? t('clients.bulkRenew')
         : action === 'unblock' ? t('clients.bulkUnblock') : t('clients.bulkBlock');
 
@@ -211,10 +220,11 @@ export default function Clients() {
                             className="input !pl-9"
                             placeholder={t('clients.searchPh')}
                             value={search}
-                            onChange={(e) => setSearch(e.target.value)}
+                            onChange={(e) => { setPage(1); setSearch(e.target.value); }}
                         />
                     </div>
-                    <select className="input !w-auto" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+                    <select className="input !w-auto" value={statusFilter}
+                            onChange={(e) => { setPage(1); setStatusFilter(e.target.value); }}>
                         <option value="">{t('clients.statusAll')}</option>
                         <option value="active">{t('clients.statusActive')}</option>
                         <option value="blocked">{t('clients.statusBlocked')}</option>
@@ -252,8 +262,17 @@ export default function Clients() {
                             <tr className="text-left text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-700">
                                 <th className="px-4 py-3 sticky left-0 bg-white dark:bg-slate-900 z-20">
                                     <input type="checkbox" className="cursor-pointer"
-                                           checked={clients.length > 0 && selected.length === clients.length}
-                                           onChange={(e) => setSelected(e.target.checked ? clients.map((c) => c.id) : [])} />
+                                           title={t('clients.selectPage')}
+                                           checked={pageIds.length > 0 && pageIds.every((id) => selected.includes(id))}
+                                           ref={(el) => { if (el) el.indeterminate = pageIds.length > 0 && pageIds.some((id) => selected.includes(id)); }}
+                                           onChange={(e) => {
+                                               const pageIdsNow = clients.map((c) => c.id);
+                                               // Галочка действует только на текущую страницу:
+                                               // выбор с других страниц сохраняется
+                                               setSelected((s) => (e.target.checked
+                                                   ? [...new Set([...s, ...pageIdsNow])]
+                                                   : s.filter((id) => !pageIdsNow.includes(id))));
+                                           }} />
                                 </th>
                                 <th className="px-4 py-3 font-medium">{t('clients.thUser')}</th>
                                 <th className="px-4 py-3 font-medium">{t('clients.thStatus')}</th>
@@ -346,6 +365,32 @@ export default function Clients() {
                     </table>
                 )}
             </Card>
+
+            {/* Постраничная навигация */}
+            {clients && total > 0 && (
+                <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
+                    <div className="flex items-center gap-3 text-slate-500">
+                        <span>{t('clients.pagination', { page, pages, total })}</span>
+                        <select className="input !w-auto !py-1 !text-sm"
+                                value={limit}
+                                onChange={(e) => { setPage(1); setLimit(Number(e.target.value)); }}
+                                title={t('clients.perPage')}>
+                            {[25, 50, 100, 200].map((n) => <option key={n} value={n}>{n}</option>)}
+                        </select>
+                    </div>
+                    <div className="flex items-center gap-1">
+                        <button className="btn-secondary !min-h-0 !py-1.5" disabled={page <= 1}
+                                onClick={() => setPage(1)} title={t('clients.pageFirst')}>«</button>
+                        <button className="btn-secondary !min-h-0 !py-1.5" disabled={page <= 1}
+                                onClick={() => setPage((p) => Math.max(1, p - 1))}>←</button>
+                        <span className="px-2 text-slate-500">{page} / {pages}</span>
+                        <button className="btn-secondary !min-h-0 !py-1.5" disabled={page >= pages}
+                                onClick={() => setPage((p) => Math.min(pages, p + 1))}>→</button>
+                        <button className="btn-secondary !min-h-0 !py-1.5" disabled={page >= pages}
+                                onClick={() => setPage(pages)} title={t('clients.pageLast')}>»</button>
+                    </div>
+                </div>
+            )}
 
             {/* Модал создания/редактирования */}
             <Modal open={!!modal} onClose={() => setModal(null)} wide
