@@ -633,6 +633,7 @@ curl -X POST -H "Authorization: Bearer tgk_ваш_ключ" \\
         protFakeTls: 'Fake TLS для MTProto',
         protFakeTlsHint: 'Маскировочный домен должен указывать на IP этого сервера и поддерживать TLS 1.3. Пока это не так, клиентам выдаётся обычная dd-ссылка, она работает',
         faketlsCdn: 'домен закрыт {cdn} — в DNS у него адреса CDN, а не вашего сервера. Переведите запись в режим «только DNS» (серое облако) либо возьмите отдельный домен без CDN',
+        faketlsServerIp: 'панель считает своим IP {ip}. Если он отличается от адреса домена, поправьте SERVER_IP в /etc/tggate/install.env и перезапустите панель',
         protFakeTlsOk: 'домен {d} подходит, ee-ссылки выдаются',
         protFakeTlsOff: 'Не выдаётся',
         protFakeTlsRecheck: 'Проверить сейчас',

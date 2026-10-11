@@ -145,6 +145,9 @@ export default function ProtectionCard() {
                                     ? t('settings.faketlsCdn', { cdn: faketls.cdn })
                                     : t(`settings.faketlsReason.${faketls.reason}`)}
                                 {faketls.cdn && faketls.detail ? ` (${faketls.detail})` : ''}
+                                {!faketls.cdn && faketls.reason === 'ip_mismatch' && faketls.serverIp
+                                    ? ` — ${t('settings.faketlsServerIp', { ip: faketls.serverIp })}`
+                                    : ''}
                             </span>
                         )}
                     </div>

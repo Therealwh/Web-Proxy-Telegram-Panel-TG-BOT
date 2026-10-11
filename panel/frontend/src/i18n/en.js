@@ -635,6 +635,8 @@ curl -X POST -H "Authorization: Bearer tgk_your_key" \\
         protFakeTlsOk: 'domain {d} is suitable, ee links are issued',
         protFakeTlsOff: 'Not issued',
         protFakeTlsRecheck: 'Check now',
+        faketlsCdn: 'domain is behind {cdn} — its DNS points to CDN addresses, not your server. Switch the record to DNS-only (grey cloud), or use a separate domain without a CDN',
+        faketlsServerIp: 'the panel treats {ip} as its own IP. If it differs from the domain address, fix SERVER_IP in /etc/tggate/install.env and restart the panel',
         faketlsReason: {
             not_checked: 'not checked yet',
             no_domain: 'no mask domain set',
