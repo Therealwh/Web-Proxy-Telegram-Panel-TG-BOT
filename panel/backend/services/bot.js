@@ -581,6 +581,7 @@ async function broadcastNewLinks() {
             text += `\n📦 <b>${c.username}</b> — до ${until}\n`;
             if (links.web_https) text += `🌐 Web: ${links.web_https}\n`;
             if (links.mtproto_https) text += `🔌 MTProto: ${links.mtproto_https}\n`;
+            if (links.mtproto_faketls_https) text += `🛡 MTProto Fake TLS: ${links.mtproto_faketls_https}\n`;
         }
         text += '\nСтарые ссылки работать перестанут — нажмите свою кнопку, и Telegram переподключится сам.';
         try {

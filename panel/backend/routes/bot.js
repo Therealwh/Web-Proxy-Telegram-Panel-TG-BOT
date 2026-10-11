@@ -293,6 +293,12 @@ router.post('/users/:tgId/issue', async (req, res, next) => {
             let text = `🎁 <b>Администратор выдал вам прокси!</b>\n\n📦 Прокси: <b>${username}</b>\n📅 Действует до: <b>${until}</b>\n\n`;
             if (links.web_https) text += `🌐 <b>Web Proxy</b> (нажми — подключится сам):\n${links.web_https}\n\n`;
             if (links.mtproto_https) text += `🔌 <b>MTProto</b>:\n${links.mtproto_https}\n\n`;
+            // Fake TLS выдаётся рядом с обычной ссылкой, а не вместо неё:
+            // выдача администратором — такой же путь получения ссылок, как и
+            // оплата, и обе должны вести себя одинаково.
+            if (links.mtproto_faketls_https) {
+                text += `🛡 <b>MTProto Fake TLS</b> (если обычный не подключается):\n${links.mtproto_faketls_https}\n\n`;
+            }
             if (transferred > 0) text += `💰 На счету прокси: ${transferred.toFixed(2)} (перенос баланса)\n\n`;
             text += `💡 Управление — в разделе «📱 Личный кабинет».`;
             await botService.sendMessageTo(tgId, text);
