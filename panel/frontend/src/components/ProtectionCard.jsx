@@ -140,8 +140,11 @@ export default function ProtectionCard() {
                             </span>
                         ) : (
                             <span className="text-amber-600 dark:text-amber-400">
-                                {t('settings.protFakeTlsOff')}: {t(`settings.faketlsReason.${faketls.reason}`)}
-                                {faketls.detail ? ` (${faketls.detail})` : ''}
+                                {t('settings.protFakeTlsOff')}:{' '}
+                                {faketls.cdn
+                                    ? t('settings.faketlsCdn', { cdn: faketls.cdn })
+                                    : t(`settings.faketlsReason.${faketls.reason}`)}
+                                {faketls.cdn && faketls.detail ? ` (${faketls.detail})` : ''}
                             </span>
                         )}
                     </div>

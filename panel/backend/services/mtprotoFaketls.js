@@ -76,6 +76,33 @@ function checkTls13(domain) {
     });
 }
 
+/** Диапазоны, узнаваемые по характерным подсетям. */
+const CDN_RANGES = [
+    { name: 'Cloudflare', test: (ip) => /^2606:4700:|^104\.1[6-9]\.|^104\.2[0-9]\.|^172\.64\.|^173\.245\./.test(ip) },
+    { name: 'Amazon CloudFront', test: (ip) => /^13\.|^18\.|^54\.182\.|^54\.192\./.test(ip) },
+    { name: 'Fastly', test: (ip) => /^23\.235\.|^151\.101\./.test(ip) },
+];
+
+/**
+ * Опознаёт, стоят ли адреса домена за CDN.
+ *
+ * Для Fake TLS это важно: если домен закрыт оранжевым облаком, в DNS он
+ * отдаёт адреса CDN, а не адрес сервера. Рукопожатие идёт напрямую на
+ * сервер, а SNI указывает на домен — DPI видит расхождение и безошибочно
+ * определяет прокси. Лечится только переводом домена в режим «только DNS».
+ *
+ * @param {string[]} ips - адреса, которые вернул DNS
+ * @returns {string|null} имя CDN либо null
+ */
+function detectCdn(ips) {
+    for (const ip of ips) {
+        for (const cdn of CDN_RANGES) {
+            if (cdn.test(ip)) return cdn.name;
+        }
+    }
+    return null;
+}
+
 /**
  * Выполняет полную проверку и кладёт результат в БД.
  * @returns {Promise<{ready: boolean, domain: string|null, reason: string, checkedAt: string}>}
@@ -105,15 +132,24 @@ async function check({ force = false } = {}) {
     const serverIp = String(config.serverIp || '').trim();
     const matches = ips.some((r) => r.address === serverIp);
     if (serverIp && !matches) {
+        // Отдельно опознаём CDN и прокси: там причина не «домен настроен не туда»,
+        // а «домен закрыт оранжевым облаком», и это лечится иначе. Без такой
+        // подсказки администратор смотрит на список адресов и не понимает,
+        // что́ именно нужно поменять.
+        const cdn = detectCdn(ips.map((r) => r.address));
         const s = {
             ready: false,
             domain,
-            reason: 'ip_mismatch',
+            reason: cdn ? 'behind_cdn' : 'ip_mismatch',
             detail: ips.map((r) => r.address).join(', '),
+            cdn,
+            serverIp,
             checkedAt,
         };
         saveStatus(s);
-        logger.warn('Fake TLS: IP маскировочного домена не совпадает с IP прокси', { domain, ips: s.detail, serverIp });
+        logger.warn('Fake TLS: IP маскировочного домена не совпадает с IP прокси', {
+            domain, ips: s.detail, serverIp, cdn: cdn || undefined,
+        });
         return s;
     }
 
@@ -136,4 +172,4 @@ function readMaskDomain() {
     }
 }
 
-module.exports = { check, getStatus, isReady };
+module.exports = { check, getStatus, isReady, detectCdn };
