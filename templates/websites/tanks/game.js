@@ -209,7 +209,7 @@ const G={
   grid:new Uint8Array(GRID*GRID), player:null, enemies:[], bullets:[], effects:[], pops:[],
   powers:[], spawns:[], queue:[], spawned:0, spawnT:0, freezeT:0, shovelT:0,
   baseAlive:true, kills:{a:0,b:0,c:0,d:0}, introT:0, overT:0, overDelay:0, overReason:'',
-  scoreSent:false, scoreAtSend:0,
+  scoreSentValue:0,
   tally:null, titleAnim:0, testMode:false, custom:null
 };
 G.hi=+lsGet('tanki.hi')||0;
@@ -257,12 +257,21 @@ function updateHUD(){
   document.getElementById('hudLevel').textContent=G.level;
 }
 const chipScore=document.getElementById('chipScore'), chipHi=document.getElementById('chipHi'), chipWrap=document.getElementById('chipScoreWrap');
-chipHi.textContent=G.hi;
+
+/* Чипы счёта и рекорда приводим к состоянию игры. Раньше рекорд
+ * обновлялся только внутри addScore, а чипы читались один раз при
+ * загрузке: после игры счёт на экране оставался нулевым, хотя
+ * результат уходил в таблицу. */
+function syncChips(){
+  chipScore.textContent=String(G.score);
+  if(G.score>G.hi){G.hi=G.score;lsSet('tanki.hi',G.hi);}
+  chipHi.textContent=String(G.hi);
+}
+syncChips();
 function addScore(n,x,y){
-  G.score+=n; chipScore.textContent=G.score;
+  G.score+=n; syncChips();
   chipWrap.classList.remove('pop'); void chipWrap.offsetWidth; chipWrap.classList.add('pop');
   if(x!==undefined)G.pops.push({x,y,t:0,txt:'+'+n});
-  if(G.score>G.hi){G.hi=G.score;chipHi.textContent=G.hi;lsSet('tanki.hi',G.hi);}
 }
 function showEditorHUD(){document.getElementById('hudGame').hidden=true;document.getElementById('hudEditor').hidden=false;}
 function showGameHUD(){document.getElementById('hudGame').hidden=false;document.getElementById('hudEditor').hidden=true;updateHUD();}
@@ -340,7 +349,7 @@ function enterEditor(){
 }
 function edTest(){
   G.custom=ED.map.map(r=>r.join(''));
-  G.testMode=true; G.score=0; chipScore.textContent='0'; G.lives=3;
+  G.testMode=true; G.score=0; syncChips(); G.lives=3;
   loadCustom(); G.state='intro'; G.introT=0; sfx.intro(); showGameHUD();
 }
 function exitToEditor(){ G.testMode=false; G.custom=null; enterEditor(); }
@@ -480,10 +489,10 @@ function onIce(t){const c=Math.floor((t.x+15)/16),r=Math.floor((t.y+15)/16);
 
 function startGame(){
   G.testMode=false; G.custom=null;
-  G.score=0;chipScore.textContent=0;G.lives=3;
+  G.score=0;syncChips();G.lives=3;
   loadLevel(1); G.state='intro'; G.introT=0; G.paused=false; sfx.intro(); showGameHUD();
 }
-function toTitle(){G.state='title';G.testMode=false;G.custom=null;SND.setMove(false);showGameHUD();updateHUD();}
+function toTitle(){G.state='title';G.testMode=false;G.custom=null;SND.setMove(false);showGameHUD();updateHUD();syncChips();}
 function togglePause(){
   if(G.state!=='playing')return;
   G.paused=!G.paused; sfx.pause(); SND.setMove(false);
@@ -716,13 +725,11 @@ function update(){
   G.pops.forEach(pp=>pp.t++);
   G.pops=G.pops.filter(pp=>pp.t<45);
 
-  if(G.overDelay>0){G.overDelay--;if(G.overDelay===0){G.state='over';G.overT=0;SND.setMove(false);sfx.over();submitScore();}}
+  if(G.overDelay>0){G.overDelay--;if(G.overDelay===0){G.state='over';G.overT=0;SND.setMove(false);sfx.over();}}
 
-  /* Результат уходит на сервер и по ходу игры: иначе в таблице
-   * оказываются только те, кто проиграл, а лидер играл и не попадал
-   * в таблицу вовсе. */
-  if(!G.testMode&&!G.scoreSent){G.scoreSent=true;submitScore();}
-  if(G.scoreSent&&G.score!==G.scoreAtSend){G.scoreSent=false;G.scoreAtSend=G.score;}
+  /* Результат уходит на сервер по ходу игры, но не чаще лимита
+   * сервера: очередь в submitScore сама разрулит частоту. */
+  if(!G.testMode&&G.score!==G.scoreSentValue){G.scoreSentValue=G.score;submitScore();}
 
   if(!G.queue.length&&!G.spawns.length&&!G.enemies.length&&G.overDelay===0&&G.baseAlive){
     G.state='tally'; SND.setMove(false);
@@ -972,16 +979,32 @@ async function loadScores(){
       `<span class="sc">${s.score}</span></li>`).join('');
   }catch(e){ scoresMsg('Рекорды загружаются после старта панели'); }
 }
+/* Сервер принимает не чаще одного результата в 30 секунд (защита от
+ * спама), поэтому клиент шлёт не быстрее: последний известный счёт
+ * уходит сам, когда подходит очередь. Промежуточные значения не нужны
+ * никому — в таблице одно число на игрока. */
+const SUBMIT_INTERVAL=31*1000;
+let submitInFlight=false, submitQueued=false, lastSubmitAt=0;
+
 async function submitScore(){
+  if(G.score<100)return;
+  if(submitInFlight){ submitQueued=true; return; }
+  const wait=lastSubmitAt+SUBMIT_INTERVAL-Date.now();
+  if(wait>0){ submitQueued=true; setTimeout(submitScore, wait+50); return; }
+  submitInFlight=true;
   try{
-    if(G.score<100)return;
     let nick=lsGet('tanki.nick');
     if(!nick){nick='Танкист-'+randInt(100,999);lsSet('tanki.nick',nick);}
     const res=await fetch(API,{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({nickname:nick,score:G.score,level:G.level})});
-    if(res.ok){ addScore(0); scoresMsg('Результат записан: '+nick+' — '+G.score); loadScores(); }
+    if(res.ok){ lastSubmitAt=Date.now(); loadScores(); }
+    else if(res.status===429){ /* лимит: повторит следующий в очереди */ lastSubmitAt=Date.now(); submitQueued=true; }
     else scoresMsg('Не удалось записать результат ('+res.status+')');
   }catch(e){ scoresMsg('Рекорды появятся после старта панели'); }
+  finally{
+    submitInFlight=false;
+    if(submitQueued){ submitQueued=false; submitScore(); }
+  }
 }
 
 const TIPS=[
