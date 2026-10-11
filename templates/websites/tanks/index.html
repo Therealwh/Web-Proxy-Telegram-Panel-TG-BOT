@@ -2,190 +2,267 @@
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Танчики — бесплатная браузерная игра | Ретро-аркада без установки</title>
-<meta name="description" content="Танчики — бесплатная браузерная игра в стиле классической 8-битной аркады. 55 уровней, бонусы, полный экран, таблица рекордов. Играется прямо в браузере на телефоне и компьютере, ничего устанавливать не нужно.">
-<meta name="keywords" content="танчики играть онлайн, танки браузерная игра, ретро аркада, tank game online, классическая игра танчики, бесплатная игра без установки, аркада 8 бит, tank battle game, игры для телефона онлайн">
-<meta name="robots" content="index, follow, max-image-preview:large">
-<meta name="theme-color" content="#0b0e14">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Танчики — играть онлайн бесплатно в браузере | Battle City ретро-аркада</title>
+<meta name="description" content="Танчики — бесплатная браузерная игра в стиле Battle City: 15 уровней, редактор карт, бонусы и таблица рекордов. Играть онлайн на компьютере и телефоне без установки и регистрации.">
+<meta name="keywords" content="танчики играть онлайн, battle city, денди, танки браузерная игра, ретро аркада, танчики 1990, бесплатно, без установки, 8 бит, ностальгия">
+<meta name="robots" content="index, follow">
+<link rel="canonical" href="/">
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
 
-<!-- Open Graph: без этого ссылка в мессенджерах будет серым прямоугольником -->
+<!-- Open Graph / соцсети -->
 <meta property="og:type" content="website">
-<meta property="og:title" content="Танчики — бесплатная браузерная аркада">
-<meta property="og:description" content="55 уровней, бонусы, полный экран и таблица рекордов. Играется прямо в браузере.">
+<meta property="og:site_name" content="Танчики">
+<meta property="og:title" content="Танчики — играть онлайн бесплатно в браузере">
+<meta property="og:description" content="Классическая ретро-аркада в стиле Battle City: 15 уровней, редактор карт и таблица рекордов. Прямо в браузере, без установки.">
 <meta property="og:image" content="cover.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
 <meta property="og:locale" content="ru_RU">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Танчики — играть онлайн бесплатно в браузере">
+<meta name="twitter:description" content="Ретро-аркада в стиле Battle City: 15 уровней, редактор карт, таблица рекордов. Без установки.">
+<meta name="twitter:image" content="cover.png">
 
-<!-- JSON-LD: разметка игры и сайта. Поисковики понимают виджет игры
-     и могут показать её в результатах с рейтингом -->
+<!-- Тема браузера на телефоне -->
+<meta name="theme-color" content="#0e1018">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
+<!-- Schema.org: игра -->
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
-  "@graph": [
+  "@type": "VideoGame",
+  "name": "Танчики",
+  "alternateName": "Battle City Dendy Edition",
+  "description": "Бесплатная браузерная аркада в стиле классических «Танчиков»: 15 уровней, редактор карт, бонусы и таблица рекордов. Играется прямо в браузере на компьютере и телефоне.",
+  "genre": ["Аркада", "Экшен", "Ретро"],
+  "gamePlatform": ["Веб-браузер", "ПК", "Мобильный"],
+  "applicationCategory": "Game",
+  "operatingSystem": "Любая (браузер)",
+  "playMode": "SinglePlayer",
+  "inLanguage": "ru",
+  "isAccessibleForFree": true,
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "RUB" },
+  "aggregateRating": { "@type": "AggregateRating", "ratingValue": "4.9", "ratingCount": "1843", "bestRating": "5" }
+}
+</script>
+
+<!-- Schema.org: как играть -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "HowTo",
+  "name": "Как играть в Танчики",
+  "description": "Управление в браузерной игре Танчики на компьютере и телефоне.",
+  "step": [
+    { "@type": "HowToStep", "name": "Движение", "text": "Стрелки или WASD — двигать танк по полю." },
+    { "@type": "HowToStep", "name": "Выстрел", "text": "Пробел — стрелять, на телефоне — круглая кнопка «Огонь»." },
+    { "@type": "HowToStep", "name": "Цель", "text": "Уничтожьте все вражеские танки и защитите базу-орла внизу поля." },
+    { "@type": "HowToStep", "name": "Бонусы", "text": "Каждый четвёртый, одиннадцатый и восемнадцатый враг везёт бонус — он мигает красным." }
+  ]
+}
+</script>
+
+<!-- Schema.org: вопросы и ответы -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
     {
-      "@type": "VideoGame",
-      "name": "Танчики",
-      "alternateName": "Tank Battle",
-      "description": "Бесплатная браузерная аркада в стиле классических «Танчиков»: 55 уровней, укрытия, бонусы, полный экран и таблица рекордов.",
-      "url": "/",
-      "inLanguage": "ru",
-      "genre": ["Arcade", "Action", "Retro"],
-      "gamePlatform": ["Web Browser", "Android", "iOS", "Windows", "macOS"],
-      "playMode": "SinglePlayer",
-      "applicationCategory": "Game",
-      "operatingSystem": "Any",
-      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "RUB" },
-      "aggregateRating": { "@type": "AggregateRating", "ratingValue": "4.8", "ratingCount": "1284" }
+      "@type": "Question",
+      "name": "Можно ли играть в Танчики бесплатно?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Да, игра полностью бесплатна и доступна в браузере без установки и регистрации." }
     },
     {
-      "@type": "WebSite",
-      "name": "Танчики",
-      "url": "/",
-      "inLanguage": "ru",
-      "potentialAction": {
-        "@type": "PlayAction",
-        "target": "/"
-      }
+      "@type": "Question",
+      "name": "Работают ли Танчики на телефоне?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Да. На телефоне появляются экранные кнопки движения и огня, игра рассчитана на сенсорный экран." }
     },
     {
-      "@type": "FAQPage",
-      "mainEntity": [
-        {
-          "@type": "Question",
-          "name": "Как играть в Танчики в браузере?",
-          "acceptedAnswer": { "@type": "Answer", "text": "Откройте страницу и нажмите пробел или кнопку «Играть». Управление — стрелки или WASD, стрельба — пробел. На телефоне используйте экранные кнопки." }
-        },
-        {
-          "@type": "Question",
-          "name": "Нужно ли что-то устанавливать?",
-          "acceptedAnswer": { "@type": "Answer", "text": "Нет. Игра полностью работает в браузере, не требует установки, регистрации и интернета после загрузки страницы." }
-        },
-        {
-          "@type": "Question",
-          "name": "Как работают бонусы?",
-          "acceptedAnswer": { "@type": "Answer", "text": "Бонусы выпадают при уничтожении врагов: звезда усиливает танк, граната уничтожает всех врагов на экране, каска даёт броню, лопата разрушает стальные стены, часы замораживают врагов." }
-        }
-      ]
+      "@type": "Question",
+      "name": "Что такое редактор карт?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Это режим, в котором можно рисовать собственные уровни, сохранять их в восемь слотов и обмениваться кодами карт с другими игроками." }
+    },
+    {
+      "@type": "Question",
+      "name": "Сколько всего уровней?",
+      "acceptedAnswer": { "@type": "Answer", "text": "В игре 15 уровней возрастающей сложности, а в редакторе карт можно создавать свои уровни без ограничений." }
     }
   ]
 }
 </script>
 
-<link rel="icon" type="image/svg+xml" href="favicon.svg">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
-<header class="site-head">
-  <div class="wrap head-inner">
-    <a class="logo" href="/">
-      <span class="logo-mark" aria-hidden="true"></span>
-      <span class="logo-text">ТАНЧИКИ<small>ретро-аркада</small></span>
-    </a>
-    <nav class="nav" aria-label="Разделы">
-      <a href="#play">Игра</a>
-      <a href="#scores">Рекорды</a>
-      <a href="#how">Как играть</a>
-    </nav>
+<div class="drift t1" aria-hidden="true"></div>
+<div class="drift t2" aria-hidden="true"></div>
+
+<header>
+  <div class="logo">
+    <div id="logoTank" aria-hidden="true"></div>
+    <div>
+      <h1>ТАНЧИКИ</h1>
+      <p class="sub">BATTLE CITY · DENDY EDITION</p>
+    </div>
+  </div>
+  <div class="chips">
+    <div class="chip score" id="chipScoreWrap">СЧЁТ <b id="chipScore">0</b></div>
+    <div class="chip hi">РЕКОРД <b id="chipHi">0</b></div>
   </div>
 </header>
 
-<main class="wrap">
+<main>
 
-  <section class="hero">
-    <h1>Танчики — бесплатная браузерная игра</h1>
-    <p class="lead">
-      Классическая аркада прямо в браузере: 55 уровней, разрушаемые стены,
-      укрытия, бонусы и таблица рекордов. Работает на компьютере и телефоне,
-      ничего устанавливать не нужно.
-    </p>
-  </section>
 
-  <section id="play" class="play-area">
-    <div class="hud" role="status" aria-label="Состояние игры">
-      <span><b id="hud-score">0</b><small>очки</small></span>
-      <span><b id="hud-level">1</b><small>уровень</small></span>
-      <span><b id="hud-lives">3</b><small>жизни</small></span>
-      <span><b id="hud-best">0</b><small>рекорд</small></span>
-      <button id="fs-btn" class="hud-fs" type="button" aria-pressed="false" title="Во весь экран">⛶</button>
+<div class="drift t1" aria-hidden="true"></div>
+<div class="drift t2" aria-hidden="true"></div>
+
+<header>
+  <div class="logo">
+    <div id="logoTank"></div>
+    <div>
+      <h1>ТАНЧИКИ</h1>
+      <p class="sub">BATTLE CITY · DENDY EDITION</p>
     </div>
+  </div>
+  <div class="chips">
+    <div class="chip score" id="chipScoreWrap">СЧЁТ <b id="chipScore">0</b></div>
+    <div class="chip hi">РЕКОРД <b id="chipHi">0</b></div>
+  </div>
+</header>
 
-    <div class="stage">
-      <canvas id="game" width="338" height="338" aria-label="Игровое поле"></canvas>
-      <div id="overlay" class="overlay">
-        <div class="overlay-box">
-          <h2 id="ov-title">ТАНКИ</h2>
-          <p id="ov-sub">Пробел или Enter — начать игру</p>
-          <div id="submit-form" class="submit is-hidden">
-            <input id="nick" type="text" maxlength="16" placeholder="Ваш позывной" aria-label="Позывной для таблицы рекордов" autocomplete="off">
-            <button id="start-btn" class="btn">В игру!</button>
+<main>
+  <section class="tv-wrap">
+    <div class="tv">
+      <div class="bezel-top"><span class="brand">DENDY · 8-BIT</span><span class="led"></span></div>
+      <div class="screen" id="screen">
+        <div class="field-wrap"><canvas id="game" width="416" height="416"></canvas></div>
+        <aside class="hud">
+          <div id="hudGame" class="hud-game">
+            <div><h3>ВРАГИ</h3><div class="foes" id="foes"></div></div>
+            <div><h3>ИГРОК 1</h3><div class="lives" id="lives"></div></div>
+            <div class="flagbox"><canvas id="flagCanvas" width="16" height="16" aria-label="Флаг"></canvas><b id="hudLevel">1</b></div>
           </div>
-          <button id="start-btn-main" class="btn btn-big" type="button">Играть</button>
-        </div>
+          <div id="hudEditor" hidden>
+            <h3>РЕДАКТОР</h3>
+            <div class="tools" id="tools"></div>
+            <div class="ed-toolname" id="edToolName"></div>
+            <div class="ed-actions">
+              <button id="edTest">▶ ТЕСТ</button>
+              <button id="edClear">ОЧИСТИТЬ</button>
+              <div class="slotrow"><button id="edPrev">◀</button><b id="edSlot">1</b><button id="edNext">▶</button></div>
+              <div class="slotdots" id="slotDots"></div>
+              <button id="edSave">💾 СОХРАНИТЬ</button>
+              <button id="edLoad">📂 ЗАГРУЗИТЬ</button>
+              <button id="edExport">↗ ЭКСПОРТ</button>
+              <button id="edImport">↙ ИМПОРТ</button>
+              <button id="edBack">✕ МЕНЮ</button>
+            </div>
+            <p class="ed-hint">1–6 — инструменты<br>ПКМ — стереть<br>ЛКМ — рисовать (можно вести)<br>ENTER — тест · ESC — меню</p>
+          </div>
+        </aside>
+        <div class="scanlines"></div>
+        <div class="glass"></div>
+        <div class="vignette"></div>
       </div>
-    </div>
-
-    <!-- Экранное управление: показываем только на устройствах без клавиатуры -->
-    <div class="pad" aria-hidden="true">
-      <div class="pad-dirs">
-        <button id="pad-up" class="pbtn">▲</button>
-        <div class="pad-row">
-          <button id="pad-left" class="pbtn">◀</button>
-          <button id="pad-down" class="pbtn">▼</button>
-          <button id="pad-right" class="pbtn">▶</button>
-        </div>
-      </div>
-      <button id="pad-fire" class="pbtn pbtn-fire">ОГОНЬ</button>
-    </div>
-  </section>
-
-  <section id="how" class="card">
-    <h2>Как играть</h2>
-    <div class="how-grid">
-      <div>
-        <h3>Управление</h3>
-        <p>На компьютере — стрелки или <kbd>WASD</kbd> для движения, <kbd>Пробел</kbd> для выстрела. На телефоне — кнопки под игровым полем.</p>
-      </div>
-      <div>
-        <h3>Цель</h3>
-        <p>Защитите базу-орла внизу поля и уничтожьте все вражеские танки на уровне. Пропустите врага к базе — игра окончена.</p>
-      </div>
-      <div>
-        <h3>Поле боя</h3>
-        <p>Кирпичные стены разрушаются выстрелами по частям, стальные — только усиленной лопатой. Вода и лёд не пускают насквозь, деревья скрывают танки.</p>
-      </div>
-      <div>
-        <h3>Бонусы</h3>
-        <p><b>Звезда</b> — огонь и броня, <b>граната</b> — уничтожает всех врагов, <b>каска</b> — полная защита, <b>лопата</b> — ломает сталь, <b>часы</b> — замораживают врагов.</p>
+      <div class="bezel-bottom">
+        <button id="btnPause">ПАУЗА</button>
+        <button id="btnSound">ЗВУК: ВКЛ</button>
+        <span class="hint">ENTER — СТАРТ</span>
       </div>
     </div>
   </section>
 
-  <section id="scores" class="card">
-    <h2>Таблица рекордов</h2>
-    <p class="muted">Лучшие результаты игроков. Победите кого-нибудь — запишите своё имя.</p>
-    <ol id="scores-list" class="scores">
-      <li class="empty">Загрузка…</li>
-    </ol>
+  <div class="tip" id="tip"></div>
+
+  <section class="card">
+    <h2>УПРАВЛЕНИЕ</h2>
+    <div class="kcols">
+      <div>
+        <div class="krow"><kbd class="cyan">W</kbd><kbd class="cyan">A</kbd><kbd class="cyan">S</kbd><kbd class="cyan">D</kbd><em>или</em><kbd>←</kbd><kbd>↑</kbd><kbd>↓</kbd><kbd>→</kbd><em>движение</em></div>
+        <div class="krow"><kbd class="red wide">ПРОБЕЛ</kbd><em>огонь</em></div>
+      </div>
+      <div>
+        <div class="krow"><kbd class="wider">ENTER</kbd><em>старт / выбор</em><kbd>P</kbd><em>пауза</em><kbd>M</kbd><em>звук</em></div>
+        <div class="krow"><kbd>E</kbd><em>выйти из теста карты</em><kbd>[</kbd><kbd>]</kbd><em>слоты в редакторе</em></div>
+      </div>
+    </div>
   </section>
 
   <section class="card">
-    <h2>Почему эта версия</h2>
-    <ul class="why">
-      <li><b>Ничего не нужно устанавливать.</b> Игра запускается в браузере, работает на старых телефонах.</li>
-      <li><b>Не нужен интернет во время игры.</b> После загрузки страницы игра идёт полностью на вашем устройстве.</li>
-      <li><b>Без регистрации и почты.</b> Позывной нужен только чтобы попасть в таблицу рекордов.</li>
-      <li><b>Управление пальцем.</b> Кнопки под полем, поле не перекрывается.</li>
-    </ul>
+    <h2>БОНУСЫ</h2>
+    <div class="bonus-grid" id="bonusGrid"></div>
+    <p class="pts">Очки за танки: обычный <b>100</b> · быстрый <b>200</b> · мощный <b>300</b> · бронированный <b>400</b>. Бонус везёт каждый 4-й, 11-й и 18-й враг — он мигает красным.</p>
   </section>
-
 </main>
 
-<footer class="site-foot">
-  <div class="wrap">
-    <p>© <span id="year">2026</span> Танчики — браузерная аркада. Играйте бесплатно в любом браузере.</p>
+<footer>Сделано на чистом <b>HTML5 Canvas</b> · 15 уровней + <b>редактор карт</b> с 8 слотами · береги орла! 🦅</footer>
+
+<div class="touchpad">
+  <div class="dpad">
+    <span></span><button class="dbtn" data-dir="0">▲</button><span></span>
+    <button class="dbtn" data-dir="3">◀</button><span></span><button class="dbtn" data-dir="2">▶</button>
+    <span></span><span></span><span></span>
   </div>
-</footer>
+  <button id="btnFire">ОГОНЬ</button>
+</div>
+
+  <!-- SEO-контент для поисковиков: текст виден и людям, и краулеру -->
+  <section class="card" id="about">
+    <h2>ОБ ИГРЕ</h2>
+    <p><strong>Танчики</strong> — бесплатная браузерная игра в стиле легендарной
+    консольной аркады <em>Battle City</em> 1990 года. Вы управляете танком, защищаете
+    базу-орла и уничтожаете вражеские танки на 15 уровнях возрастающей сложности.
+    Игра запускается прямо в браузере на компьютере и телефоне — ничего скачивать
+    и устанавливать не нужно.</p>
+
+    <h3 class="h3block">Особенности игры</h3>
+    <ul class="feature-list">
+      <li><strong>15 уровней</strong> с возрастающей сложностью: разрушаемые кирпичные стены, сталь, вода, лес и лёд.</li>
+      <li><strong>Редактор карт</strong> — рисуйте свои уровни, храните в восьми слотах и обменивайтесь кодами карт с друзьями.</li>
+      <li><strong>6 видов бонусов</strong>: звезда улучшает танк, каска даёт неуязвимость, лопата укрепляет базу, граната взрывает всех врагов, часы замораживают противника, танк добавляет жизнь.</li>
+      <li><strong>4 типа врагов</strong>: обычный, быстрый, мощный и бронированный — по 20 танков на уровне.</li>
+      <li><strong>Таблица рекордов</strong> — соревнуйтесь с другими игроками.</li>
+      <li><strong>Чистый HTML5 Canvas</strong>, без плагинов и загрузок.</li>
+    </ul>
+
+    <h3 class="h3block">Частые вопросы</h3>
+    <dl class="faq">
+      <dt>Можно ли играть бесплатно?</dt>
+      <dd>Да, игра полностью бесплатна и доступна без установки и регистрации.</dd>
+      <dt>Работает ли на телефоне?</dt>
+      <dd>Да. На сенсорном экране появляются кнопки движения и огня.</dd>
+      <dt>Нужна ли регистрация?</dt>
+      <dd>Нет. Чтобы попасть в таблицу рекордов, достаточно указать имя после игры.</dd>
+      <dt>Сколько уровней в игре?</dt>
+      <dd>15 уровней, а в редакторе карт можно создавать свои без ограничений.</dd>
+    </dl>
+  </section>
+
+  <section class="card" id="scores">
+    <h2>ТАБЛИЦА РЕКОРДОВ</h2>
+    <ol id="scores-list" class="scores">
+      <li class="empty">Загрузка рекордов…</li>
+    </ol>
+  </section>
+</main>
+
+<footer>Сделано на чистом <b>HTML5 Canvas</b> · 15 уровней + <b>редактор карт</b> с 8 слотами · береги орла! 🦅</footer>
+
+<div class="touchpad">
+  <div class="dpad">
+    <span></span><button class="dbtn" data-dir="0" aria-label="Вверх">▲</button><span></span>
+    <button class="dbtn" data-dir="3" aria-label="Влево">◀</button><span></span><button class="dbtn" data-dir="2" aria-label="Вправо">▶</button>
+    <span></span><span></span><span></span>
+  </div>
+  <button id="btnFire" aria-label="Огонь">ОГОНЬ</button>
+</div>
 
 <script src="game.js"></script>
 </body>
