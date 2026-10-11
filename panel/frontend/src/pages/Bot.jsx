@@ -93,6 +93,26 @@ export default function Bot() {
 
     const curName = (cur) => ({ RUB: t('bot.curRub'), USD: t('bot.curUsd'), USDT: t('bot.curUsdt') }[cur] || cur);
 
+    /* ═══ Включение/выключение бота и сброс статистики ═══ */
+
+    const toggleBot = async () => {
+        const next = !settings.enabled;
+        try {
+            await put('/bot/settings', { enabled: next });
+            toast.success(next ? t('bot.botOnToast') : t('bot.botOffToast'));
+            load();
+        } catch (e) { toast.error(e.message); }
+    };
+
+    const resetStats = async () => {
+        if (!confirm(t('bot.confirmResetStats'))) return;
+        try {
+            await post('/bot/stats/reset');
+            toast.success(t('bot.statsReset'));
+            load();
+        } catch (e) { toast.error(e.message); }
+    };
+
     if (!settings || !tariffs) return <div className="space-y-4">{[...Array(3)].map((_, i) => <Skeleton key={i} className="h-48" />)}</div>;
 
     return (
@@ -100,34 +120,54 @@ export default function Bot() {
             <PageHeader icon={<BotIcon size={20} />} title={t('bot.title')}
                         subtitle={t('bot.subtitle')}
                         actions={
-                            <span className={botStatus?.running ? 'badge-green' : 'badge-red'}>
-                                {botStatus?.running ? t('bot.running') : t('bot.stopped')}
-                            </span>
+                            <div className="flex items-center gap-2">
+                                {/* Переключатель вынесен в шапку: включать и выключать
+                                    бот приходится чаще всего, а раньше для этого нужно
+                                    было открыть модалку и найти поле в списке. */}
+                                <button className={settings.enabled ? 'btn-secondary !min-h-0 !px-3 !py-1.5 text-sm' : 'btn-primary !min-h-0 !px-3 !py-1.5 text-sm'}
+                                        onClick={toggleBot}>
+                                    <Power size={14} />
+                                    {settings.enabled ? t('bot.btnDisable') : t('bot.btnEnable')}
+                                </button>
+                                <span className={botStatus?.running ? 'badge-green' : 'badge-red'}>
+                                    {botStatus?.running ? t('bot.running') : t('bot.stopped')}
+                                </span>
+                            </div>
                         } />
+
+            {/* Без токена бот не заработает — говорим об этом сразу, а не заставляем
+                искать «не задан» в самом низу списка настроек. */}
+            {!settings.bot_token && (
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-300 dark:border-amber-700/60 bg-amber-50 dark:bg-amber-950/30 px-4 py-3">
+                    <div className="flex items-start gap-2 text-sm text-amber-900 dark:text-amber-200">
+                        <BotIcon size={18} className="mt-0.5 shrink-0" />
+                        <span>{t('bot.noTokenWarn')}</span>
+                    </div>
+                    <button className="btn-secondary !min-h-0 !px-3 !py-1.5 text-sm"
+                            onClick={() => setEditCard('basic')}>
+                        <Pencil size={14} /> {t('bot.setToken')}
+                    </button>
+                </div>
+            )}
 
             {/* Статистика продаж */}
             {stats && (
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                    <Card><div className="text-2xl font-bold">{stats.sales_total}</div><div className="text-sm text-slate-500">{t('bot.statSalesTotal')}</div></Card>
-                    <Card><div className="text-2xl font-bold">{stats.sales_month}</div><div className="text-sm text-slate-500">{t('bot.statMonth')}</div></Card>
-                    <Card><div className="text-2xl font-bold">{stats.revenue_month} ₽</div><div className="text-sm text-slate-500">{t('bot.statRevMonth')}</div></Card>
-                    <Card className="flex flex-col justify-between">
-                        <div>
-                            <div className="text-2xl font-bold">{stats.revenue_total} ₽</div>
-                            <div className="text-sm text-slate-500">{t('bot.statRevTotal')}</div>
-                        </div>
-                        <button className="btn-danger !min-h-0 !px-2 !py-1.5 text-xs mt-2"
-                                onClick={async () => {
-                                    if (!confirm(t('bot.confirmResetStats'))) return;
-                                    try {
-                                        await post('/bot/stats/reset');
-                                        toast.success(t('bot.statsReset'));
-                                        load();
-                                    } catch (e) { toast.error(e.message); }
-                                }}>
-                                {t('bot.resetSales')}
+                <div>
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                        <Card><div className="text-2xl font-bold">{stats.sales_total}</div><div className="text-sm text-slate-500">{t('bot.statSalesTotal')}</div></Card>
+                        <Card><div className="text-2xl font-bold">{stats.sales_month}</div><div className="text-sm text-slate-500">{t('bot.statMonth')}</div></Card>
+                        <Card><div className="text-2xl font-bold">{stats.revenue_month} ₽</div><div className="text-sm text-slate-500">{t('bot.statRevMonth')}</div></Card>
+                        <Card><div className="text-2xl font-bold">{stats.revenue_total} ₽</div><div className="text-sm text-slate-500">{t('bot.statRevTotal')}</div></Card>
+                    </div>
+                    {/* Сброс статистики — разрушительное действие, поэтому живёт
+                        отдельно от цифр, а не внутри плитки с доходом: там его
+                        можно было нажать случайно, рядом с числом. */}
+                    <div className="flex justify-end mt-2">
+                        <button className="btn-ghost !min-h-0 !px-2 !py-1 text-xs text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40"
+                                onClick={resetStats}>
+                            <Trash2 size={13} /> {t('bot.resetSales')}
                         </button>
-                    </Card>
+                    </div>
                 </div>
             )}
 
@@ -139,8 +179,8 @@ export default function Bot() {
                           {t('bot.refresh')}
                       </button>
                   }>
-                {!users ? <Skeleton className="h-24" /> : users.length === 0 ? (
-                    <p className="text-sm text-slate-500 py-4 text-center">{t('bot.usersEmpty')}</p>
+                {!users ? <Skeleton className="h-16" /> : users.length === 0 ? (
+                    <p className="text-sm text-slate-500 py-2 text-center">{t('bot.usersEmpty')}</p>
                 ) : (
                     <div className="overflow-x-auto">
                     <table className="w-full text-sm min-w-[720px]">
@@ -536,7 +576,8 @@ export default function Bot() {
                     {settingRow(t('bot.rowCurrency'), curName(settings.currency) || settings.currency)}
                     {settingRow(t('bot.rowWelcome'), settings.welcome_text ? `${String(settings.welcome_text).slice(0, 60)}…` : t('bot.builtin'))}
                     {settingRow(t('bot.rowStatusUrl'), settings.status_url || t('bot.none'))}
-                    {settingRow(t('bot.rowBotOn'), settings.enabled ? t('bot.yes') : t('bot.no'))}
+                    {/* Статус бота вынесен в шапку страницы переключателем, здесь
+                        он только повторялся и путал с состоянием процесса. */}
                     {settingRow(t('bot.rowNotify'), settings.notify_admin ? t('bot.yes') : t('bot.no'))}
                 </div>
             </Card>

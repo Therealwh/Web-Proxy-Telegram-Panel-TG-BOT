@@ -27,8 +27,46 @@ const refPending = new Map();
 const broadcastState = new Map();
 // Ожидание чека: tgId -> paymentId
 const receiptState = new Map();
-// Ожидание своей суммы пополнения: tgId -> true
-const depositCustom = new Map();
+
+// Ожидание своей суммы пополнения. Держим в БД, а не в памяти процесса:
+// перезапуск панели (например, сразу после обновления) стирал Map целиком,
+// и введённая сумма молча проглатывалась — пользователь не получал
+// никакого ответа. Срок ожидания ограничен, чтобы просроченное состояние
+// не съедало обычные сообщения пользователя.
+const AWAIT_AMOUNT_TTL_MS = 30 * 60 * 1000;
+
+function isAwaitingAmount(tgId) {
+    try {
+        const row = db.prepare('SELECT awaiting_amount_until FROM bot_users WHERE telegram_id = ?').get(tgId);
+        if (!row || !row.awaiting_amount_until) return false;
+        if (Date.now() > Number(row.awaiting_amount_until)) {
+            clearAwaitingAmount(tgId);
+            return false;
+        }
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+function startAwaitingAmount(tgId) {
+    const until = Date.now() + AWAIT_AMOUNT_TTL_MS;
+    try {
+        db.prepare(
+            `INSERT INTO bot_users (telegram_id, awaiting_amount_until)
+             VALUES (?, ?)
+             ON CONFLICT(telegram_id) DO UPDATE SET awaiting_amount_until = excluded.awaiting_amount_until`
+        ).run(tgId, until);
+    } catch (e) {
+        logger.warn('deposit: не удалось сохранить ожидание суммы', { tgId, error: e.message });
+    }
+}
+
+function clearAwaitingAmount(tgId) {
+    try {
+        db.prepare('UPDATE bot_users SET awaiting_amount_until = NULL WHERE telegram_id = ?').run(tgId);
+    } catch { /* не критично */ }
+}
 
 /** Юзернейм поддержки. */
 const SUPPORT_USERNAME = '@tggatetopsupport';
@@ -737,15 +775,30 @@ async function start() {
 
     // ═══ 0. Своя сумма пополнения — до гейта подписки, чтобы текст не проглатывался ═══
     bot.on('message:text', async (ctx, next) => {
-        if (!depositCustom.has(ctx.from.id)) return next();
+        if (!isAwaitingAmount(ctx.from.id)) return next();
         logger.info('deposit: получена сумма', { tgId: ctx.from.id, text: ctx.message.text });
-        const amount = parseInt(String(ctx.message.text).trim(), 10);
+        // Пользователь часто дописывает валюту — «1 200 ₽» — и это должно
+        // работать, тем более что знак ₽ стоит на самих кнопках. Убираем
+        // пробелы и символы валют, оставляя только число, и строго проверяем
+        // результат: мусор вроде «купи пива» числом не пройдёт.
+        const cleaned = String(ctx.message.text)
+            .replace(/\s/g, '')
+            .replace(/[₽$€]|руб\.?|р\.?/gi, '')
+            .replace(/usdt|usd|rub/gi, '');
+        if (!/^\d+([.,]\d{1,2})?$/.test(cleaned)) {
+            // Не число — не снимаем ожидание: человек мог случайно отправить
+            // слово и сейчас напишет нормальную сумму.
+            return ctx.reply('⚠️ Нужна сумма числом, например: 250. Или нажмите «Отмена».', {
+                reply_markup: new InlineKeyboard().text('✖️ Отмена', 'deposit:cancel'),
+            });
+        }
+        const amount = Number(cleaned.replace(',', '.'));
         if (!Number.isFinite(amount) || amount <= 0 || amount > 1000000) {
             return ctx.reply('⚠️ Введите сумму одним числом от 1 до 1 000 000, например: 250');
         }
-        depositCustom.delete(ctx.from.id);
+        clearAwaitingAmount(ctx.from.id);
         logger.info('deposit: создаю счёт', { tgId: ctx.from.id, amount });
-        await createAndSendDeposit(ctx, amount);
+        await createAndSendDeposit(ctx, Math.round(amount));
     });
 
     // ═══ 1. ГЕЙТ ПОДПИСКИ — первым ═══
@@ -1012,8 +1065,20 @@ async function start() {
 
     bot.callbackQuery('deposit:custom', async (ctx) => {
         await ctx.answerCallbackQuery();
-        depositCustom.set(ctx.from.id, true);
-        await ctx.reply('✏️ Введите сумму пополнения одним числом (например: 250):');
+        startAwaitingAmount(ctx.from.id);
+        await ctx.reply(
+            '✏️ Введите сумму пополнения одним числом (например: 250).\n\n' +
+            'Если передумали — нажмите «Отмена».',
+            { reply_markup: new InlineKeyboard().text('✖️ Отмена', 'deposit:cancel') }
+        );
+    });
+
+    // Выход из ожидания суммы: без него пользователь остался бы в состоянии,
+    // где любое его сообщение бот пытается прочитать как сумму.
+    bot.callbackQuery('deposit:cancel', async (ctx) => {
+        await ctx.answerCallbackQuery();
+        clearAwaitingAmount(ctx.from.id);
+        await ctx.reply('Отменено. Выберите сумму заново через «Пополнить счёт».');
     });
 
     bot.callbackQuery(/^deposit:(\d+)$/, async (ctx) => {
