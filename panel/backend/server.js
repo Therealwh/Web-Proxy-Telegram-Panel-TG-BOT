@@ -1,6 +1,6 @@
 ﻿/**
- * @fileoverview Р“Р»Р°РІРЅС‹Р№ С„Р°Р№Р» backend РїР°РЅРµР»Рё TGGATE.
- * РџРѕРґРЅРёРјР°РµС‚ Express-СЃРµСЂРІРµСЂ: API, СЃС‚Р°С‚РёРєР° С„СЂРѕРЅС‚РµРЅРґР°, WebSocket.
+ * @fileoverview Главный файл backend панели TGGATE.
+ * Поднимает Express-сервер: API, статика фронтенда, WebSocket.
  * @module server
  */
 
@@ -16,12 +16,12 @@ const rateLimit = require('express-rate-limit');
 
 const config = require('./config');
 const logger = require('./utils/logger');
-const db = require('./db'); // РёРЅРёС†РёР°Р»РёР·Р°С†РёСЏ Р‘Р” + РјРёРіСЂР°С†РёРё РїСЂРё require
+const db = require('./db'); // инициализация БД + миграции при require
 const { requireAuth, csrfProtection, audit } = require('./middleware/auth');
 const { notFound, errorHandler } = require('./middleware/errorHandler');
 const wsHub = require('./services/wsHub');
 
-// Р РѕСѓС‚С‹
+// Роуты
 const authRouter = require('./routes/auth');
 const internalRouter = require('./routes/internal');
 const clientsRouter = require('./routes/clients');
@@ -47,47 +47,47 @@ const openapiSpec = require('./public-api/docs/openapi');
 const app = express();
 const server = http.createServer(app);
 
-// Р”РѕРІРµСЂСЏРµРј proxy-Р·Р°РіРѕР»РѕРІРєР°Рј РѕС‚ Nginx (СЂРµР°Р»СЊРЅС‹Р№ IP РєР»РёРµРЅС‚Р°)
+// Доверяем proxy-заголовкам от Nginx (реальный IP клиента)
 app.set('trust proxy', 'loopback');
 
 // ---------------------------------------------------------------------------
-// Р“Р»РѕР±Р°Р»СЊРЅС‹Рµ middleware
+// Глобальные middleware
 // ---------------------------------------------------------------------------
 app.use(helmet({
     contentSecurityPolicy: {
         directives: {
             defaultSrc: ["'self'"],
             scriptSrc: ["'self'"],
-            styleSrc: ["'self'", "'unsafe-inline'"], // Tailwind inline-СЃС‚РёР»Рё
+            styleSrc: ["'self'", "'unsafe-inline'"], // Tailwind inline-стили
             imgSrc: ["'self'", 'data:', 'https://flagcdn.com'],
             connectSrc: ["'self'", 'wss:', 'ws:'],
         },
     },
 }));
-// Р‘СЌРєР°Рї: Р·Р°РіСЂСѓР·РєР° С„Р°Р№Р»Р° РјРѕР¶РµС‚ Р±С‹С‚СЊ Р±РѕР»СЊС€РѕР№ вЂ” РѕС‚РґРµР»СЊРЅС‹Р№ Р»РёРјРёС‚ Р”Рћ РіР»РѕР±Р°Р»СЊРЅРѕРіРѕ json
+// Бэкап: загрузка файла может быть большой — отдельный лимит ДО глобального json
 app.use('/api/backup/restore', express.json({ limit: '60mb' }));
 
 app.use(compression());
 app.use(express.json({ limit: '1mb' }));
 app.use(cookieParser());
 
-// CORS: РїР°РЅРµР»СЊ Рё API РЅР° РѕРґРЅРѕРј РґРѕРјРµРЅРµ вЂ” РєСЂРѕСЃСЃ-РґРѕРјРµРЅ РЅРµ РЅСѓР¶РµРЅ
+// CORS: панель и API на одном домене — кросс-домен не нужен
 app.use(cors({ origin: false }));
 
-// Р‘Р°Р·РѕРІС‹Р№ rate limiting РЅР° РІСЃРµ API
+// Базовый rate limiting на все API
 app.use('/api', rateLimit({
 windowMs: 60 * 1000,
     max: 600,
     standardHeaders: true,
     legacyHeaders: false,
-    message: { error: 'РЎР»РёС€РєРѕРј РјРЅРѕРіРѕ Р·Р°РїСЂРѕСЃРѕРІ. РџРѕРїСЂРѕР±СѓР№С‚Рµ С‡РµСЂРµР· РјРёРЅСѓС‚Сѓ.' },
+    message: { error: 'Слишком много запросов. Попробуйте через минуту.' },
 }));
 
 // ---------------------------------------------------------------------------
 // API
 // ---------------------------------------------------------------------------
 
-// Р’РµСЂСЃРёСЏ РїР°РЅРµР»Рё РёР· С„Р°Р№Р»Р° VERSION (РєСЌС€РёСЂСѓРµРј РїСЂРё СЃС‚Р°СЂС‚Рµ)
+// Версия панели из файла VERSION (кэшируем при старте)
 const PANEL_VERSION = (() => {
     try {
         return fs.readFileSync(path.join(__dirname, '..', '..', 'VERSION'), 'utf8').trim();
@@ -96,26 +96,26 @@ const PANEL_VERSION = (() => {
     }
 })();
 
-// РџСЂРѕРІРµСЂРєР° Р¶РёРІРѕСЃС‚Рё (РґР»СЏ install.sh Рё РјРѕРЅРёС‚РѕСЂРёРЅРіР°) вЂ” Р±РµР· Р°РІС‚РѕСЂРёР·Р°С†РёРё
+// Проверка живости (для install.sh и мониторинга) — без авторизации
 app.get('/api/health', (req, res) => res.json({ ok: true, service: 'tggate-panel', version: PANEL_VERSION }));
 
-// Р’РЅСѓС‚СЂРµРЅРЅРёРµ (С‚РѕР»СЊРєРѕ loopback): /api/internal/*
+// Внутренние (только loopback): /api/internal/*
 app.use('/api/internal', internalRouter);
 
-// Р‘СЌРєР°Рї-СЂРѕСѓС‚ (restore СЃРјРѕРЅС‚РёСЂРѕРІР°РЅ РІС‹С€Рµ СЃ СѓРІРµР»РёС‡РµРЅРЅС‹Рј Р»РёРјРёС‚РѕРј)
+// Бэкап-роут (restore смонтирован выше с увеличенным лимитом)
 const backupRouter = require('./routes/backup');
 app.use('/api/backup', backupRouter);
 
-// РђСѓС‚РµРЅС‚РёС„РёРєР°С†РёСЏ: /api/auth/*
+// Аутентификация: /api/auth/*
 app.use('/api/auth', csrfProtection, authRouter);
 
-// Р—Р°С‰РёС‰С‘РЅРЅС‹Рµ API: JWT + CSRF + Р°СѓРґРёС‚
+// Защищённые API: JWT + CSRF + аудит
 app.use('/api/clients', requireAuth, csrfProtection, audit(db), clientsRouter);
 app.use('/api/stats', requireAuth, statsRouter);
 app.use('/api/telemt', requireAuth, csrfProtection, audit(db), telemtRouter);
 app.use('/api/logs', requireAuth, logsRouter);
 app.use('/api/settings', requireAuth, csrfProtection, audit(db), settingsModule.router);
-app.use('/api/qr', qrRouter); // JWT РїСЂРѕРІРµСЂСЏРµС‚СЃСЏ РІРЅСѓС‚СЂРё СЂРѕСѓС‚РµСЂР° (header РёР»Рё ?token=)
+app.use('/api/qr', qrRouter); // JWT проверяется внутри роутера (header или ?token=)
 app.use('/api/website', requireAuth, csrfProtection, audit(db), websiteRouter);
 app.use('/api/bot', requireAuth, csrfProtection, audit(db), botRouter);
 app.use('/api/api-keys', requireAuth, csrfProtection, audit(db), apiKeysModule.router);
@@ -125,22 +125,22 @@ app.use('/api/geo', requireAuth, geoRouter);
 app.use('/api/webhooks', requireAuth, csrfProtection, audit(db), webhooksModule.router);
 app.use('/api/audit', requireAuth, auditRouter);
 app.use('/api/sales', requireAuth, salesRouter);
-app.use('/api/payments', paymentsRouter.router); // РІРЅСѓС‚СЂРё: РІРµР±С…СѓРєРё РїСѓР±Р»РёС‡РЅС‹, Р°РґРјРёРЅСЃРєРѕРµ вЂ” JWT
+app.use('/api/payments', paymentsRouter.router); // внутри: вебхуки публичны, админское — JWT
 
-// РџСѓР±Р»РёС‡РЅС‹Р№ API v1 (РїРѕ API-РєР»СЋС‡Р°Рј). РџСЂРµС„РёРєСЃ /panel-api вЂ” РїРѕС‚РѕРјСѓ С‡С‚Рѕ
-// /api/v1/* РЅР° РїСѓР±Р»РёС‡РЅРѕРј РґРѕРјРµРЅРµ РїСЂРёРЅР°РґР»РµР¶РёС‚ Telemt WEB (carrier-РїСѓС‚Рё).
+// Публичный API v1 (по API-ключам). Префикс /panel-api — потому что
+// /api/v1/* на публичном домене принадлежит Telemt WEB (carrier-пути).
 app.use('/panel-api/v1', apiV1Router);
 
-// Р”РѕРєСѓРјРµРЅС‚Р°С†РёСЏ API: JSON-СЃРїРµРєР° + Swagger UI (Р»РѕРєР°Р»СЊРЅР°СЏ РєРѕРїРёСЏ, Р±РµР· CDN)
+// Документация API: JSON-спека + Swagger UI (локальная копия, без CDN)
 const pathSwagger = require.resolve('swagger-ui-dist/swagger-ui.css');
 app.use('/api/docs-assets', express.static(require('path').dirname(pathSwagger)));
 app.get('/api/docs.json', (req, res) => res.json(openapiSpec));
 app.get('/api/docs', (req, res) => {
-    // РРЅР»Р°Р№РЅ-СЃРєСЂРёРїС‚ РёРЅРёС†РёР°Р»РёР·Р°С†РёРё вЂ” СЂР°Р·СЂРµС€Р°РµРј unsafe-inline С‚РѕР»СЊРєРѕ Р·РґРµСЃСЊ
+    // Инлайн-скрипт инициализации — разрешаем unsafe-inline только здесь
     res.setHeader('Content-Security-Policy',
         "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:");
     res.type('html').send(`<!DOCTYPE html>
-<html lang="ru"><head><meta charset="UTF-8"><title>TGGATE API вЂ” РґРѕРєСѓРјРµРЅС‚Р°С†РёСЏ</title>
+<html lang="ru"><head><meta charset="UTF-8"><title>TGGATE API — документация</title>
 <link rel="stylesheet" href="/api/docs-assets/swagger-ui.css"></head>
 <body><div id="swagger-ui"></div>
 <script src="/api/docs-assets/swagger-ui-bundle.js"></script>
@@ -148,21 +148,21 @@ app.get('/api/docs', (req, res) => {
 </body></html>`);
 });
 
-// РџСѓР±Р»РёС‡РЅС‹Рµ СЃС‚СЂР°РЅРёС†С‹: /qr/:id Рё /status
+// Публичные страницы: /qr/:id и /status
 app.use('/', publicPagesRouter);
 
-// 404 РґР»СЏ РЅРµРёР·РІРµСЃС‚РЅС‹С… API
+// 404 для неизвестных API
 app.use('/api', notFound);
 
 // ---------------------------------------------------------------------------
-// РЎС‚Р°С‚РёРєР° С„СЂРѕРЅС‚РµРЅРґР° (SPA)
+// Статика фронтенда (SPA)
 // ---------------------------------------------------------------------------
 if (fs.existsSync(config.frontendDist)) {
     app.use(express.static(config.frontendDist, {
         maxAge: '7d',
         index: false,
     }));
-    // SPA fallback: РІСЃРµ РЅРµ-API GET-Р·Р°РїСЂРѕСЃС‹ в†’ index.html
+    // SPA fallback: все не-API GET-запросы → index.html
     app.get('*', (req, res, next) => {
         if (req.path.startsWith('/api') || req.path.startsWith('/ws')) return next();
         res.sendFile(path.join(config.frontendDist, 'index.html'));
@@ -170,56 +170,56 @@ if (fs.existsSync(config.frontendDist)) {
 }
 
 // ---------------------------------------------------------------------------
-// РћР±СЂР°Р±РѕС‚РєР° РѕС€РёР±РѕРє
+// Обработка ошибок
 // ---------------------------------------------------------------------------
 app.use(errorHandler);
 
 // ---------------------------------------------------------------------------
-// Р—Р°РїСѓСЃРє
+// Запуск
 // ---------------------------------------------------------------------------
 wsHub.init(server);
 
-// РџСѓС€ СЃРёСЃС‚РµРјРЅРѕР№ СЃС‚Р°С‚РёСЃС‚РёРєРё РІ WebSocket РєР°Р¶РґСѓСЋ СЃРµРєСѓРЅРґСѓ
+// Пуш системной статистики в WebSocket каждую секунду
 const { getServerLoad } = require('./services/stats');
 setInterval(async () => {
     const load = await getServerLoad();
     wsHub.broadcast('stats', load);
 }, 1000).unref();
 
-// РљРѕР»Р»РµРєС‚РѕСЂ Р»РѕРіРѕРІ РїРѕРґРєР»СЋС‡РµРЅРёР№ РёР· Telemt
+// Коллектор логов подключений из Telemt
 require('./services/logCollector').start();
 
-// РЎР±РѕСЂС‰РёРє С‚СЂР°С„РёРєР° РїРѕ РєР»РёРµРЅС‚Р°Рј (РґРµР»СЊС‚Р° total_octets СЂР°Р· РІ РјРёРЅСѓС‚Сѓ)
+// Сборщик трафика по клиентам (дельта total_octets раз в минуту)
 require('./services/trafficCollector').start();
 
-// Р–РёРІРѕР№ РіСЂР°С„РёРє СЃРєРѕСЂРѕСЃС‚Рё С‚СЂР°С„РёРєР° (Р·Р°РјРµСЂ РєР°Р¶РґС‹Рµ 5 СЃРµРєСѓРЅРґ)
+// Живой график скорости трафика (замер каждые 5 секунд)
 require('./services/trafficLive').start();
 
-// РџРµСЂРёРѕРґРёС‡РµСЃРєР°СЏ СЃРІРµСЂРєР° WEB-РїСЂРѕС„РёР»РµР№ (СЃР°РјРѕРІРѕСЃСЃС‚Р°РЅРѕРІР»РµРЅРёРµ, СЂР°Р· РІ 60 СЃРµРєСѓРЅРґ)
+// Периодическая сверка WEB-профилей (самовосстановление, раз в 60 секунд)
 const { syncWebProfiles } = require('./services/webProfiles');
 setInterval(() => syncWebProfiles(), 60000).unref();
 syncWebProfiles();
 
-// Р¤РѕРЅРѕРІС‹Рµ Р·Р°РґР°С‡Рё: РјРѕРЅРёС‚РѕСЂРёРЅРі, РЅР°РїРѕРјРёРЅР°РЅРёСЏ, Р±СЌРєР°РїС‹
+// Фоновые задачи: мониторинг, напоминания, бэкапы
 require('./services/scheduler').start();
 
-// Р—Р°РїСѓСЃРє TG-Р±РѕС‚Р° РїСЂРѕРґР°Р¶ (РµСЃР»Рё РЅР°СЃС‚СЂРѕРµРЅ)
+// Запуск TG-бота продаж (если настроен)
 require('./services/bot').start().catch((err) =>
-    logger.warn('TG-Р±РѕС‚ РЅРµ Р·Р°РїСѓСЃС‚РёР»СЃСЏ РїСЂРё СЃС‚Р°СЂС‚Рµ', { error: err.message })
+    logger.warn('TG-бот не запустился при старте', { error: err.message })
 );
 
 server.listen(config.port, config.host, () => {
-    logger.info(`TGGATE РїР°РЅРµР»СЊ Р·Р°РїСѓС‰РµРЅР°: http://${config.host}:${config.port}`);
-    logger.info(`Р”РѕРјРµРЅ: ${config.domain}, РїСѓС‚СЊ Р°РґРјРёРЅРєРё: /${config.adminPath}/`);
+    logger.info(`TGGATE панель запущена: http://${config.host}:${config.port}`);
+    logger.info(`Домен: ${config.domain}, путь админки: /${config.adminPath}/`);
 });
 
 // Graceful shutdown
-// Graceful shutdown: Р·Р°РєСЂС‹РІР°РµРј WS-РєР»РёРµРЅС‚С‹ Рё СЃРµСЂРІРµСЂ, С„РѕСЂСЃ-РІС‹С…РѕРґ Р·Р° 3 СЃРµРє
-// (РёРЅР°С‡Рµ РѕС‚РєСЂС‹С‚С‹Рµ WebSocket-СЃРѕРµРґРёРЅРµРЅРёСЏ РґРµСЂР¶Р°С‚ РїСЂРѕС†РµСЃСЃ 90 СЃРµРєСѓРЅРґ вЂ” 502 РїСЂРё СЂРµСЃС‚Р°СЂС‚Рµ)
+// Graceful shutdown: закрываем WS-клиенты и сервер, форс-выход за 3 сек
+// (иначе открытые WebSocket-соединения держат процесс 90 секунд — 502 при рестарте)
 async function shutdown(signal) {
-    logger.info(`РџРѕР»СѓС‡РµРЅ ${signal}, Р·Р°РІРµСЂС€Р°СЋ СЂР°Р±РѕС‚Сѓ...`);
+    logger.info(`Получен ${signal}, завершаю работу...`);
     try { wsHub.closeAll(); } catch { /* ignore */ }
-    try { server.closeAllConnections?.(); } catch { /* СЃС‚Р°СЂС‹Рµ РІРµСЂСЃРёРё Node */ }
+    try { server.closeAllConnections?.(); } catch { /* старые версии Node */ }
     server.close(() => process.exit(0));
     setTimeout(() => process.exit(0), 3000).unref();
 }

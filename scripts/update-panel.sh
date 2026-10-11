@@ -144,25 +144,37 @@ info "Новая версия: ${NEW_VERSION}"
 # и причину приходится выяснять вслепую.
 # ---------------------------------------------------------------------------
 npm_install_robust() {
-    local dir="$1"; shift
-    local log="${BACKUP_PATH}/npm-$(basename "${dir}")-$(date +%H%M%S).log"
+    run_robust "npm install" "$@"
+}
+
+# ---------------------------------------------------------------------------
+# Запуск npm-команды с повторами и сохранением вывода.
+# Используется и для установки, и для сборки: обе команды падали по-разному,
+# и без лога обе были «непонятно что произошло».
+#   $1 — человекочитаемое имя команды
+#   $2 — каталог
+#   $3 — имя лога (без пути)
+#   $4.. — аргументы npm
+# ---------------------------------------------------------------------------
+run_robust() {
+    local label="$1" dir="$2" logname="$3"; shift 3
+    local log="${BACKUP_PATH}/${logname}-$(date +%H%M%S).log"
     mkdir -p "${BACKUP_PATH}"
     local attempt
     for attempt in 1 2 3; do
-        info "npm install в ${dir} (попытка ${attempt}/3)..."
-        if (cd "${dir}" && npm install "$@") 2>&1 | tee "${log}"; then
+        info "${label} в $(basename "${dir}") (попытка ${attempt}/3)..."
+        if (cd "${dir}" && npm "$@") 2>&1 | tee "${log}"; then
             return 0
         fi
         info "Попытка ${attempt} не удалась, жду перед повтором..."
         sleep $((attempt * 10))
     done
-    echo "[update] ФАТАЛЬНО: npm install в ${dir} не удался после 3 попыток." >&2
+    echo "[update] ФАТАЛЬНО: ${label} в ${dir} не удался после 3 попыток." >&2
     echo "[update] Последние строки вывода:" >&2
-    tail -30 "${log}" >&2 || true
+    tail -40 "${log}" >&2 || true
     echo "[update] Полный лог: ${log}" >&2
-    # Сохраняем вывод упавшей команды в историю обновлений панели
-    log_history "panel" "failed" "npm install в ${dir} не удался после 3 попыток; лог: ${log}"
-    set_status 3 6 "Ошибка установки зависимостей, выполняется откат" failed
+    log_history "panel" "failed" "${label} в ${dir} не удался после 3 попыток; лог: ${log}"
+    set_status 4 6 "Ошибка: ${label}, выполняется откат" failed
     return 1
 }
 
@@ -173,15 +185,31 @@ npm_install_robust() {
 git config --global --add safe.directory "${INSTALL_DIR}" 2>/dev/null || true
 
 set_status 3 6 "Установка зависимостей backend..." running
-npm_install_robust "${INSTALL_DIR}/panel/backend" --omit=dev --no-audit --no-fund
+npm_install_robust "${INSTALL_DIR}/panel/backend" install --omit=dev --no-audit --no-fund
 
 set_status 4 6 "Установка зависимостей и сборка фронтенда..." running
-npm_install_robust "${INSTALL_DIR}/panel/frontend" --no-audit --no-fund
-# Сборка Vite на малых VPS: ограничиваем память Node, чтобы OOM-killer не убил сборку
-export NODE_OPTIONS="--max-old-space-size=768"
+npm_install_robust "${INSTALL_DIR}/panel/frontend" install --no-audit --no-fund
+
+# Потолок heap для сборки подбираем по реально доступной памяти, а не задаём
+# константой: на VPS с 2 ГБ RAM и без swap константа либо мешает, либо приводит
+# к тому, что сборку прибивает OOM-killer. Переопределяется через TGGATE_BUILD_HEAP.
+detect_build_heap() {
+    local avail_kb avail_mb heap
+    avail_kb="$(awk '/^MemAvailable:/ {print $2}' /proc/meminfo 2>/dev/null || echo 0)"
+    avail_mb=$(( avail_kb / 1024 ))
+    (( avail_mb <= 0 )) && { echo 1024; return 0; }
+    heap=$(( avail_mb * 60 / 100 ))
+    (( heap < 768 )) && heap=768
+    (( heap > 2048 )) && heap=2048
+    echo "${heap}"
+}
+
+BUILD_HEAP="${TGGATE_BUILD_HEAP:-$(detect_build_heap)}"
+export NODE_OPTIONS="--max-old-space-size=${BUILD_HEAP}"
+info "Сборка фронтенда (доступно памяти ~${BUILD_HEAP} МБ потолка heap)"
 sync
 echo 3 > /proc/sys/vm/drop_caches 2>/dev/null || true   # сбрасываем файловый кэш перед сборкой
-npm run build
+run_robust "npm run build" "${INSTALL_DIR}/panel/frontend" "npm-build" run build
 
 # npm от root создаёт root-owned файлы — возвращаем владение панели
 chown -R tggate:tggate "${INSTALL_DIR}/panel" 2>/dev/null || true
