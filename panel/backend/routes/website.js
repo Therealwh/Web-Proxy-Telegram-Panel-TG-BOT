@@ -20,6 +20,8 @@ const logger = require('../utils/logger');
 
 const router = express.Router();
 
+const siteAnalytics = require('../services/siteAnalytics');
+
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 МБ (лимит задан в multer)
 const INSTALL_TEMPLATES = path.join(__dirname, '..', '..', '..', 'templates', 'websites');
 
@@ -91,7 +93,13 @@ router.put('/files/:name(*)', async (req, res, next) => {
         const abs = safePath(req.params.name);
         fs.mkdirSync(path.dirname(abs), { recursive: true });
         fs.writeFileSync(abs, content, 'utf8');
-        logger.info('Файл сайта обновлён', { name: req.params.name });
+        // Правка analytics.html или index.html требует пересборки:
+        // маркер подставляется в собранный файл, а не на лету
+        const name = req.params.name;
+        if (name === 'analytics.html' || name === 'index.html') {
+            siteAnalytics.buildIndex(config.websiteDir);
+        }
+        logger.info('Файл сайта обновлён', { name });
         await reloadTelemt();
         res.json({ ok: true });
     } catch (err) {
@@ -120,6 +128,9 @@ router.post('/upload', upload.single('file'), async (req, res, next) => {
         const filename = path.basename(req.file.originalname);
         const abs = safePath(filename);
         fs.writeFileSync(abs, req.file.buffer);
+        if (filename === 'analytics.html' || filename === 'index.html') {
+            siteAnalytics.buildIndex(config.websiteDir);
+        }
         logger.info('Файл загружен на сайт', { filename, size: req.file.size });
         await reloadTelemt();
         res.json({ ok: true, name: filename });
@@ -209,8 +220,16 @@ router.post('/apply-template', async (req, res, next) => {
         if (fs.existsSync(config.websiteDir)) {
             fs.cpSync(config.websiteDir, backupDir, { recursive: true });
         }
+
+        // Счётчики и верификация живут в analytics.html и переживают
+        // обновление шаблона: без этого пришлось бы вставлять их заново
+        // после каждого применения
+        const analytics = siteAnalytics.preserveAnalytics(config.websiteDir);
+
         fs.rmSync(config.websiteDir, { recursive: true, force: true });
         fs.cpSync(src, config.websiteDir, { recursive: true });
+        siteAnalytics.restoreAnalytics(config.websiteDir, analytics);
+        siteAnalytics.buildIndex(config.websiteDir);
 
         // Запоминаем, какой шаблон и какой версии установлен: иначе после
         // обновления панели нельзя понять, что файлы сайта устарели
