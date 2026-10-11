@@ -117,6 +117,7 @@ router.get('/', (req, res) => {
 // --- Обновить настройки (массово) ---
 router.put('/', (req, res, next) => {
     try {
+        let maskDomainChanged = false;
         const schema = z.record(z.unknown());
         const data = schema.parse(req.body);
 
@@ -145,15 +146,7 @@ router.put('/', (req, res, next) => {
             data.mask_domain = normalizeDomain(data.mask_domain);
             // Смена домена маскировки обесценивает прежнюю проверку Fake TLS:
             // ee-ссылки хранят домен внутри секрета, поэтому старые надо забыть.
-            // И сразу перепроверяем: ждать ближайшего цикла раз в 6 часов
-            // нельзя, иначе администратор увидит «не работает» при новом
-            // домене, который на самом деле подходит.
-            if (data.mask_domain !== before) {
-                db.prepare('DELETE FROM settings WHERE key = ?').run('faketls:status');
-                require('../services/mtprotoFaketls')
-                    .check({ force: true })
-                    .catch(() => { /* проверка не должна ломать сохранение */ });
-            }
+            if (data.mask_domain !== before) maskDomainChanged = true;
         }
 
         db.transaction(() => {
@@ -163,6 +156,15 @@ router.put('/', (req, res, next) => {
                 upsert.run(key, JSON.stringify(value));
             }
         })();
+
+        // Перепроверка — ПОСЛЕ записи: запускать её раньше нельзя, проверка
+        // читает домен из БД и до коммита транзакции видела бы старый.
+        if (maskDomainChanged) {
+            db.prepare('DELETE FROM settings WHERE key = ?').run('faketls:status');
+            require('../services/mtprotoFaketls')
+                .check({ force: true })
+                .catch(() => { /* проверка не должна ломать сохранение */ });
+        }
 
         const all = getAll();
         if (all.tg_bot_token) all.tg_bot_token = '••••••' + String(all.tg_bot_token).slice(-4);

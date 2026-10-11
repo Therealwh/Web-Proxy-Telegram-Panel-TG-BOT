@@ -111,7 +111,13 @@ async function check({ force = false } = {}) {
     const current = getStatus();
     if (!force && current.ready && !current.stale) return current;
 
-    const domain = String(current.domain || readMaskDomain() || '').trim().toLowerCase();
+    // Домен берём ТОЛЬКО из настроек — источник истины. Раньше здесь стояло
+    // `current.domain || readMaskDomain()`, и это было ошибкой: кэш хранит
+    // домен последней проверки, поэтому после смены настройки все перепроверки
+    // продолжали проверять старый домен и не могли выбраться из этого
+    // состояния. Пользователь видел адреса чужого домона и не понимал, почему
+    // поле в настройках одно, а проверяется другое.
+    const domain = String(readMaskDomain() || '').trim().toLowerCase();
     const checkedAt = new Date().toISOString();
 
     if (!domain) {
