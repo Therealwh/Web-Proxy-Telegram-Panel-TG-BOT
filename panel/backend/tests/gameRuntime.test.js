@@ -98,14 +98,24 @@ function boot() {
     };
     sandbox.globalThis = sandbox;
 
+    // Игра — это IIFE без экспортов: состояние нужно, чтобы проверить
+    // спавн и движение. В копию файла добавляется строка экспорта,
+    // сам шаблон игры при этом не меняется.
+    const source = fs.readFileSync(GAME_PATH, 'utf8').replace(
+        /\}\)\(\);\s*$/,
+        'window.__G = G; window.__X = { TANK_LEVELS, buildField, TILE, COLS, ROWS, ENEMY_SPAWN_COLS, PLAYER_SPAWN_COL };\n})();\n'
+    );
+
     vm.createContext(sandbox);
     try {
-        vm.runInContext(fs.readFileSync(GAME_PATH, 'utf8'), sandbox, { filename: 'game.js' });
+        vm.runInContext(source, sandbox, { filename: 'game.js' });
     } catch (e) {
         errors.push('запуск: ' + e.message);
     }
 
     const key = listeners.get('keydown') || null;
+    const keydown = key;
+    const keyup = listeners.get('keyup') || null;
 
     function pump(n) {
         for (let i = 0; i < n; i++) {
@@ -129,7 +139,26 @@ function boot() {
         try { key({ key: k, preventDefault() {} }); } catch (e) { errors.push(`ввод ${k}: ${e.message}`); }
     };
 
-    return { errors, pump, press, frames: () => frames, hasKeys: () => !!key };
+    /**
+     * Настоящее нажатие клавиши: браузер присылает и code, и key.
+     * `code` — физическая клавиша, `key` — символ по текущей раскладке.
+     * @param {string} code физическая клавиша, например KeyW
+     * @param {string} key  символ: 'w' в латинице, 'ц' в русской
+     */
+    const pressKey = (code, key) => {
+        if (!keydown) return;
+        try { keydown({ code, key, preventDefault() {} }); } catch (e) { errors.push(`ввод ${code}: ${e.message}`); }
+    };
+    const releaseKey = (code, key) => {
+        if (!keyup) return;
+        try { keyup({ code, key, preventDefault() {} }); } catch (e) { errors.push(`отпуск ${code}: ${e.message}`); }
+    };
+
+    return {
+        errors, pump, press, pressKey, releaseKey, G: () => sandbox.window.__G,
+        X: () => sandbox.window.__X,
+        frames: () => frames, hasKeys: () => !!key,
+    };
 }
 
 describe('игра запускается без ошибок', () => {
@@ -146,6 +175,101 @@ describe('игра запускается без ошибок', () => {
         const g = boot();
         g.pump(30);
         assert.ok(calls.fillText > 0, `текст не выведен: ${calls.fillText}`);
+    });
+});
+
+describe('спавн танка', () => {
+    // Именно так выглядел баг «поворачивает, но не едет»: танк ставился
+    // в угол клетки, занимал четыре клетки и упирался в кирпич. Направление
+    // менялось, а позиция нет — игра выглядела сломанной.
+    test('на всех уровнях под спавном игрока нет стен', () => {
+        const g = boot();
+        const X = g.X();
+        const G = g.G();
+        const solid = (c, r) => (c < 0 || r < 0 || c >= X.COLS || r >= X.ROWS
+            ? true
+            : [1, 2, 3, 4].includes(G.tiles[r * X.COLS + c]));
+
+        const blocked = [];
+        for (let n = 1; n <= X.TANK_LEVELS.length; n++) {
+            G.tiles = X.buildField(X.TANK_LEVELS[n - 1], true).tiles;
+            const c = X.PLAYER_SPAWN_COL, r = X.ROWS - 1;
+            for (const [cc, rr] of [[c, r], [c, r - 1]]) {
+                if (solid(cc, rr)) blocked.push(`ур.${n}: ${cc},${rr}`);
+            }
+        }
+        assert.deepEqual(blocked, [],
+            `спавн игрока заблокирован: ${blocked.slice(0, 10).join(', ')}`);
+    });
+
+    test('на всех уровнях точки выхода врагов свободны', () => {
+        const g = boot();
+        const X = g.X();
+        const G = g.G();
+        const solid = (c, r) => (c < 0 || r < 0 || c >= X.COLS || r >= X.ROWS
+            ? true
+            : [1, 2, 3, 4].includes(G.tiles[r * X.COLS + c]));
+
+        const blocked = [];
+        for (let n = 1; n <= X.TANK_LEVELS.length; n++) {
+            G.tiles = X.buildField(X.TANK_LEVELS[n - 1], true).tiles;
+            for (const c of X.ENEMY_SPAWN_COLS) {
+                for (const r of [0, 1]) {
+                    if (solid(c, r)) blocked.push(`ур.${n}: ${c},${r}`);
+                }
+            }
+        }
+        assert.deepEqual(blocked, [],
+            `выход врагов заблокирован: ${blocked.slice(0, 10).join(', ')}`);
+    });
+});
+
+describe('управление', () => {
+    /** Зажимает клавишу, ждёт кадры и возвращает, на сколько сдвинулся танк. */
+    function drive(g, code, key, frames = 25) {
+        const p = g.G().player;
+        const bx = p.x, by = p.y;
+        g.pressKey(code, key);
+        g.pump(frames);
+        g.releaseKey(code, key);
+        return { dx: p.x - bx, dy: p.y - by };
+    }
+
+    test('танк едет сразу после старта, а не только поворачивается', () => {
+        const g = boot();
+        g.pressKey('Enter', 'Enter');
+        g.pump(20);
+        assert.equal(g.G().state, 'play', 'игра не началась');
+
+        // Вверх и вправо — проход из стартовой клетки заведомо свободен
+        const up = drive(g, 'KeyW', 'w');
+        assert.ok(up.dy < -5, `вверх не едет: ${up.dy.toFixed(1)}`);
+
+        const right = drive(g, 'KeyD', 'd');
+        assert.ok(right.dx > 5, `вправо не едет: ${right.dx.toFixed(1)}`);
+    });
+
+    test('WASD работает при русской раскладке и при CapsLock', () => {
+        // Раньше читался только e.key: с русской раскладкой WASD не
+        // работал совсем, а при CapsLock давал «W» вместо «w».
+        const cases = [['KeyW', 'ц'], ['KeyD', 'в'], ['KeyW', 'W'], ['KeyW', 'w']];
+        for (const [code, key] of cases) {
+            const g = boot();
+            g.pressKey('Enter', 'Enter');
+            g.pump(20);
+            const m = drive(g, code, key);
+            const moved = Math.abs(m.dx) + Math.abs(m.dy);
+            assert.ok(moved > 5,
+                `${code} с key=${JSON.stringify(key)} не сработала: смещение ${moved.toFixed(1)}`);
+        }
+    });
+
+    test('стрелки работают как раньше', () => {
+        const g = boot();
+        g.pressKey('Enter', 'Enter');
+        g.pump(20);
+        const m = drive(g, 'ArrowUp', 'ArrowUp');
+        assert.ok(m.dy < -5, `стрелка вверх не едет: ${m.dy.toFixed(1)}`);
     });
 });
 

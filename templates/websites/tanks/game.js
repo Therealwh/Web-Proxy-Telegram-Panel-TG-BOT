@@ -756,6 +756,16 @@ const TANK_LEVELS = [
             }
         }
 
+        // Зоны выхода всегда свободны. Без этого на части уровней танк
+        // появлялся внутри стены: направление менялось, а позиция нет —
+        // игра выглядела как «не едет». Здесь выход гарантирован, и
+        // про него нельзя забыть при рисовании нового уровня.
+        const clear = (c, r) => { if (c >= 0 && r >= 0 && c < COLS && r < ROWS) tiles[r * COLS + c] = EMPTY; };
+        // У игрока открываем проход вверх, у врагов — вниз
+        for (const c of ENEMY_SPAWN_COLS) { clear(c, 0); clear(c, 1); }
+        clear(PLAYER_SPAWN_COL, ROWS - 1);
+        clear(PLAYER_SPAWN_COL, ROWS - 2);
+
         // База — по центру нижнего или верхнего ряда
         const baseRow = flipBase ? ROWS - 1 : 0;
         tiles[baseRow * COLS + 6] = BASE;
@@ -831,6 +841,17 @@ const TANK_LEVELS = [
     // ── Уровни ──────────────────────────────────────────────────────────────
     function levelCount() { return TANK_LEVELS.length; }
 
+    /**
+     * Ставит танк по центру клетки.
+     *
+     * Раньше ставили в угол клетки (`c * TILE`), и танк размером почти во
+     * всю клетку занимал сразу четыре клетки. Любой кирпич рядом делал
+     * движение невозможным: направление менялось, а позиция нет.
+     */
+    function spawnAt(c, r, dir, kind) {
+        return makeTank(c * TILE + TILE / 2, r * TILE + TILE / 2, dir, kind);
+    }
+
     function loadLevel(n) {
         G.level = ((n - 1) % levelCount()) + 1;
         const idx = G.level - 1;
@@ -840,7 +861,7 @@ const TANK_LEVELS = [
         G.subs = f.subs;
         G.base = f.base;
 
-        G.player = makeTank(4 * TILE, (ROWS - 1) * TILE, 0, 'player');
+        G.player = spawnAt(PLAYER_SPAWN_COL, ROWS - 1, 0, 'player');
         G.bullets = [];
         G.powerups = [];
         G.freeze = 0;
@@ -857,6 +878,11 @@ const TANK_LEVELS = [
     const SPAWN_POINTS = [
         { c: 0, r: 0 }, { c: 6, r: 0 }, { c: 12, r: 0 },
     ];
+
+    /** Колонки выхода врагов — в тон клеткам, которые мы очищаем. */
+    const ENEMY_SPAWN_COLS = SPAWN_POINTS.map((p) => p.c);
+    /** Колонка выхода игрока: слева от базы, как в оригинале. */
+    const PLAYER_SPAWN_COL = 4;
 
     /** Случайный тип врага: чем дальше уровень, тем чаще тяжёлые. */
     function randomEnemyKind() {
@@ -1063,13 +1089,13 @@ const TANK_LEVELS = [
 
         // Клавиатура и экранные кнопки сводим к одному состоянию
         const k = G.keys, t = G.touch;
-        const up = k.ArrowUp || k.w || t.up;
-        const down = k.ArrowDown || k.s || t.down;
-        const left = k.ArrowLeft || k.a || t.left;
-        const right = k.ArrowRight || k.d || t.right;
+        const up = k.up || t.up;
+        const down = k.down || t.down;
+        const left = k.left || t.left;
+        const right = k.right || t.right;
         // Имя НЕ fire: локальная переменная перекрыла бы одноимённую функцию
         // выстрела, и вызов падал бы «fire is not a function».
-        const wantFire = k[' '] || k.Enter || t.fire;
+        const wantFire = k.fire || t.fire;
 
         if (G.player && G.player.active) {
             let moved = false;
@@ -1214,7 +1240,7 @@ const TANK_LEVELS = [
         } else {
             // Перезапуск уровня: остатки врагов возвращаются в очередь
             G.bullets = [];
-            G.player = makeTank(4 * TILE, (ROWS - 1) * TILE, 0, 'player');
+            G.player = spawnAt(PLAYER_SPAWN_COL, ROWS - 1, 0, 'player');
             G.spawnLeft = G.spawnLeft + G.enemies.filter((e) => e.active).length;
             G.spawnPoints = SPAWN_POINTS.map((p) => ({ ...p, used: false }));
             G.spawnTimer = 1.5;
@@ -1323,34 +1349,72 @@ const TANK_LEVELS = [
         }
     }
 
+    /**
+     * Танк в духе «Денди»: две отдельные гусеницы с прорезями, корпус
+     * между ними, башня и ствол. Раньше это был сплошной прямоугольник —
+ * силуэт не читался, игра выглядела как схема, а не как игра.
+     *
+     * Спрайт всегда рисуется носом вверх, поворот делает вызывающий код.
+     */
     function drawTank(t, color, isPlayer) {
         if (!t.active) return;
-        const s = TILE - 6;
+        const s = TILE - 4;
+        const h = s / 2;                    // половина ширины спрайта
+        const trackW = Math.max(4, Math.round(s * 0.28));
+        const bodyW = s - trackW * 2;
+
         ctx.save();
         ctx.translate(t.x, t.y);
         ctx.rotate(t.dir * Math.PI / 2);
 
-        // Гусеницы
-        ctx.fillStyle = '#1a202c';
-        ctx.fillRect(-s / 2, -s / 2, s, s);
-        ctx.fillStyle = '#2d3748';
-        ctx.fillRect(-s / 2, -s / 2 + 2, s, 3);
-        ctx.fillRect(-s / 2, s / 2 - 5, s, 3);
+        // ── Гусеницы ────────────────────────────────────────────────────────
+        ctx.fillStyle = '#151a26';
+        ctx.fillRect(-h, -h, trackW, s);
+        ctx.fillRect(h - trackW, -h, trackW, s);
 
-        // Корпус
+        // Прорези на гусеницах — они оживляют силуэт и читаются
+        // даже на маленьком тайле
+        ctx.fillStyle = '#39445c';
+        const notch = 3;
+        for (let y = -h + 2; y < h - 1; y += notch) {
+            ctx.fillRect(-h + 1, y, trackW - 2, 1.5);
+            ctx.fillRect(h - trackW + 1, y, trackW - 2, 1.5);
+        }
+
+        // ── Корпус ──────────────────────────────────────────────────────────
         ctx.fillStyle = color;
-        ctx.fillRect(-s / 2 + 3, -s / 2 + 6, s - 6, s - 12);
+        ctx.fillRect(-bodyW / 2, -h + 1, bodyW, s - 2);
 
-        // Ствол
+        // Тень снизу придаёт объём без градиентов
+        ctx.fillStyle = 'rgba(0,0,0,0.22)';
+        ctx.fillRect(-bodyW / 2, h - 3, bodyW, 2);
+
+        // Броневые танки в оригинале помечены полосой — так игрок видит,
+        // сколько попаданий выдержит противник
+        if (t.kind === 'armor' && t.hp < 4) {
+            ctx.fillStyle = 'rgba(0,0,0,0.30)';
+            const stripes = 4 - t.hp;
+            for (let i = 0; i < stripes; i++) {
+                ctx.fillRect(-bodyW / 2 + 1, -h + 3 + i * 4, bodyW - 2, 1.5);
+            }
+        }
+
+        // ── Башня и ствол ───────────────────────────────────────────────────
+        // Ствол и башня лежат внутри спрайта: если ствол выходит за клетку,
+        // он наезжает на соседнюю и «съедает» её границу
         ctx.fillStyle = color;
-        ctx.fillRect(-2, -s / 2 - 5, 4, 8);
+        ctx.fillRect(-1.5, -h, 3, 5);           // ствол вперёд
+        ctx.fillRect(-3, -h + 4, 6, 6);         // башня
+        ctx.fillStyle = 'rgba(0,0,0,0.25)';
+        ctx.fillRect(-3, -h + 9, 6, 1.5);       // тень под башней
 
-        // У игрока — звезда брони
+        // ── Щит игрока ──────────────────────────────────────────────────────
         if (isPlayer && t.shield > 0) {
-            ctx.fillStyle = COLORS.power;
+            ctx.strokeStyle = COLORS.power;
+            ctx.lineWidth = 2;
             ctx.beginPath();
-            ctx.arc(0, 0, 3, 0, Math.PI * 2);
-            ctx.fill();
+            ctx.arc(0, 0, s / 2 + 1, 0, Math.PI * 2);
+            ctx.stroke();
         }
         ctx.restore();
     }
@@ -1381,10 +1445,20 @@ const TANK_LEVELS = [
         if (G.player) drawTank(G.player, COLORS.player, true);
 
         for (const b of G.bullets) {
-            ctx.fillStyle = COLORS.bullet;
+            // Снаряд в «Денди» вытянутый и с белым ядром: так его видно
+            // на любом фоне, особенно на кирпичной стене
             const d = DIRS[b.dir];
-            if (d.dx) ctx.fillRect(b.x - 4, b.y - 1, 8, 2);
-            else ctx.fillRect(b.x - 1, b.y - 4, 2, 8);
+            const len = b.big ? 7 : 5;
+            const wide = b.big ? 3 : 2;
+            ctx.save();
+            ctx.translate(b.x, b.y);
+            ctx.rotate(b.dir * Math.PI / 2);
+            ctx.fillStyle = b.big ? COLORS.power : COLORS.bullet;
+            ctx.fillRect(-wide / 2 - 1, -len, wide + 2, len * 2);   // тень/контур
+            ctx.fillStyle = b.big ? '#fff7b0' : '#ffffff';
+            ctx.fillRect(-wide / 2, -len + 1, wide, len * 2 - 2);    // ядро
+            ctx.restore();
+            void d;
         }
 
         for (const p of G.powerups) {
@@ -1413,12 +1487,37 @@ const TANK_LEVELS = [
     }
 
     function setupControls() {
+        // Физические клавиши. По e.key буквы опознаются только в латинице:
+        // с русской раскладкой или при включённом CapsLock WASD не работали
+        // совсем. e.code от раскладки не зависит.
+        const KEY_ALIAS = {
+            KeyW: 'up', KeyS: 'down', KeyA: 'left', KeyD: 'right',
+            ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right',
+        };
+        /** Имя управления по событию клавиатуры: сначала e.code, потом e.key. */
+        function controlOf(e) {
+            const byCode = KEY_ALIAS[e.code];
+            if (byCode) return byCode;
+            const byKey = KEY_ALIAS[e.key];
+            if (byKey) return byKey;
+            const lower = typeof e.key === 'string' ? e.key.toLowerCase() : '';
+            if (lower === 'w') return 'up';
+            if (lower === 's') return 'down';
+            if (lower === 'a') return 'left';
+            if (lower === 'd') return 'right';
+            if (lower === ' ' || e.key === 'Enter') return 'fire';
+            return null;
+        }
+
         window.addEventListener('keydown', (e) => {
-            if (e.key in G.keys || e.key === ' ' || e.key === 'Enter') e.preventDefault();
-            G.keys[e.key] = true;
-            if (e.key === ' ' || e.key === 'Enter') startOrAdvance();
+            const c = controlOf(e);
+            if (c) { e.preventDefault(); G.keys[c] = true; }
+            if (c === 'fire') startOrAdvance();
         });
-        window.addEventListener('keyup', (e) => { G.keys[e.key] = false; });
+        window.addEventListener('keyup', (e) => {
+            const c = controlOf(e);
+            if (c) G.keys[c] = false;
+        });
 
         bindPad('pad-up', () => { G.touch.up = true; }, () => { G.touch.up = false; });
         bindPad('pad-down', () => { G.touch.down = true; }, () => { G.touch.down = false; });
