@@ -57,7 +57,7 @@ main{max-width:960px; margin:0 auto; padding:0 18px 30px; display:flex; flex-dir
 .screen.shake{animation:shake .28s}
 @keyframes shake{0%,100%{transform:translate(0,0)} 20%{transform:translate(-4px,2px)} 40%{transform:translate(4px,-3px)} 60%{transform:translate(-3px,-2px)} 80%{transform:translate(2px,3px)}}
 .field-wrap{border:4px solid #7d8296; line-height:0; border-radius:2px}
-canvas#game{display:block; width:min(66vmin,416px); image-rendering:pixelated; background:#000; outline:none; touch-action:none}
+canvas#game{display:block; width:min(78vmin,528px); image-rendering:pixelated; background:#000; outline:none; touch-action:none}
 .scanlines{position:absolute; inset:0; pointer-events:none; border-radius:12px;
   background:repeating-linear-gradient(0deg, rgba(0,0,0,.20) 0 1px, transparent 1px 3px); animation:flick 7s infinite}
 @keyframes flick{0%,100%{opacity:.95} 50%{opacity:.75}}
@@ -67,7 +67,7 @@ canvas#game{display:block; width:min(66vmin,416px); image-rendering:pixelated; b
   background:radial-gradient(ellipse at center, transparent 58%, rgba(0,0,0,.55) 100%)}
 
 .hud-game{display:flex;flex-direction:column;justify-content:space-between;height:100%}
-.hud{width:94px; display:flex; flex-direction:column; justify-content:space-between; padding:4px 0; font-family:'Rubik Mono One','Arial Black',system-ui,sans-serif}
+.hud{width:110px; display:flex; flex-direction:column; justify-content:space-between; padding:4px 0; font-family:'Rubik Mono One','Arial Black',system-ui,sans-serif}
 .hud h3{font-size:9px; color:#7f86a0; letter-spacing:1px; margin-bottom:7px; text-align:center; font-weight:400}
 .foes,.lives{display:grid; grid-template-columns:repeat(2,18px); gap:5px; justify-content:center; min-height:20px}
 .foe,.life{width:18px; height:18px; background-size:contain; background-repeat:no-repeat; image-rendering:pixelated}
@@ -146,6 +146,13 @@ kbd.cyan{color:var(--cyan)}
 .scores .empty{color:var(--mut);justify-content:center}
 .faq dt{color:var(--yellow);font-weight:500;margin-top:14px}
 .faq dd{margin:4px 0 0;color:var(--mut);line-height:1.55;font-size:13.5px}
+/* Полноэкранный режим: рамка телевизора занимает весь экран */
+.tv:fullscreen{border-radius:0; padding:10px 14px; width:100%; height:100%; display:flex; flex-direction:column; justify-content:center; overflow:auto}
+.tv:fullscreen .screen{flex:1; max-height:100vh}
+.tv:fullscreen canvas#game{width:min(92vh, 92vw)}
+.tv:fullscreen .bezel-bottom{justify-content:center}
+.tv:-webkit-full-screen{border-radius:0; width:100%; height:100%}
+.fs-btn{cursor:pointer}
 .tip{text-align:center; min-height:46px; display:flex; align-items:center; justify-content:center;
   font-size:14.5px; color:#c9cde0; transition:opacity .5s; padding:0 12px}
 .tip.fade{opacity:0}
@@ -168,7 +175,7 @@ footer b{color:var(--yellow)}
 
 @media (max-width:640px){
   header{justify-content:center; text-align:center}
-  canvas#game{width:min(88vw,416px)}
+  canvas#game{width:min(92vw,528px)}
   .hud{width:100%; flex-direction:row; justify-content:space-around; padding-top:12px; flex-wrap:wrap; gap:12px}
   .hud h3{margin-bottom:4px}
   #hudEditor{flex-direction:row; flex-wrap:wrap; justify-content:center; width:100%}

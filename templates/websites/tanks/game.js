@@ -209,6 +209,7 @@ const G={
   grid:new Uint8Array(GRID*GRID), player:null, enemies:[], bullets:[], effects:[], pops:[],
   powers:[], spawns:[], queue:[], spawned:0, spawnT:0, freezeT:0, shovelT:0,
   baseAlive:true, kills:{a:0,b:0,c:0,d:0}, introT:0, overT:0, overDelay:0, overReason:'',
+  scoreSent:false, scoreAtSend:0,
   tally:null, titleAnim:0, testMode:false, custom:null
 };
 G.hi=+lsGet('tanki.hi')||0;
@@ -404,6 +405,7 @@ window.addEventListener('keydown',e=>{
   if(e.repeat)return;
   keys[e.code]=true; SND.init(); SND.resume();
   if(e.code==='KeyM'){setSound(SND.toggleMute());return;}
+  if(e.code==='KeyF'&&G.state!=='editor'){toggleFs();return;}
   if(e.code==='KeyP'||e.code==='Escape'){ if(G.state==='playing'){togglePause();return;}
     if(G.state==='editor'&&e.code==='Escape'){toTitle();return;} }
 
@@ -438,6 +440,13 @@ window.addEventListener('keydown',e=>{
   }
 });
 window.addEventListener('keyup',e=>{keys[e.code]=false;});
+
+/* При потере фокуса keyup не приходит, и клавиша остаётся зажатой:
+ * танк продолжает ехать и стрелять, пока игрок не нажмёт её снова.
+ * Чистим всё состояние ввода, как только окно теряет фокус. */
+function releaseAll(){ for(const k in keys) keys[k]=false; }
+window.addEventListener('blur',releaseAll);
+document.addEventListener('visibilitychange',()=>{ if(document.hidden) releaseAll(); });
 document.addEventListener('visibilitychange',()=>{if(document.hidden&&G.state==='playing'&&!G.paused)togglePause();});
 
 document.querySelectorAll('.dbtn').forEach(b=>{
@@ -484,6 +493,15 @@ document.getElementById('btnPause').addEventListener('click',e=>{e.target.blur()
 const btnSound=document.getElementById('btnSound');
 function setSound(m){btnSound.textContent=m?'ЗВУК: ВЫКЛ':'ЗВУК: ВКЛ';}
 btnSound.addEventListener('click',e=>{e.target.blur();SND.init();setSound(SND.toggleMute());});
+
+/* Полный экран: растягиваем сам телевизор, тогда HUD и кнопки остаются */
+const tvEl=document.querySelector('.tv');
+function toggleFs(){
+  const doc=document;
+  if(doc.fullscreenElement||doc.webkitFullscreenElement){ (doc.exitFullscreen||doc.webkitExitFullscreen).call(doc); }
+  else if(tvEl){ (tvEl.requestFullscreen||tvEl.webkitRequestFullscreen||function(){}).call(tvEl); }
+}
+document.getElementById('btnFs').addEventListener('click',e=>{e.target.blur();toggleFs();});
 setSound(SND.muted);
 
 function trySpawn(){
@@ -698,7 +716,13 @@ function update(){
   G.pops.forEach(pp=>pp.t++);
   G.pops=G.pops.filter(pp=>pp.t<45);
 
-  if(G.overDelay>0){G.overDelay--;if(G.overDelay===0){G.state='over';G.overT=0;SND.setMove(false);sfx.over();}}
+  if(G.overDelay>0){G.overDelay--;if(G.overDelay===0){G.state='over';G.overT=0;SND.setMove(false);sfx.over();submitScore();}}
+
+  /* Результат уходит на сервер и по ходу игры: иначе в таблице
+   * оказываются только те, кто проиграл, а лидер играл и не попадал
+   * в таблицу вовсе. */
+  if(!G.testMode&&!G.scoreSent){G.scoreSent=true;submitScore();}
+  if(G.scoreSent&&G.score!==G.scoreAtSend){G.scoreSent=false;G.scoreAtSend=G.score;}
 
   if(!G.queue.length&&!G.spawns.length&&!G.enemies.length&&G.overDelay===0&&G.baseAlive){
     G.state='tally'; SND.setMove(false);
@@ -933,29 +957,31 @@ for(const t of ['a','b','c','d'])TALLY_SPRITES[t]=makeSprite(TANK_A,PALS[t==='d'
 /* Онлайн-таблица рекордов панели: оффлайн молчит, онлайн отправляет */
 const API='/panel-api/game/scores';
 function escapeHtml(s){return String(s).replace(/[&<>"']/g,(ch)=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[ch]);}
+function scoresMsg(txt){ const list=document.getElementById('scores-list'); if(list) list.innerHTML='<li class="empty">'+txt+'</li>'; }
 async function loadScores(){
   try{
     const res=await fetch(API+'?limit=10');
-    if(!res.ok)return;
+    if(!res.ok){ scoresMsg('Рекорды недоступны ('+res.status+')'); return; }
     const data=await res.json();
     const list=document.getElementById('scores-list');
     if(!list)return;
-    if(!data.scores||data.scores.length===0){list.innerHTML='<li class="empty">Таблица рекордов пуста — будьте первым!</li>';return;}
+    if(!data.scores||data.scores.length===0){scoresMsg('Таблица рекордов пуста — будьте первым!');return;}
     list.innerHTML=data.scores.map((s,i)=>
       `<li><span class="pos">${i+1}.</span>`+
       `<span class="nick">${escapeHtml(s.nickname)}</span>`+
       `<span class="sc">${s.score}</span></li>`).join('');
-  }catch(e){/* оффлайн — таблица просто не обновится */}
+  }catch(e){ scoresMsg('Рекорды загружаются после старта панели'); }
 }
 async function submitScore(){
   try{
     if(G.score<100)return;
     let nick=lsGet('tanki.nick');
     if(!nick){nick='Танкист-'+randInt(100,999);lsSet('tanki.nick',nick);}
-    await fetch(API,{method:'POST',headers:{'Content-Type':'application/json'},
+    const res=await fetch(API,{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({nickname:nick,score:G.score,level:G.level})});
-    loadScores();
-  }catch(e){/* оффлайн */}
+    if(res.ok){ addScore(0); scoresMsg('Результат записан: '+nick+' — '+G.score); loadScores(); }
+    else scoresMsg('Не удалось записать результат ('+res.status+')');
+  }catch(e){ scoresMsg('Рекорды появятся после старта панели'); }
 }
 
 const TIPS=[
