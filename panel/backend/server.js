@@ -57,7 +57,7 @@ app.use(helmet({
             defaultSrc: ["'self'"],
             scriptSrc: ["'self'"],
             styleSrc: ["'self'", "'unsafe-inline'"], // Tailwind inline-СЃС‚РёР»Рё
-            imgSrc: ["'self'", 'data:'],
+            imgSrc: ["'self'", 'data:', 'https://flagcdn.com'],
             connectSrc: ["'self'", 'wss:', 'ws:'],
         },
     },
@@ -74,8 +74,8 @@ app.use(cors({ origin: false }));
 
 // Р‘Р°Р·РѕРІС‹Р№ rate limiting РЅР° РІСЃРµ API
 app.use('/api', rateLimit({
-    windowMs: 60 * 1000,
-    max: 300,
+windowMs: 60 * 1000,
+    max: 600,
     standardHeaders: true,
     legacyHeaders: false,
     message: { error: 'РЎР»РёС€РєРѕРј РјРЅРѕРіРѕ Р·Р°РїСЂРѕСЃРѕРІ. РџРѕРїСЂРѕР±СѓР№С‚Рµ С‡РµСЂРµР· РјРёРЅСѓС‚Сѓ.' },

@@ -75,13 +75,13 @@ export default function Engine() {
         }
     };
 
-    const q = data.quality;
-    const pool = data.pool;
-    const nat = data.natStun;
-    const self = data.selftest;
-    const gates = data.gates;
-    const ups = data.upstreams;
-    const ready = data.ready;
+    const q = data.quality || {};
+    const pool = data.pool || {};
+    const nat = data.natStun || {};
+    const self = data.selftest || {};
+    const gates = data.gates || null;
+    const ups = data.upstreams || {};
+    const ready = data.ready || null;
 
     return (
         <div className="space-y-4">

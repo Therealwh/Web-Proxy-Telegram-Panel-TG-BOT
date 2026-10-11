@@ -13,7 +13,24 @@ function flag(iso) {
     return String.fromCodePoint(...[...iso].map((ch) => 0x1f1e6 + ch.charCodeAt(0) - 65));
 }
 
-const flagUrl = (iso) => `https://flagcdn.com/w80/${String(iso || '').toLowerCase()}.svg`;
+const flagUrl = (iso) => `https://flagcdn.com/${String(iso || '').toLowerCase()}.svg`;
+
+/** Флаг страны: при недоступности CDN показываем код ISO вместо битой картинки */
+function Flag({ iso }) {
+    const [failed, setFailed] = useState(false);
+    const code = String(iso || '').toUpperCase();
+    if (failed || !/^[A-Z]{2}$/.test(code)) {
+        return (
+            <span className="w-7 h-5 rounded-[3px] shrink-0 grid place-items-center bg-slate-200 dark:bg-slate-700 text-[9px] font-bold text-slate-600 dark:text-slate-300 uppercase ring-1 ring-black/10">
+                {code.slice(0, 2) || '—'}
+            </span>
+        );
+    }
+    return (
+        <img src={flagUrl(code)} alt="" loading="lazy" onError={() => setFailed(true)}
+             className="w-7 h-5 rounded-[3px] object-cover shrink-0 ring-1 ring-black/10" />
+    );
+}
 
 const dnCache = {};
 function countryName(iso, fallback) {
@@ -184,7 +201,7 @@ export default function Geo() {
                                             className={`w-full text-left rounded-lg px-2 py-1.5 transition-colors ${active ? 'bg-primary/10 ring-1 ring-primary/40' : 'hover:bg-slate-100 dark:hover:bg-slate-800'}`}
                                             onClick={() => setSel(active ? null : c.code)}>
                                         <div className="flex items-center gap-2">
-                                            <img src={flagUrl(c.code)} alt="" className="w-7 h-5 rounded-[3px] object-cover shrink-0 ring-1 ring-black/10" />
+                                            <Flag iso={c.code} />
                                             <span className="text-sm font-medium flex-1 truncate">{countryName(c.code, c.country)}</span>
                                             <span className="text-xs text-slate-400">{pct}%</span>
                                         </div>
