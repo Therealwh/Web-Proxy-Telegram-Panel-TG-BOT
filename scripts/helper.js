@@ -45,6 +45,26 @@ function getSecret() {
     }
 }
 
+/**
+ * Готовит копию скрипта в /tmp для запуска.
+ *
+ * Скрипты обновления переписывают сами себя: в середине работы делается
+ * `git checkout` нового тега, то есть подменяется файл в рабочем дереве.
+ * Bash читает файл по смещению, и после подмены исполнение уезжает в
+ * произвольное место — наблюдалось «npm ищет package.json в корне установки»
+ * и выпадение кусков кода. Запуск из копии вне дерева эту проблему снимает
+ * полностью: git не может подменить файл, который мы уже запустили.
+ *
+ * @param {string} src - путь к скрипту в рабочем дереве
+ * @returns {string} путь к запускаемой копии
+ */
+function stageScript(src) {
+    const tmp = `/tmp/tggate-run-${path.basename(src)}-${Date.now()}`;
+    fs.copyFileSync(src, tmp);
+    fs.chmodSync(tmp, 0o755);
+    return tmp;
+}
+
 /** Constant-time сравнение секретов. */
 function safeEqual(a, b) {
     const ba = Buffer.from(String(a));
@@ -171,9 +191,14 @@ const server = http.createServer((req, res) => {
                 if (v !== undefined) envArgs.push('--setenv', `${k}=${v}`);
             }
             log(`Обновление в отдельном юните: ${unit}`);
-            execFile('systemd-run', ['--collect', `--unit=${unit}`, ...envArgs, 'bash', script, ...args],
+            // Запускаем КОПИЮ скрипта из /tmp: сам скрипт переписывается на
+            // git checkout, а bash читает файл по смещению.
+            const staged = stageScript(script);
+            log(`Запуск копии скрипта: ${staged}`);
+            execFile('systemd-run', ['--collect', `--unit=${unit}`, ...envArgs, 'bash', staged, ...args],
                 { timeout: 30000 }, (err) => {
                     if (err) log(`systemd-run не удался (${err.message}) — скрипт продолжит в cgroup хелпера`);
+                    else fs.unlink(staged, () => {});
                 });
             return res.end(JSON.stringify({ ok: true }));
         }
@@ -183,7 +208,10 @@ const server = http.createServer((req, res) => {
         // Обновление панели перезапустит панель — хелпер продолжит работу
         // (это отдельный root-сервис, в cgroup панели он не входит).
         busy = true;
-        execFile('bash', [script, ...args], { timeout: 600000 }, (err, stdout, stderr) => {
+        // Тоже копия: скрипт обновления переписывает сам себя на git checkout
+        const stagedFallback = stageScript(script);
+        log(`Запуск копии скрипта: ${stagedFallback}`);
+        execFile('bash', [stagedFallback, ...args], { timeout: 600000 }, (err, stdout, stderr) => {
             busy = false;
             log(`Завершено (${parsed.key}): ${err ? 'ОШИБКА: ' + (stderr || err.message).slice(0, 500) : 'успех'}`);
         });
