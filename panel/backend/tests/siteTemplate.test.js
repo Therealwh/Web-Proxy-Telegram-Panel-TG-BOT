@@ -275,6 +275,41 @@ describe('игровая логика', () => {
         assert.ok(meta.version, 'не указана версия шаблона');
     });
 
+    test('все используемые цвета объявлены', () => {
+        // Настоящий canvas молча игнорирует присваивание undefined и
+        // оставляет предыдущий цвет: ошибка выглядит как «просто странно
+        // нарисованный орёл», и её не видно ни в тестах, ни в консоли.
+        const js = read('game.js');
+
+        const decl = js.match(/const COLORS = \{([\s\S]*?)\n    \};/);
+        assert.ok(decl, 'не найден объект COLORS');
+        const declared = new Set([...decl[1].matchAll(/(\w+)\s*:/g)].map((m) => m[1]));
+
+        const used = [...js.matchAll(/COLORS\.(\w+)/g)].map((m) => m[1]);
+        const missing = [...new Set(used)].filter((k) => !declared.has(k)).sort();
+
+        assert.deepEqual(missing, [],
+            `ссылки на несуществующие цвета: ${missing.join(', ')}`);
+    });
+
+    test('рисунок держится пиксельной сетки', () => {
+        // Без этого NES-вид рассыпается: смазанные края выдают браузер
+        const js = read('game.js');
+        assert.match(js, /const PIX = \d+;/, 'нет шага пикселя');
+        assert.match(js, /const NES = \{/, 'нет палитры NES');
+    });
+
+    test('значки бонусов нарисованы, а не напечатаны буквами', () => {
+        // Раньше поверх квадрата печаталась буква шрифтом monospace —
+        // это мгновенно выдавало браузер среди 8-битной графики
+        const js = read('game.js');
+        assert.match(js, /const POWER_ICONS = \{/, 'нет значков бонусов');
+        for (const kind of ['helmet', 'star', 'grenade', 'shovel', 'clock', 'life']) {
+            assert.match(js, new RegExp(`${kind}: \\[`), `нет значка ${kind}`);
+        }
+        assert.doesNotMatch(js, /fillText\([^)]*kind/, 'значок бонуса по-прежнему рисуется буквой');
+    });
+
     test('уровни не повторяются — иначе это не «много уровней»', () => {
         const levels = parseLevels(read('game.js'));
         const sig = levels.map((l) => l.mode + '|' + l.rows.join(','));

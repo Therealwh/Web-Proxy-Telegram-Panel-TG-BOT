@@ -1251,26 +1251,55 @@ const TANK_LEVELS = [
     const canvas = document.getElementById('game');
     const ctx = canvas.getContext('2d');
 
-    const COLORS = {
-        bg: '#101014',
-        brick: '#c05a2a',
-        brickDark: '#8a3d1c',
-        steel: '#8a94a6',
-        steelDark: '#5c6472',
-        water: '#2b6cb0',
-        waterLight: '#4a90d9',
-        trees: '#2f855a',
-        ice: '#9fd8e8',
-        base: '#d69e2e',
-        baseDark: '#975a16',
-        player: '#f6c453',
-        enemy: '#c53030',
-        enemyFast: '#dd6b20',
-        enemyPower: '#805ad5',
-        enemyArmor: '#2c7a7b',
-        bullet: '#f7fafc',
-        power: '#68d391',
+    // Палитра настоящего NES (видеочип 2C02). Раньше здесь стояли
+    // произвольные «красивые» цвета, и игра выглядела как современная
+    // веб-страница, а не как игра с картриджа 8-битной эпохи.
+    const NES = {
+        black: '#000000',
+        grey: '#545454',
+        lightGrey: '#989696',
+        white: '#fcfcfc',
+        silver: '#bcbcbc',
+        red: '#982c00',
+        orange: '#ec6a64',
+        gold: '#a0aa00',
+        yellow: '#f8d800',
+        green: '#00b800',
+        darkGreen: '#007800',
+        blue: '#0058f8',
+        lightBlue: '#3cbcfc',
+        cyan: '#38b4cc',
+        tan: '#f0c060',
     };
+
+    const COLORS = {
+        bg: NES.black,
+        brick: NES.white,
+        brickDark: NES.grey,
+        steel: NES.silver,
+        steelDark: NES.grey,
+        water: NES.blue,
+        waterLight: NES.lightBlue,
+        trees: NES.green,
+        treesDark: NES.darkGreen,
+        ice: NES.cyan,
+        base: NES.white,
+        baseDark: NES.grey,
+        baseFrame: NES.silver,
+        player: NES.yellow,
+        // Типы врагов в оригинале различаются цветом: серый, зелёный,
+        // жёлтый и мигающий бронированный
+        enemy: NES.silver,
+        enemyFast: NES.green,
+        enemyPower: NES.yellow,
+        enemyArmor: NES.white,
+        bullet: NES.white,
+        power: NES.gold,
+    };
+
+    // Один «пиксель» рисунка. Всё рисуется кратно этому размеру, иначе
+    // картинка рассыпается: у NES пиксель был один, а не полпикселя.
+    const PIX = 2;
 
     function drawCell(c, r) {
         const t = G.tiles[r * COLS + c];
@@ -1281,140 +1310,172 @@ const TANK_LEVELS = [
             for (let sy = 0; sy < SUB; sy++) {
                 for (let sx = 0; sx < SUB; sx++) {
                     if (!subAlive(c, r, sx, sy)) continue;
-                    // Кирпичный узор: смещение шва в рядах
-                    const off = sy % 2 === 0 ? 0 : subSize / 2;
+                    // Кирпичи в оригинале белые на чёрном, со швом
+                    // через ряд. Раньше здесь был оранжевый цвет и
+                    // сглаженные прямоугольники — это больше не «Денди».
+                    const ox = x + sx * subSize;
+                    const oy = y + sy * subSize;
                     ctx.fillStyle = COLORS.brickDark;
-                    ctx.fillRect(x + sx * subSize, y + sy * subSize, subSize, subSize);
+                    ctx.fillRect(ox, oy, subSize, subSize);
+                    const shift = sy % 2 === 0 ? 0 : PIX * 2;
                     ctx.fillStyle = COLORS.brick;
-                    ctx.fillRect(x + sx * subSize + off, y + sy * subSize + 1, subSize / 2, subSize - 2);
+                    for (let b = 0; b < 2; b++) {
+                        ctx.fillRect(ox + shift + b * PIX * 5, oy + PIX, PIX * 4, subSize - PIX * 2);
+                    }
                 }
             }
             return;
         }
         if (t === STEEL) {
+            // Броня: сплошной блок со светом сверху и тенью снизу
             ctx.fillStyle = COLORS.steelDark;
             ctx.fillRect(x, y, TILE, TILE);
             ctx.fillStyle = COLORS.steel;
-            ctx.fillRect(x + 2, y + 2, TILE - 4, TILE - 4);
-            ctx.fillStyle = COLORS.steelDark;
-            ctx.fillRect(x + TILE / 2 - 2, y + TILE / 2 - 2, 4, 4);
+            ctx.fillRect(x + PIX, y + PIX, TILE - PIX * 2, TILE - PIX * 2);
+            ctx.fillStyle = NES.white;
+            ctx.fillRect(x + PIX, y + PIX, TILE - PIX * 2, PIX);
+            ctx.fillRect(x + PIX, y + PIX, PIX, TILE - PIX * 2);
+            ctx.fillStyle = NES.grey;
+            ctx.fillRect(x + PIX, y + TILE - PIX * 3, TILE - PIX * 2, PIX);
+            ctx.fillRect(x + TILE - PIX * 3, y + PIX, PIX, TILE - PIX * 2);
             return;
         }
         if (t === WATER) {
+            // Вода в оригинале — две горизонтальные волны, сдвинутые
+            // друг относительно друга. Без анимации она выглядит
+            // как обычный синий квадрат.
             ctx.fillStyle = COLORS.water;
             ctx.fillRect(x, y, TILE, TILE);
-            // Волна по времени — вода выглядит живой
-            const ph = Math.floor(G.tick / 20) % 4;
+            const ph = Math.floor(G.tick / 24) % 4;
             ctx.fillStyle = COLORS.waterLight;
-            for (let i = 0; i < 3; i++) {
-                const wy = y + 4 + i * 8 + (ph % 2);
-                ctx.fillRect(x + ((i + ph) % 2 ? 2 : 8), wy, 10, 2);
+            for (let row = 0; row < 4; row++) {
+                const yy = y + row * PIX * 3 + PIX;
+                const off = ((row + ph) % 2) * PIX * 3;
+                ctx.fillRect(x + off, yy, TILE - off - PIX * 2, PIX);
             }
             return;
         }
         if (t === ICE) {
-            ctx.fillStyle = COLORS.ice;
+            ctx.fillStyle = COLORS.water;
             ctx.fillRect(x, y, TILE, TILE);
-            ctx.strokeStyle = 'rgba(255,255,255,0.55)';
-            ctx.lineWidth = 1;
-            ctx.beginPath();
-            ctx.moveTo(x, y + TILE / 2); ctx.lineTo(x + TILE, y + TILE / 2);
-            ctx.moveTo(x + TILE / 2, y); ctx.lineTo(x + TILE / 2, y + TILE);
-            ctx.stroke();
+            ctx.fillStyle = COLORS.waterLight;
+            ctx.fillRect(x + PIX, y + PIX, TILE - PIX * 2, TILE - PIX * 2);
+            // Лёд рисуется ровно, без сглаживания: диагональ из углов
+            ctx.fillStyle = NES.white;
+            for (let i = 0; i < 4; i++) {
+                ctx.fillRect(x + i * PIX * 3 + PIX * 2, y + i * PIX * 3 + PIX, PIX, PIX);
+                ctx.fillRect(x + TILE - i * PIX * 3 - PIX * 3, y + i * PIX * 3 + PIX, PIX, PIX);
+            }
             return;
         }
         if (t === BASE) {
+            // Орёл в рамке, как в оригинале. База — единственное место,
+            // где игрок обязан защищать, и она должна читаться сразу.
             ctx.fillStyle = COLORS.baseDark;
             ctx.fillRect(x, y, TILE, TILE);
             ctx.fillStyle = COLORS.base;
-            ctx.fillRect(x + 3, y + 3, TILE - 6, TILE - 6);
-            // Орел
+            ctx.fillRect(x + PIX * 2, y + PIX * 2, TILE - PIX * 4, TILE - PIX * 4);
+
+            const c0 = x + TILE / 2;
+            // Крылья: два прямоугольника, расходящиеся от центра
             ctx.fillStyle = COLORS.baseDark;
-            ctx.beginPath();
-            ctx.moveTo(x + 6, y + TILE - 6);
-            ctx.lineTo(x + TILE / 2, y + 6);
-            ctx.lineTo(x + TILE - 6, y + TILE - 6);
-            ctx.closePath();
-            ctx.fill();
+            ctx.fillRect(c0 - PIX * 7, y + PIX * 7, PIX * 4, PIX * 3);
+            ctx.fillRect(c0 + PIX * 3, y + PIX * 7, PIX * 4, PIX * 3);
+            // Тело и голова
+            ctx.fillStyle = NES.black;
+            ctx.fillRect(c0 - PIX * 2, y + PIX * 5, PIX * 4, PIX * 7);
+            ctx.fillRect(c0 - PIX, y + PIX * 3, PIX * 2, PIX * 3);
+            // Клюв
+            ctx.fillStyle = NES.orange;
+            ctx.fillRect(c0 - PIX, y + PIX * 5, PIX * 2, PIX);
             return;
         }
         if (t === TREES) {
-            // Дерево рисуется поверх танков — это и есть маскировка
+            // Кусты рисуются поверх танков — это и есть маскировка.
+            // В оригинале это плотная зелёная гроздь без градиентов.
+            ctx.fillStyle = COLORS.treesDark;
+            ctx.fillRect(x, y, TILE, TILE);
             ctx.fillStyle = COLORS.trees;
             for (let i = 0; i < 4; i++) {
-                ctx.beginPath();
-                ctx.arc(x + 6 + (i % 2) * 14, y + 6 + Math.floor(i / 2) * 14, 7, 0, Math.PI * 2);
-                ctx.fill();
+                const cx = x + (i % 2 ? PIX * 8 : PIX * 5);
+                const cy = y + (i < 2 ? PIX * 5 : PIX * 10);
+                ctx.fillRect(cx - PIX * 3, cy - PIX * 3, PIX * 6, PIX * 6);
+            }
+            ctx.fillStyle = COLORS.treesDark;
+            for (let i = 0; i < 4; i++) {
+                const cx = x + (i % 2 ? PIX * 8 : PIX * 5);
+                const cy = y + (i < 2 ? PIX * 5 : PIX * 10);
+                ctx.fillRect(cx - PIX, cy - PIX, PIX * 2, PIX * 2);
             }
         }
     }
 
-    /**
-     * Танк в духе «Денди»: две отдельные гусеницы с прорезями, корпус
-     * между ними, башня и ствол. Раньше это был сплошной прямоугольник —
- * силуэт не читался, игра выглядела как схема, а не как игра.
+/**
+     * Танк в стиле 8-битного «Денди»: две гусеницы с прорезями, корпус
+     * между ними, башня и ствол.
      *
-     * Спрайт всегда рисуется носом вверх, поворот делает вызывающий код.
+     * Всё рисуется кратно PIX — так рисунок держится на пиксельной сетке
+     * и не рассыпается, как было с произвольными координатами. Спрайт
+     * всегда носом вверх, поворот делает вызывающий код.
      */
     function drawTank(t, color, isPlayer) {
         if (!t.active) return;
-        const s = TILE - 4;
-        const h = s / 2;                    // половина ширины спрайта
-        const trackW = Math.max(4, Math.round(s * 0.28));
-        const bodyW = s - trackW * 2;
+        const S = TILE - PIX * 2;            // 22 пикселя, запас по 2 с каждой стороны
+        const half = S / 2;
+        const TR = PIX * 2;                   // ширина гусеницы
+        const BW = S - TR * 2;                // ширина корпуса
 
         ctx.save();
         ctx.translate(t.x, t.y);
         ctx.rotate(t.dir * Math.PI / 2);
 
         // ── Гусеницы ────────────────────────────────────────────────────────
-        ctx.fillStyle = '#151a26';
-        ctx.fillRect(-h, -h, trackW, s);
-        ctx.fillRect(h - trackW, -h, trackW, s);
-
-        // Прорези на гусеницах — они оживляют силуэт и читаются
-        // даже на маленьком тайле
-        ctx.fillStyle = '#39445c';
-        const notch = 3;
-        for (let y = -h + 2; y < h - 1; y += notch) {
-            ctx.fillRect(-h + 1, y, trackW - 2, 1.5);
-            ctx.fillRect(h - trackW + 1, y, trackW - 2, 1.5);
+        ctx.fillStyle = NES.grey;
+        ctx.fillRect(-half, -half, TR, S);
+        ctx.fillRect(half - TR, -half, TR, S);
+        ctx.fillStyle = NES.silver;
+        for (let y = -half + PIX; y < half - PIX; y += PIX * 2) {
+            ctx.fillRect(-half + PIX, y, TR - PIX * 2, PIX);
+            ctx.fillRect(half - TR + PIX, y, TR - PIX * 2, PIX);
         }
 
         // ── Корпус ──────────────────────────────────────────────────────────
+        // Корпус короче спрайта спереди: иначе ствол оказывается внутри
+        // него и танк выглядит просто прямоугольником без оружия
+        const bodyTop = -half + PIX * 3;
         ctx.fillStyle = color;
-        ctx.fillRect(-bodyW / 2, -h + 1, bodyW, s - 2);
+        ctx.fillRect(-BW / 2, bodyTop, BW, half - bodyTop);
 
-        // Тень снизу придаёт объём без градиентов
-        ctx.fillStyle = 'rgba(0,0,0,0.22)';
-        ctx.fillRect(-bodyW / 2, h - 3, bodyW, 2);
-
-        // Броневые танки в оригинале помечены полосой — так игрок видит,
-        // сколько попаданий выдержит противник
+        // Броневые танки в оригинале помечены полосами — по ним игрок
+        // видит, сколько попаданий выдержит противник
         if (t.kind === 'armor' && t.hp < 4) {
-            ctx.fillStyle = 'rgba(0,0,0,0.30)';
+            ctx.fillStyle = 'rgba(0,0,0,0.35)';
             const stripes = 4 - t.hp;
             for (let i = 0; i < stripes; i++) {
-                ctx.fillRect(-bodyW / 2 + 1, -h + 3 + i * 4, bodyW - 2, 1.5);
+                ctx.fillRect(-BW / 2 + PIX, bodyTop + PIX * 4 + i * PIX * 4, BW - PIX * 2, PIX);
             }
         }
 
-        // ── Башня и ствол ───────────────────────────────────────────────────
-        // Ствол и башня лежат внутри спрайта: если ствол выходит за клетку,
-        // он наезжает на соседнюю и «съедает» её границу
+        // ── Ствол и башня ───────────────────────────────────────────────────
+        // Ствол выступает перед корпусом — именно он делает силуэт
+        // узнаваемым с первого взгляда
         ctx.fillStyle = color;
-        ctx.fillRect(-1.5, -h, 3, 5);           // ствол вперёд
-        ctx.fillRect(-3, -h + 4, 6, 6);         // башня
-        ctx.fillStyle = 'rgba(0,0,0,0.25)';
-        ctx.fillRect(-3, -h + 9, 6, 1.5);       // тень под башней
+        ctx.fillRect(-PIX / 2, -half, PIX, PIX * 3);
+        ctx.fillRect(-PIX * 1.5, bodyTop, PIX * 3, PIX * 3);
+        ctx.fillStyle = 'rgba(0,0,0,0.30)';
+        ctx.fillRect(-PIX * 1.5, bodyTop + PIX * 3, PIX * 3, PIX);
 
         // ── Щит игрока ──────────────────────────────────────────────────────
         if (isPlayer && t.shield > 0) {
-            ctx.strokeStyle = COLORS.power;
-            ctx.lineWidth = 2;
-            ctx.beginPath();
-            ctx.arc(0, 0, s / 2 + 1, 0, Math.PI * 2);
-            ctx.stroke();
+            // Мигает: в оригинале щит заметно пульсирует, иначе его
+            // не видно на фоне кирпича
+            if (Math.floor(G.tick / 6) % 2 === 0) {
+                ctx.fillStyle = COLORS.power;
+                ctx.fillRect(-half - PIX, -half - PIX, PIX, S + PIX * 2);
+                ctx.fillRect(half, -half - PIX, PIX, S + PIX * 2);
+                ctx.fillRect(-half - PIX, -half - PIX, S + PIX * 2, PIX);
+                ctx.fillRect(-half - PIX, half, S + PIX * 2, PIX);
+            }
         }
         ctx.restore();
     }
@@ -1445,31 +1506,103 @@ const TANK_LEVELS = [
         if (G.player) drawTank(G.player, COLORS.player, true);
 
         for (const b of G.bullets) {
-            // Снаряд в «Денди» вытянутый и с белым ядром: так его видно
-            // на любом фоне, особенно на кирпичной стене
+            // Снаряд в оригинале маленький и с тёмной обводкой: так его
+            // видно и на кирпиче, и на чёрном фоне
             const d = DIRS[b.dir];
-            const len = b.big ? 7 : 5;
-            const wide = b.big ? 3 : 2;
+            const long = b.big ? PIX * 5 : PIX * 3;
+            const wide = b.big ? PIX * 3 : PIX * 2;
             ctx.save();
             ctx.translate(b.x, b.y);
             ctx.rotate(b.dir * Math.PI / 2);
+            ctx.fillStyle = NES.black;
+            ctx.fillRect(-wide / 2 - PIX / 2, -long - PIX / 2, wide + PIX, long + PIX);
             ctx.fillStyle = b.big ? COLORS.power : COLORS.bullet;
-            ctx.fillRect(-wide / 2 - 1, -len, wide + 2, len * 2);   // тень/контур
-            ctx.fillStyle = b.big ? '#fff7b0' : '#ffffff';
-            ctx.fillRect(-wide / 2, -len + 1, wide, len * 2 - 2);    // ядро
+            ctx.fillRect(-wide / 2, -long, wide, long * 2);
             ctx.restore();
             void d;
         }
 
-        for (const p of G.powerups) {
+        /**
+     * Значки бонусов — те же шесть, что и в оригинале: шлем, звезда,
+     * граната, лопата, часы и жизнь. Раньше поверх квадрата печаталась
+     * буква monospace-шрифтом, и это выдавало браузер сразу.
+     * Каждый значок нарисован символами: '#' — цвет, '+' — тень,
+     * '.' — прозрачный. Читается прямо в коде.
+     */
+    const POWER_ICONS = {
+        helmet: [
+            '..####..',
+            '.######.',
+            '##.##.##',
+            '########',
+            '#..##..#',
+        ],
+        star: [
+            '...##...',
+            '..####..',
+            '.######.',
+            '########',
+            '..#..#..',
+        ],
+        grenade: [
+            '.....##.',
+            '..#####.',
+            '.#######',
+            '####+###',
+            '.#######',
+            '..#####.',
+        ],
+        shovel: [
+            '...##...',
+            '...##...',
+            '..####..',
+            '.######.',
+            '########',
+            '###++###',
+        ],
+        clock: [
+            '..####..',
+            '.#....#.',
+            '#..##..#',
+            '#..##..#',
+            '#......#',
+            '.#....#.',
+            '..####..',
+        ],
+        life: [
+            '..#..#..',
+            '.######.',
+            '########',
+            '.######.',
+            '.##..##.',
+            '..#..#..',
+        ],
+    };
+
+    /** Рисует значок в точке (cx, cy) с центром посередине. */
+    function drawIcon(icon, cx, cy, color) {
+        const h = icon.length, w = icon[0].length;
+        const ox = cx - (w * PIX) / 2;
+        const oy = cy - (h * PIX) / 2;
+        for (let y = 0; y < h; y++) {
+            for (let x = 0; x < w; x++) {
+                const ch = icon[y][x];
+                if (ch === '.') continue;
+                ctx.fillStyle = ch === '+' ? NES.black : color;
+                ctx.fillRect(ox + x * PIX, oy + y * PIX, PIX, PIX);
+            }
+        }
+    }
+
+    for (const p of G.powerups) {
             // Мигание в последние секунды — предупреждение, что бонус исчезнет
             if (p.life < 3 && Math.floor(p.life * 6) % 2 === 0) continue;
-            ctx.fillStyle = COLORS.power;
-            ctx.fillRect(p.x - 8, p.y - 8, 16, 16);
-            ctx.fillStyle = COLORS.bg;
-            ctx.font = 'bold 11px monospace';
-            ctx.textAlign = 'center';
-            ctx.fillText(p.kind[0].toUpperCase(), p.x, p.y + 4);
+            const icon = POWER_ICONS[p.kind];
+            if (!icon) continue;
+            // Подложка: тёмная рамка, как под иконками в оригинале
+            ctx.fillStyle = NES.black;
+            ctx.fillRect(p.x - PIX * 6, p.y - PIX * 6, PIX * 12, PIX * 12);
+            drawIcon(icon, p.x, p.y, COLORS.power);
         }
     }
 

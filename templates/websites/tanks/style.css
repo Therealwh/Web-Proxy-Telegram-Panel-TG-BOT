@@ -104,12 +104,12 @@ h1 { font-size: 28px; margin: 0 0 10px; line-height: 1.25; }
 #game {
   display: block; width: 100%; height: auto;
   image-rendering: pixelated;          /* нечёткие пиксели на телефоне */
-  image-rendering: crisp-edges;
-  background: #101014;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  touch-action: manipulation;           /* без задержки нажатия */
-}
+image-rendering: crisp-edges;
+    background: #000000;                 /* фон поля такой же, как на картридже */
+    border: 1px solid var(--line);
+    border-radius: 2px;                  /* в оригинале рамки поля скруглённые */
+    touch-action: manipulation;           /* не ��алить жесты на телефоне */
+  }
 
 .overlay {
   position: absolute; inset: 0;

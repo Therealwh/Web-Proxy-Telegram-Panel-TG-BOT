@@ -39,6 +39,17 @@ TODO.md
 Дополнение.md
 промт для панели.md.txt
 
+# Ромы игр — это чужая авторская собственность, в репозиторий им нельзя
+*.nes
+*.sfc
+*.smc
+*.gb
+*.gbc
+*.gba
+*.z64
+*.n64
+*.iso
+
 PAY-PLAN.md
 
 PLAN-1.3.1.md
@@ -47,7 +58,7 @@ PLAN-*.md
 
 FIX-PLAN.md
 
-# ������� ���������
+# ������� ���������
 .codebuff/
 .freebuff/
 AUDIT-ERRORS.md
