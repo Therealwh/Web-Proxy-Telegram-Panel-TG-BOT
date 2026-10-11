@@ -47,8 +47,10 @@ async function deliverWithRetry(hook, event, payload, attempt = 1) {
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         logger.info('Вебхук доставлен', { event, url: hook.url });
+        markDelivered(hook.id, null);
     } catch (err) {
         logger.warn('Ошибка доставки вебхука', { event, url: hook.url, attempt, error: err.message });
+        markDelivered(hook.id, err.message);
         if (attempt < MAX_RETRIES) {
             // Экспоненциальная задержка: 5с, 25с, 125с
             setTimeout(() => deliverWithRetry(hook, event, payload, attempt + 1).catch(() => {}),
@@ -57,4 +59,41 @@ async function deliverWithRetry(hook, event, payload, attempt = 1) {
     }
 }
 
-module.exports = { fireWebhook };
+/**
+ * Фиксирует результат последней доставки в самой записи вебхука,
+ * чтобы состояние видно было в панели, а не только в логах сервера.
+ * @param {number} id - id вебхука
+ * @param {string|null} error - текст ошибки или null при успехе
+ */
+function markDelivered(id, error) {
+    try {
+        if (error) {
+            db.prepare('UPDATE webhooks SET last_status = 0, last_error = ? WHERE id = ?')
+                .run(String(error).slice(0, 500), id);
+        } else {
+            db.prepare(
+                "UPDATE webhooks SET last_status = 1, last_error = NULL, last_ok_at = datetime('now') WHERE id = ?"
+            ).run(id);
+        }
+    } catch {
+        // Статус доставки — справочная информация, ошибка записи не должна ломать доставку
+    }
+}
+
+/**
+ * Отправляет одно событие конкретному вебхуку (используется кнопкой «Тест»).
+ * @param {object} hook - запись вебхука
+ * @param {string} event
+ * @param {object} payload
+ * @returns {Promise<{ok: boolean, error?: string}>}
+ */
+function deliverTo(hook, event, payload) {
+    return new Promise((resolve) => {
+        deliverWithRetry(hook, event, payload).then(() => {
+            const row = db.prepare('SELECT last_status, last_error FROM webhooks WHERE id = ?').get(hook.id);
+            resolve(row?.last_status ? { ok: true } : { ok: false, error: row?.last_error || 'неизвестная ошибка' });
+        });
+    });
+}
+
+module.exports = { fireWebhook, deliverTo };

@@ -12,10 +12,25 @@ const telemt = require('../services/telemtApi');
 const { clientLinks } = require('../services/links');
 const { syncWebProfiles } = require('../services/webProfiles');
 const { ensureQrToken } = require('../services/qrTokens');
+const { fireWebhook } = require('../services/webhooks');
 const { httpError } = require('../middleware/errorHandler');
 const logger = require('../utils/logger');
 
 const router = express.Router();
+
+/** Компактное описание клиента для вебхука (без секрета и без внутренних полей). */
+function clientPayload(row) {
+    return {
+        id: row.id,
+        username: row.username,
+        status: row.status,
+        quota_bytes: row.quota_bytes,
+        traffic_used: row.traffic_used,
+        expires_at: row.expires_at,
+        max_ips: row.max_ips,
+        owner: row.owner ?? null,
+    };
+}
 
 /** Возвращает глобальный домен маскировки из настроек. */
 function getMaskDomain() {
@@ -162,6 +177,7 @@ router.post('/', async (req, res, next) => {
         logger.info('Клиент создан', { username: data.username });
         syncWebProfiles(); // добавляем WEB-профиль, если Web Proxy включён
         const row = db.prepare('SELECT * FROM clients WHERE id = ?').get(result.lastInsertRowid);
+        fireWebhook('client.created', clientPayload(row)).catch(() => {});
         res.status(201).json(enrichClient(row));
     } catch (err) {
         next(err);
@@ -169,7 +185,10 @@ router.post('/', async (req, res, next) => {
 });
 
 // --- Массовое создание (CSV) ---
-router.post('/bulk', async (req, res, next) => {
+// ВНИМАНИЕ: путь /bulk-create, а НЕ /bulk. Раньше этот обработник занимал /bulk
+// и стоял выше обработчика массовых действий, а Express всегда выигрывает первый:
+// массовые block/unblock/renew из UI были недостижимы и всегда падали с 400.
+router.post('/bulk-create', async (req, res, next) => {
     try {
         const schema = z.object({
             usernames: z.array(z.string().regex(/^[A-Za-z0-9_.-]{1,64}$/)).min(1).max(100),
@@ -274,6 +293,7 @@ router.delete('/:id', async (req, res, next) => {
         db.prepare('DELETE FROM clients WHERE id = ?').run(row.id);
 
         logger.info('Клиент удалён', { username: row.username });
+        fireWebhook('client.deleted', clientPayload(row)).catch(() => {});
         res.json({ ok: true });
     } catch (err) {
         next(err);
@@ -294,6 +314,7 @@ router.post('/:id/toggle', async (req, res, next) => {
             await telemt.disableUser(row.username);
             db.prepare("UPDATE clients SET status = 'blocked', updated_at = datetime('now') WHERE id = ?").run(row.id);
         }
+        fireWebhook(enable ? 'client.unblocked' : 'client.blocked', clientPayload(row)).catch(() => {});
         res.json({ ok: true, status: enable ? 'active' : 'blocked' });
     } catch (err) {
         next(err);
@@ -395,16 +416,19 @@ router.post('/bulk', async (req, res, next) => {
             const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(id);
             if (!client) continue;
             try {
+                let evt = null;
                 if (action === 'block') {
                     await telemt.disableUser(client.username).catch(() => {});
                     db.prepare("UPDATE clients SET status = 'blocked' WHERE id = ?").run(id);
                     processed += 1;
+                    evt = 'client.blocked';
                 } else if (action === 'unblock') {
                     await telemt.enableUser(client.username).catch(() => {});
                     // Разблокируем только если доступ ещё не истёк
                     const expired = client.expires_at && new Date(client.expires_at) < new Date();
                     db.prepare('UPDATE clients SET status = ? WHERE id = ?').run(expired ? 'expired' : 'active', id);
                     processed += 1;
+                    evt = 'client.unblocked';
                 } else if (action === 'renew' && days) {
                     const base = client.expires_at && new Date(client.expires_at) > new Date()
                         ? new Date(client.expires_at) : new Date();
@@ -412,6 +436,11 @@ router.post('/bulk', async (req, res, next) => {
                     await telemt.patchUser(client.username, { expiration_rfc3339: newExpiry }).catch(() => {});
                     db.prepare("UPDATE clients SET expires_at = ?, status = 'active' WHERE id = ?").run(newExpiry, id);
                     processed += 1;
+                    evt = 'client.renewed';
+                }
+                if (evt) {
+                    const fresh = db.prepare('SELECT * FROM clients WHERE id = ?').get(id);
+                    fireWebhook(evt, clientPayload(fresh)).catch(() => {});
                 }
             } catch (e) {
                 logger.warn('Массовое действие не удалось', { id, action, error: e.message });

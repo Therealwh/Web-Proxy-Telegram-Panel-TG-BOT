@@ -39,6 +39,8 @@ const updatesRouter = require('./routes/updates');
 const salesRouter = require('./routes/sales');
 const zapret2Router = require('./routes/zapret2');
 const geoRouter = require('./routes/geo');
+const webhooksModule = require('./routes/webhooks');
+const auditRouter = require('./routes/audit');
 const publicPagesRouter = require('./routes/publicPages');
 const openapiSpec = require('./public-api/docs/openapi');
 
@@ -120,6 +122,8 @@ app.use('/api/api-keys', requireAuth, csrfProtection, audit(db), apiKeysModule.r
 app.use('/api/updates', requireAuth, csrfProtection, audit(db), updatesRouter);
 app.use('/api/zapret2', requireAuth, csrfProtection, audit(db), zapret2Router.router);
 app.use('/api/geo', requireAuth, geoRouter);
+app.use('/api/webhooks', requireAuth, csrfProtection, audit(db), webhooksModule.router);
+app.use('/api/audit', requireAuth, auditRouter);
 app.use('/api/sales', requireAuth, salesRouter);
 app.use('/api/payments', paymentsRouter.router); // РІРЅСѓС‚СЂРё: РІРµР±С…СѓРєРё РїСѓР±Р»РёС‡РЅС‹, Р°РґРјРёРЅСЃРєРѕРµ вЂ” JWT
 

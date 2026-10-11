@@ -160,11 +160,21 @@ async function disableExpired() {
         "SELECT * FROM clients WHERE status = 'active' AND expires_at IS NOT NULL AND expires_at < datetime('now')"
     ).all();
     const telemt = require('./telemtApi');
+    const { fireWebhook } = require('./webhooks');
     for (const client of rows) {
         try {
             await telemt.disableUser(client.username);
             db.prepare("UPDATE clients SET status = 'expired' WHERE id = ?").run(client.id);
             logger.info('Клиент просрочен и отключён', { username: client.username });
+            fireWebhook('client.expired', {
+                id: client.id,
+                username: client.username,
+                status: 'expired',
+                expires_at: client.expires_at,
+                quota_bytes: client.quota_bytes,
+                traffic_used: client.traffic_used,
+                owner: client.owner ?? null,
+            }).catch(() => {});
         } catch (err) {
             logger.warn('Не удалось отключить просроченного клиента', { username: client.username });
         }

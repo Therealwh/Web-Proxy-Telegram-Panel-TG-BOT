@@ -4,6 +4,7 @@ import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import {
     LayoutDashboard, Users, BarChart3, ScrollText, Settings, QrCode, Globe,
     Globe2, KeyRound, Bot, RefreshCw, Code2, Moon, Sun, LogOut, Menu, X, Activity, Shield,
+    Webhook, ClipboardList,
 } from 'lucide-react';
 import { useAuthStore, useThemeStore, useLangStore } from '../store';
 import { get, post, put } from '../api';
@@ -26,6 +27,8 @@ const NAV = [
     { to: '/updates', icon: RefreshCw, label: 'nav.updates' },
     { to: '/engine', icon: Activity, label: 'nav.engine' },
     { to: '/geo', icon: Globe2, label: 'nav.geo' },
+    { to: '/webhooks', icon: Webhook, label: 'nav.webhooks' },
+    { to: '/audit', icon: ClipboardList, label: 'nav.audit' },
     { to: '/zapret2', icon: Shield, label: 'nav.zapret2' },
     { to: '/settings', icon: Settings, label: 'nav.settings' },
 ];

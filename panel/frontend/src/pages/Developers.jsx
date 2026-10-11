@@ -54,12 +54,16 @@ export default function Developers() {
 
             <Card title={t('dev.whTitle')}>
                 <p className="text-sm text-slate-500 dark:text-slate-400">
-                    {t('dev.whText')} <code className="font-mono text-xs">client.created</code>,{' '}
-                    <code className="font-mono text-xs">client.expired</code>,{' '}
-                    <code className="font-mono text-xs">client.blocked</code>,{' '}
-                    <code className="font-mono text-xs">payment.success</code>,{' '}
-                    <code className="font-mono text-xs">quota.exceeded</code>.
+                    {t('dev.whText')}{' '}
+                    {['client.created', 'client.blocked', 'client.unblocked', 'client.renewed',
+                        'client.expired', 'client.deleted', 'payment.success', 'quota.exceeded']
+                        .map((e) => (
+                            <span key={e}>
+                                <code className="font-mono text-xs">{e}</code>{' '}
+                            </span>
+                        ))}
                     {t('dev.whSigned')} <code className="font-mono text-xs">X-TGGATE-Signature</code>.
+                    {t('dev.whManage')} <code className="font-mono text-xs">/webhooks</code>.
                 </p>
             </Card>
 

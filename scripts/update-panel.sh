@@ -137,18 +137,46 @@ NEW_VERSION="$(cat VERSION 2>/dev/null || echo 'unknown')"
 info "Новая версия: ${NEW_VERSION}"
 
 # ---------------------------------------------------------------------------
+# Установка зависимостей с повторами.
+# Транзиентный обрыв связи с реестром npm ронял всё обновление и откатывало
+# панель на старый тег. Повторяем попытку, а при окончательной ошибке
+# сохраняем вывод команды — иначе в панели видно только имя команды,
+# и причину приходится выяснять вслепую.
+# ---------------------------------------------------------------------------
+npm_install_robust() {
+    local dir="$1"; shift
+    local log="${BACKUP_PATH}/npm-$(basename "${dir}")-$(date +%H%M%S).log"
+    mkdir -p "${BACKUP_PATH}"
+    local attempt
+    for attempt in 1 2 3; do
+        info "npm install в ${dir} (попытка ${attempt}/3)..."
+        if (cd "${dir}" && npm install "$@") 2>&1 | tee "${log}"; then
+            return 0
+        fi
+        info "Попытка ${attempt} не удалась, жду перед повтором..."
+        sleep $((attempt * 10))
+    done
+    echo "[update] ФАТАЛЬНО: npm install в ${dir} не удался после 3 попыток." >&2
+    echo "[update] Последние строки вывода:" >&2
+    tail -30 "${log}" >&2 || true
+    echo "[update] Полный лог: ${log}" >&2
+    # Сохраняем вывод упавшей команды в историю обновлений панели
+    log_history "panel" "failed" "npm install в ${dir} не удался после 3 попыток; лог: ${log}"
+    set_status 3 6 "Ошибка установки зависимостей, выполняется откат" failed
+    return 1
+}
+
+# ---------------------------------------------------------------------------
 # 3. Обновляем зависимости и пересобираем фронтенд (панель ещё работает)
 # ---------------------------------------------------------------------------
 # Git от root в каталоге пользователя tggate: явно доверяем репозиторию
 git config --global --add safe.directory "${INSTALL_DIR}" 2>/dev/null || true
 
-cd "${INSTALL_DIR}/panel/backend"
 set_status 3 6 "Установка зависимостей backend..." running
-npm install --omit=dev --no-audit --no-fund
+npm_install_robust "${INSTALL_DIR}/panel/backend" --omit=dev --no-audit --no-fund
 
-cd "${INSTALL_DIR}/panel/frontend"
 set_status 4 6 "Установка зависимостей и сборка фронтенда..." running
-npm install --no-audit --no-fund
+npm_install_robust "${INSTALL_DIR}/panel/frontend" --no-audit --no-fund
 # Сборка Vite на малых VPS: ограничиваем память Node, чтобы OOM-killer не убил сборку
 export NODE_OPTIONS="--max-old-space-size=768"
 sync

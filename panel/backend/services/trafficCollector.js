@@ -10,10 +10,13 @@
 const db = require('../db');
 const telemt = require('./telemtApi');
 const logger = require('../utils/logger');
+const { fireWebhook } = require('./webhooks');
 
 let running = false;
 /** total_octets из прошлого опроса: username -> байты */
 let prevOctets = new Map();
+/** id клиентов, о превышении квоты которых уже сообщили (чтобы не слать событие каждую минуту) */
+const quotaNotified = new Set();
 
 /** Один цикл сбора. */
 async function pollOnce() {
@@ -48,8 +51,40 @@ async function pollOnce() {
 
     prevOctets = nowOctets;
 
+    checkQuotaEvents();
+
     // Чистим записи старше 35 дней
     db.prepare("DELETE FROM traffic_daily WHERE date < date('now','-35 days')").run();
+}
+
+/**
+ * Событие quota.exceeded — один раз на каждый факт пересечения квоты.
+ * При сбросе квоты (reset-quota или автосброс) флаг снимается,
+ * поэтому следующее пересечение снова породит событие.
+ */
+function checkQuotaEvents() {
+    const rows = db.prepare(
+        `SELECT id, username, quota_bytes, traffic_used, expires_at, max_ips, owner
+         FROM clients WHERE quota_bytes IS NOT NULL AND quota_bytes > 0`
+    ).all();
+    for (const r of rows) {
+        const key = String(r.id);
+        const over = Number(r.traffic_used) >= Number(r.quota_bytes);
+        if (over && !quotaNotified.has(key)) {
+            quotaNotified.add(key);
+            fireWebhook('quota.exceeded', {
+                id: r.id,
+                username: r.username,
+                quota_bytes: r.quota_bytes,
+                traffic_used: r.traffic_used,
+                expires_at: r.expires_at,
+                max_ips: r.max_ips,
+                owner: r.owner ?? null,
+            }).catch(() => {});
+        } else if (!over) {
+            quotaNotified.delete(key);
+        }
+    }
 }
 
 /** Запускает периодический сбор (раз в минуту). */
