@@ -458,16 +458,26 @@ window.addEventListener('blur',releaseAll);
 document.addEventListener('visibilitychange',()=>{ if(document.hidden) releaseAll(); });
 document.addEventListener('visibilitychange',()=>{if(document.hidden&&G.state==='playing'&&!G.paused)togglePause();});
 
+/* Мобильное управление. Слушатели дублированы: pointer-события
+ * работают не во всех мобильных браузерах, а touch-события — везде.
+ * Без дублей на части телефонов огонь просто не срабатывал. */
 document.querySelectorAll('.dbtn').forEach(b=>{
   const d=+b.dataset.dir;
-  b.addEventListener('pointerdown',e=>{e.preventDefault();SND.init();SND.resume();keys.touchDir=d;});
-  ['pointerup','pointercancel'].forEach(ev=>b.addEventListener(ev,e=>{e.preventDefault();if(keys.touchDir===d)keys.touchDir=undefined;}));
+  const down=e=>{e.preventDefault();SND.init();SND.resume();keys.touchDir=d;};
+  const up=e=>{e.preventDefault();if(keys.touchDir===d)keys.touchDir=undefined;};
+  b.addEventListener('pointerdown',down);
+  b.addEventListener('touchstart',down,{passive:false});
+  ['pointerup','pointercancel','touchend','touchcancel'].forEach(ev=>b.addEventListener(ev,up,{passive:false}));
   b.addEventListener('contextmenu',e=>e.preventDefault());
 });
 const btnFire=document.getElementById('btnFire');
-btnFire.addEventListener('pointerdown',e=>{e.preventDefault();SND.init();SND.resume();
-  if(G.state==='title'){runMenu(G.menuIndex);return;} keys.touchFire=true;});
-['pointerup','pointercancel'].forEach(ev=>btnFire.addEventListener(ev,e=>{e.preventDefault();keys.touchFire=false;}));
+const fireDown=e=>{e.preventDefault();SND.init();SND.resume();
+  if(G.state==='title'){runMenu(G.menuIndex);return;} keys.touchFire=true;};
+const fireUp=e=>{e.preventDefault();keys.touchFire=false;};
+btnFire.addEventListener('pointerdown',fireDown);
+btnFire.addEventListener('touchstart',fireDown,{passive:false});
+['pointerup','pointercancel','touchend','touchcancel'].forEach(ev=>btnFire.addEventListener(ev,fireUp,{passive:false}));
+btnFire.addEventListener('contextmenu',e=>e.preventDefault());
 
 /* ═══════════════ ЛОГИКА ИГРЫ ═══════════════ */
 function allTanks(){return G.enemies.concat(G.player&&G.player.alive?[G.player]:[]);}
@@ -1006,6 +1016,11 @@ async function submitScore(){
     if(submitQueued){ submitQueued=false; submitScore(); }
   }
 }
+
+/* Таблица рекордов загружается сразу при открытии страницы.
+ * Раньше она заполнялась только после отправки своего результата:
+ * пока игрок не проиграл, раздел висел с надписью «Загрузка…». */
+if (document.getElementById('scores-list')) loadScores();
 
 const TIPS=[
   'Каждый 4-й, 11-й и 18-й вражеский танк везёт бонус — он мигает красным.',

@@ -161,6 +161,7 @@ kbd.cyan{color:var(--cyan)}
 footer{text-align:center; color:#5d6480; font-size:12.5px; padding:6px 16px 40px}
 footer b{color:var(--yellow)}
 
+.touchpad{-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}
 .touchpad{position:fixed; left:0; right:0; bottom:0; display:none; justify-content:space-between; align-items:flex-end;
   padding:16px 24px; z-index:60; pointer-events:none}
 @media (pointer:coarse){.touchpad{display:flex}}
