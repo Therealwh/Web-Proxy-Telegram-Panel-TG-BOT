@@ -34,6 +34,7 @@ const SCRIPTS = {
     zapret2: path.join(SCRIPTS_DIR, 'zapret2-ctl.sh'),
     'telemt-limits': path.join(SCRIPTS_DIR, 'telemt-limits.sh'),
     'ip-blocklist': path.join(SCRIPTS_DIR, 'ip-blocklist.sh'),
+    warp: path.join(SCRIPTS_DIR, 'warp.sh'),
 };
 
 /** Секрет из install.env (генерируется установщиком/install-helper.sh). */
@@ -182,6 +183,24 @@ const server = http.createServer((req, res) => {
         }
 
         const args = parsed.version ? [String(parsed.version)] : [];
+        // WARP: аргумент обязателен (status/enable/disable) и скрипт меняет
+        // сетевые правила, поэтому принимаем только заранее известные команды.
+        if (parsed.key === 'warp') {
+            const action = String(parsed.action || 'status');
+            const allowed = ['status', 'enable', 'disable'];
+            if (!allowed.includes(action)) {
+                return res.end(JSON.stringify({ ok: false, error: `неизвестное действие WARP: ${action}` }), { status: 400 });
+            }
+            const unit = `tggate-warp-${Date.now()}`;
+            const staged = stageScript(script);
+            log(`WARP ${action} в отдельном юните: ${unit}`);
+            execFile('systemd-run', ['--collect', `--unit=${unit}`, 'bash', staged, action],
+                { timeout: 30000 }, (err) => {
+                    if (err) log(`systemd-run не удался (${err.message}) — выполняем в cgroup хелпера`);
+                    else fs.unlink(staged, () => {});
+                });
+            return res.end(JSON.stringify({ ok: true }));
+        }
         // Лимиты памяти/CPU: скрипт сам перезапускает telemt, поэтому запускаем
         // его копией из /tmp в отдельном юните — рестарт хелпера не должен
         // прерывать применение лимитов на середине.

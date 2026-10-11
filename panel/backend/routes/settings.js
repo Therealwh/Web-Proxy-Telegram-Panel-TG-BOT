@@ -201,6 +201,34 @@ router.post('/backup-domains', async (req, res, next) => {
     }
 });
 
+// --- Резервный маршрут к Telegram DC через WARP ---
+router.get('/warp', async (req, res, next) => {
+    try {
+        const state = await require('../services/warpControl').getState();
+        res.json({ ...state, advice: require('../services/warpControl').advice(state) });
+    } catch (err) {
+        next(err);
+    }
+});
+
+router.post('/warp/:action', async (req, res, next) => {
+    try {
+        const { action } = z.object({
+            action: z.enum(['enable', 'disable']),
+        }).parse(req.params);
+        const result = await require('../services/warpControl').run(action);
+        if (!result.ok) throw httpError(500, result.error);
+        res.json({
+            ok: true,
+            message: action === 'enable'
+                ? 'Резервный маршрут включается. Проверьте состояние через несколько секунд.'
+                : 'Резервный маршрут выключен, трафик идёт напрямую.',
+        });
+    } catch (err) {
+        next(err);
+    }
+});
+
 // --- Политика SNI и selfmask ---
 router.get('/masking', async (req, res, next) => {
     try {

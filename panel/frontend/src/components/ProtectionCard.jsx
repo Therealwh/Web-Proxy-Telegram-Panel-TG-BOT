@@ -47,6 +47,7 @@ export default function ProtectionCard() {
     const [limits, setLimits] = useState(null);
     const [masking, setMasking] = useState(null);
     const [faketls, setFaketls] = useState(null);
+    const [warp, setWarp] = useState(null);
     const [domains, setDomains] = useState(null);
     const [domainsText, setDomainsText] = useState('');
     const [upstream, setUpstream] = useState('');
@@ -54,12 +55,13 @@ export default function ProtectionCard() {
 
     const load = async () => {
         try {
-            const [c, l, m, d, f] = await Promise.all([
+            const [c, l, m, d, f, w] = await Promise.all([
                 get('/api/settings/web-carriers').catch(() => null),
                 get('/api/settings/engine-limits').catch(() => null),
                 get('/api/settings/masking').catch(() => null),
                 get('/api/settings/backup-domains').catch(() => null),
                 get('/api/settings/faketls').catch(() => null),
+                get('/api/settings/warp').catch(() => null),
             ]);
             if (c) setCarriers(c.candidates || []);
             if (l) setLimits(l);
@@ -73,6 +75,7 @@ export default function ProtectionCard() {
                 setDomainsText((d.backups || []).join('\n'));
             }
             if (f) setFaketls(f);
+            if (w) setWarp(w);
         } catch { /* карточка просто останется пустой */ }
     };
 
@@ -224,6 +227,48 @@ export default function ProtectionCard() {
                             t('settings.protApplied'))}>
                         {busy === 'domains' ? '…' : t('settings.protApply')}
                     </button>
+                </section>
+
+                {/* Резервный маршрут к DC через WARP */}
+                <section className="pt-4 border-t border-slate-200 dark:border-slate-700">
+                    <h4 className="text-sm font-semibold mb-1">{t('settings.protWarp')}</h4>
+                    <p className="text-xs text-slate-500 mb-2">{t('settings.protWarpHint')}</p>
+                    <div className="text-sm mb-2">
+                        {!warp ? '—' : !warp.available ? (
+                            <span className="text-slate-500">{t('settings.protWarpNoScript')}</span>
+                        ) : warp.effective ? (
+                            <span className="text-emerald-600 dark:text-emerald-400">
+                                ✓ {t('settings.protWarpOn')}
+                            </span>
+                        ) : warp.routingEnabled && !warp.connected ? (
+                            <span className="text-red-600 dark:text-red-400">
+                                {t('settings.protWarpBroken')}
+                            </span>
+                        ) : warp.installed ? (
+                            <span className="text-slate-500">
+                                {t('settings.protWarpOff')}{warp.connected ? ` · ${t('settings.protWarpTunnelOn')}` : ''}
+                            </span>
+                        ) : (
+                            <span className="text-amber-600 dark:text-amber-400">{t('settings.protWarpNoClient')}</span>
+                        )}
+                    </div>
+                    {warp?.advice && (
+                        <p className="text-xs text-amber-600 dark:text-amber-400 mb-2">{warp.advice}</p>
+                    )}
+                    <div className="flex flex-wrap gap-2">
+                        <button className="btn-secondary" disabled={busy === 'warp' || !warp?.available}
+                            onClick={() => run('warp', () => post('/api/settings/warp/enable'), t('settings.protApplied'))}>
+                            {busy === 'warp' ? '…' : t('settings.protWarpEnable')}
+                        </button>
+                        <button className="btn-secondary" disabled={busy === 'warp' || !warp?.routingEnabled}
+                            onClick={() => run('warp', () => post('/api/settings/warp/disable'), t('settings.protApplied'))}>
+                            {t('settings.protWarpDisable')}
+                        </button>
+                        <button className="btn-ghost" disabled={busy === 'warp'}
+                            onClick={() => run('warp', () => Promise.resolve(), t('settings.protWarpChecked'))}>
+                            {t('settings.protWarpRefresh')}
+                        </button>
+                    </div>
                 </section>
 
                 {/* Лимиты ресурсов */}
