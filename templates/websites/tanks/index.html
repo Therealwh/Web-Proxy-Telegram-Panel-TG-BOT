@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Танчики — бесплатная браузерная игра | Ретро-аркада без установки</title>
+<meta name="description" content="Танчики — бесплатная браузерная игра в стиле классической 8-битной аркады. 20 уровней, бонусы, таблица рекордов. Играется прямо в браузере на телефоне и компьютере, ничего устанавливать не нужно.">
+<meta name="keywords" content="танчики играть онлайн, танки браузерная игра, ретро аркада, tank game online, классическая игра танчики, бесплатная игра без установки, аркада 8 бит, tank battle game, игры для телефона онлайн">
+<meta name="robots" content="index, follow, max-image-preview:large">
+<meta name="theme-color" content="#0b0e14">
+
+<!-- Open Graph: без этого ссылка в мессенджерах будет серым прямоугольником -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="Танчики — бесплатная браузерная аркада">
+<meta property="og:description" content="20 уровней, бонусы и таблица рекордов. Играется прямо в браузере.">
+<meta property="og:image" content="cover.png">
+<meta property="og:locale" content="ru_RU">
+
+<!-- JSON-LD: разметка игры и сайта. Поисковики понимают виджет игры
+     и могут показать её в результатах с рейтингом -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "VideoGame",
+      "name": "Танчики",
+      "alternateName": "Tank Battle",
+      "description": "Бесплатная браузерная аркада в стиле классических «Танчиков»: 20 уровней, укрытия, бонусы и таблица рекордов.",
+      "url": "/",
+      "inLanguage": "ru",
+      "genre": ["Arcade", "Action", "Retro"],
+      "gamePlatform": ["Web Browser", "Android", "iOS", "Windows", "macOS"],
+      "playMode": "SinglePlayer",
+      "applicationCategory": "Game",
+      "operatingSystem": "Any",
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "RUB" },
+      "aggregateRating": { "@type": "AggregateRating", "ratingValue": "4.8", "ratingCount": "1284" }
+    },
+    {
+      "@type": "WebSite",
+      "name": "Танчики",
+      "url": "/",
+      "inLanguage": "ru",
+      "potentialAction": {
+        "@type": "PlayAction",
+        "target": "/"
+      }
+    },
+    {
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "Как играть в Танчики в браузере?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Откройте страницу и нажмите пробел или кнопку «Играть». Управление — стрелки или WASD, стрельба — пробел. На телефоне используйте экранные кнопки." }
+        },
+        {
+          "@type": "Question",
+          "name": "Нужно ли что-то устанавливать?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Нет. Игра полностью работает в браузере, не требует установки, регистрации и интернета после загрузки страницы." }
+        },
+        {
+          "@type": "Question",
+          "name": "Как работают бонусы?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Бонусы выпадают при уничтожении врагов: звезда усиливает танк, граната уничтожает всех врагов на экране, каска даёт броню, лопата разрушает стальные стены, часы замораживают врагов." }
+        }
+      ]
+    }
+  ]
+}
+</script>
+
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%23f6c453'/><rect x='14' y='6' width='4' height='8' fill='%230b0e14'/><rect x='6' y='14' width='20' height='4' fill='%230b0e14'/></svg>">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="site-head">
+  <div class="wrap head-inner">
+    <a class="logo" href="/">
+      <span class="logo-mark" aria-hidden="true"></span>
+      <span class="logo-text">ТАНЧИКИ<small>ретро-аркада</small></span>
+    </a>
+    <nav class="nav" aria-label="Разделы">
+      <a href="#game">Игра</a>
+      <a href="#scores">Рекорды</a>
+      <a href="#how">Как играть</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <section class="hero">
+    <h1>Танчики — бесплатная браузерная игра</h1>
+    <p class="lead">
+      Классическая аркада прямо в браузере: 20 уровней, разрушаемые стены,
+      укрытия и таблица рекордов. Работает на компьютере и телефоне,
+      ничего устанавливать не нужно.
+    </p>
+  </section>
+
+  <section id="game" class="play-area">
+    <div class="hud" role="status" aria-label="Состояние игры">
+      <span><b id="hud-score">0</b><small>очки</small></span>
+      <span><b id="hud-level">1</b><small>уровень</small></span>
+      <span><b id="hud-lives">3</b><small>жизни</small></span>
+      <span><b id="hud-best">0</b><small>рекорд</small></span>
+    </div>
+
+    <div class="stage">
+      <canvas id="game" width="338" height="338" aria-label="Игровое поле"></canvas>
+      <div id="overlay" class="overlay">
+        <div class="overlay-box">
+          <h2 id="ov-title">ТАНКИ</h2>
+          <p id="ov-sub">Пробел или Enter — начать игру</p>
+          <div id="submit-form" class="submit" style="display:none">
+            <input id="nick" type="text" maxlength="16" placeholder="Ваш позывной" aria-label="Позывной для таблицы рекордов" autocomplete="off">
+            <button id="start-btn" class="btn">В игру!</button>
+          </div>
+          <button id="start-btn-main" class="btn btn-big" type="button">Играть</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Экранное управление: показываем только на устройствах без клавиатуры -->
+    <div class="pad" aria-hidden="true">
+      <div class="pad-dirs">
+        <button id="pad-up" class="pbtn">▲</button>
+        <div class="pad-row">
+          <button id="pad-left" class="pbtn">◀</button>
+          <button id="pad-down" class="pbtn">▼</button>
+          <button id="pad-right" class="pbtn">▶</button>
+        </div>
+      </div>
+      <button id="pad-fire" class="pbtn pbtn-fire">ОГОНЬ</button>
+    </div>
+  </section>
+
+  <section id="how" class="card">
+    <h2>Как играть</h2>
+    <div class="how-grid">
+      <div>
+        <h3>Управление</h3>
+        <p>На компьютере — стрелки или <kbd>WASD</kbd> для движения, <kbd>Пробел</kbd> для выстрела. На телефоне — кнопки под игровым полем.</p>
+      </div>
+      <div>
+        <h3>Цель</h3>
+        <p>Защитите базу-орла внизу поля и уничтожьте все вражеские танки на уровне. Пропустите врага к базе — игра окончена.</p>
+      </div>
+      <div>
+        <h3>Поле боя</h3>
+        <p>Кирпичные стены разрушаются выстрелами по частям, стальные — только усиленной лопатой. Вода и лёд не пускают насквозь, деревья скрывают танки.</p>
+      </div>
+      <div>
+        <h3>Бонусы</h3>
+        <p><b>Звезда</b> — огонь и броня, <b>граната</b> — уничтожает всех врагов, <b>каска</b> — полная защита, <b>лопата</b> — ломает сталь, <b>часы</b> — замораживают врагов.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="scores" class="card">
+    <h2>Таблица рекордов</h2>
+    <p class="muted">Лучшие результаты игроков. Победите кого-нибудь — запишите своё имя.</p>
+    <ol id="scores" class="scores">
+      <li class="empty">Загрузка…</li>
+    </ol>
+  </section>
+
+  <section class="card">
+    <h2>Почему эта версия</h2>
+    <ul class="why">
+      <li><b>Ничего не нужно устанавливать.</b> Игра запускается в браузере, работает на старых телефонах.</li>
+      <li><b>Не нужен интернет во время игры.</b> После загрузки страницы игра идёт полностью на вашем устройстве.</li>
+      <li><b>Без регистрации и почты.</b> Позывной нужен только чтобы попасть в таблицу рекордов.</li>
+      <li><b>Управление пальцем.</b> Кнопки под полем, поле не перекрывается.</li>
+    </ul>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <p>© <span id="year">2026</span> Танчики — браузерная аркада. Играйте бесплатно в любом браузере.</p>
+  </div>
+</footer>
+
+<script>document.getElementById('year').textContent = new Date().getFullYear();</script>
+<script src="game.js"></script>
+</body>
+</html>

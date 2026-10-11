@@ -129,7 +129,12 @@ router.post('/upload', upload.single('file'), async (req, res, next) => {
 
 // --- Список шаблонов сайтов ---
 router.get('/templates', (req, res) => {
-    const names = { repair: '🔧 Сайт на ремонте (анимация)', cars: '🚗 Автомобили', women: '💄 Женский портал' };
+    const names = {
+        repair: '🔧 Сайт на ремонте (анимация)',
+        cars: '🚗 Автомобили',
+        women: '💄 Женский портал',
+        tanks: '🎮 Танчики — браузерная аркада',
+    };
     const templates = [];
     if (fs.existsSync(INSTALL_TEMPLATES)) {
         for (const dir of fs.readdirSync(INSTALL_TEMPLATES)) {

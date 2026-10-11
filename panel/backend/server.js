@@ -44,6 +44,7 @@ const auditRouter = require('./routes/audit');
 const onboardingRouter = require('./routes/onboarding');
 const diagnosticsRouter = require('./routes/diagnostics');
 const blocklistRouter = require('./routes/blocklist');
+const gameScoresRouter = require('./routes/gameScores');
 const publicPagesRouter = require('./routes/publicPages');
 const openapiSpec = require('./public-api/docs/openapi');
 
@@ -130,6 +131,11 @@ app.use('/api/audit', requireAuth, auditRouter);
 app.use('/api/onboarding', requireAuth, onboardingRouter);
 app.use('/api/diagnostics', requireAuth, diagnosticsRouter);
 app.use('/api/blocklist', requireAuth, blocklistRouter);
+
+// Лидерборд игры на сайте-заглушке — публичный и без авторизации:
+// посетитель заглушки не должен быть администратором панели.
+// Собственное ограничение частоты внутри маршрута.
+app.use('/panel-api/game/scores', gameScoresRouter);
 app.use('/api/sales', requireAuth, salesRouter);
 app.use('/api/payments', paymentsRouter.router); // внутри: вебхуки публичны, админское — JWT
 

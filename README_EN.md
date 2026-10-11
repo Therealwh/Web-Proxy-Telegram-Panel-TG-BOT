@@ -337,8 +337,25 @@ QR for Web Proxy and MTProto, PNG/SVG, custom colours and sizes, public page
 `/qr/{id}`, scan statistics, sending to Telegram.
 
 ### Decoy website
-Built-in file manager and code editor, 3 ready templates, SEO fields,
+Built-in file manager and code editor, 4 ready templates, SEO fields,
 preview. The domain looks like a normal website.
+
+One of the templates is **"Tanks"**, a browser arcade game in the spirit
+of the Dendy-era Tanks: 20 levels, destructible walls, cover, power-ups,
+keyboard and touch controls, and a leaderboard. Nothing is loaded from
+third parties, so the page works even without an internet connection.
+
+The template is fully covered for SEO: `title` and `description` target
+real search queries, there is Open Graph for a proper link preview in
+messengers, a cover image, `robots.txt` and Schema.org markup
+(`VideoGame`, `FAQPage`, `PlayAction`) so search engines understand the
+page is a game and may surface it in results.
+
+Scores are stored by the panel: the `/panel-api/game/scores` endpoint is
+public and unauthenticated (otherwise a visitor of the decoy site could
+not record anything), but it is rate limited, validates the nickname and
+score, and trims the table to 200 rows. Visitor IPs are never stored —
+they are only used for the rate counter.
 
 ### Public API
 API keys with permission levels, Swagger UI, webhooks with HMAC signatures,
