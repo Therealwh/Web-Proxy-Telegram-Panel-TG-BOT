@@ -46,6 +46,7 @@ export default function ProtectionCard() {
     const [carriers, setCarriers] = useState([]);
     const [limits, setLimits] = useState(null);
     const [masking, setMasking] = useState(null);
+    const [faketls, setFaketls] = useState(null);
     const [domains, setDomains] = useState(null);
     const [domainsText, setDomainsText] = useState('');
     const [upstream, setUpstream] = useState('');
@@ -53,11 +54,12 @@ export default function ProtectionCard() {
 
     const load = async () => {
         try {
-            const [c, l, m, d] = await Promise.all([
+            const [c, l, m, d, f] = await Promise.all([
                 get('/api/settings/web-carriers').catch(() => null),
                 get('/api/settings/engine-limits').catch(() => null),
                 get('/api/settings/masking').catch(() => null),
                 get('/api/settings/backup-domains').catch(() => null),
+                get('/api/settings/faketls').catch(() => null),
             ]);
             if (c) setCarriers(c.candidates || []);
             if (l) setLimits(l);
@@ -70,6 +72,7 @@ export default function ProtectionCard() {
                 setDomains(d);
                 setDomainsText((d.backups || []).join('\n'));
             }
+            if (f) setFaketls(f);
         } catch { /* карточка просто останется пустой */ }
     };
 
@@ -121,6 +124,32 @@ export default function ProtectionCard() {
                             () => post('/api/settings/web-carriers', { carriers }),
                             t('settings.protApplied'))}>
                         {busy === 'carriers' ? '…' : t('settings.protApply')}
+                    </button>
+                </section>
+
+                {/* Fake TLS: показываем не только «работает/нет», но и почему нет.
+                    Без причины пользователь неделю гадает, почему у клиентов
+                    по-прежнему dd, хотя функция «включена». */}
+                <section>
+                    <h4 className="text-sm font-semibold mb-1">{t('settings.protFakeTls')}</h4>
+                    <p className="text-xs text-slate-500 mb-2">{t('settings.protFakeTlsHint')}</p>
+                    <div className="text-sm mb-2">
+                        {!faketls ? '—' : faketls.ready ? (
+                            <span className="text-emerald-600 dark:text-emerald-400">
+                                ✓ {t('settings.protFakeTlsOk', { d: faketls.domain })}
+                            </span>
+                        ) : (
+                            <span className="text-amber-600 dark:text-amber-400">
+                                {t('settings.protFakeTlsOff')}: {t(`settings.faketlsReason.${faketls.reason}`)}
+                                {faketls.detail ? ` (${faketls.detail})` : ''}
+                            </span>
+                        )}
+                    </div>
+                    <button className="btn-secondary" disabled={busy === 'faketls'}
+                        onClick={() => run('faketls',
+                            () => post('/api/settings/faketls/check'),
+                            t('settings.protApplied'))}>
+                        {busy === 'faketls' ? '…' : t('settings.protFakeTlsRecheck')}
                     </button>
                 </section>
 

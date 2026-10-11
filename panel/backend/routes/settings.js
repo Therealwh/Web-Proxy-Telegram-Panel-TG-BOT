@@ -145,8 +145,14 @@ router.put('/', (req, res, next) => {
             data.mask_domain = normalizeDomain(data.mask_domain);
             // Смена домена маскировки обесценивает прежнюю проверку Fake TLS:
             // ee-ссылки хранят домен внутри секрета, поэтому старые надо забыть.
+            // И сразу перепроверяем: ждать ближайшего цикла раз в 6 часов
+            // нельзя, иначе администратор увидит «не работает» при новом
+            // домене, который на самом деле подходит.
             if (data.mask_domain !== before) {
                 db.prepare('DELETE FROM settings WHERE key = ?').run('faketls:status');
+                require('../services/mtprotoFaketls')
+                    .check({ force: true })
+                    .catch(() => { /* проверка не должна ломать сохранение */ });
             }
         }
 
