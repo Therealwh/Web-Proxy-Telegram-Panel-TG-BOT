@@ -65,7 +65,7 @@ h1 { font-size: 28px; margin: 0 0 10px; line-height: 1.25; }
 .play-area { display: flex; flex-direction: column; align-items: center; gap: 12px; padding-bottom: 28px; }
 
 .hud {
-  display: flex; gap: 10px; width: 100%; max-width: 338px;
+  display: flex; gap: 10px; width: 100%; max-width: 312px;
 }
 .hud span {
   flex: 1; text-align: center; background: var(--bg-card);
@@ -94,12 +94,12 @@ h1 { font-size: 28px; margin: 0 0 10px; line-height: 1.25; }
 .play-area.is-fullscreen .stage {
   max-width: min(100%, 92vh);
   /* В полноэкранном режиме поле растягивается по доступной высоте */
-  width: min(100%, calc(92vh * (338 / 338)));
+  width: min(100%, calc(92vh * (312 / 312)));
 }
 .play-area.is-fullscreen #game { width: 100%; }
 .play-area.is-fullscreen .hud { max-width: min(100%, 92vh); }
 
-.stage { position: relative; width: 100%; max-width: 338px; }
+.stage { position: relative; width: 100%; max-width: 312px; }
 
 #game {
   display: block; width: 100%; height: auto;
@@ -145,7 +145,7 @@ image-rendering: crisp-edges;
 
 /* Экранные кнопки: на устройствах с клавиатурой прячем, чтобы
    не занимать место зря */
-.pad { display: none; gap: 20px; align-items: center; width: 100%; max-width: 338px; }
+.pad { display: none; gap: 20px; align-items: center; width: 100%; max-width: 312px; }
 .pad-dirs { display: grid; gap: 6px; justify-items: center; }
 .pad-row { display: flex; gap: 6px; }
 .pbtn {

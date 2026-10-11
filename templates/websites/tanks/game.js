@@ -660,11 +660,16 @@ const TANK_LEVELS = [
 ];
 
     // ── Параметры поля ──────────────────────────────────────────────────────
-    const COLS = 13;
+const COLS = 13;
     const ROWS = 13;
-    const TILE = 26;            // размер клетки в пикселях (масштабируется)
-    const SUB = 2;              // подклетки внутри кирпичной клетки
-    const W = COLS * TILE;      // 338
+    // Клетка поля — 24 пикселя, пиксель рисунка — 3. В сумме 8*3 = 24,
+    // то есть ровно тайл 8x8, каким он был на настоящем NES. Любое
+    // другое соотношение смазывает рисунок и картинка перестаёт быть
+    // похожа на оригинал.
+    const TILE = 24;
+    const PIX = TILE / 8;
+    const SUB = 2;              // дробление клетки на четвертинки
+    const W = COLS * TILE;      // 312
     const H = ROWS * TILE;
 
     // Типы клеток
@@ -993,7 +998,10 @@ const TANK_LEVELS = [
         t.dir = dir;
         const d = DIRS[dir];
         const step = t.speed * dt * 90;
-        const size = TILE - 4;             // танк чуть меньше клетки
+        // Половина размера танка. Рисунок занимает клетку целиком, и зона
+        // удара должна совпадать с рисунком: иначе танк наезжает на стену,
+        // хотя столкновение ещё не сработало.
+        const size = TILE;
         const half = size / 2;
 
         // Новая позиция с проверкой углами, чтобы не вклиниться в стену
@@ -1001,8 +1009,12 @@ const TANK_LEVELS = [
         if (d.dx) nx += d.dx * step; else ny += d.dy * step;
 
         const canStand = (x, y) => {
-            const c1 = Math.floor((x - half) / TILE), c2 = Math.floor((x + half) / TILE);
-            const r1 = Math.floor((y - half) / TILE), r2 = Math.floor((y + half) / TILE);
+            // Края клетки не считаем занятой: танк ровно в кл��тке
+            // касается соседней, и без этого сдвига он считал бы
+            // соседнюю клетку своей и не двигался бы вовсе
+            const E = 0.5;
+            const c1 = Math.floor((x - half + E) / TILE), c2 = Math.floor((x + half - E) / TILE);
+            const r1 = Math.floor((y - half + E) / TILE), r2 = Math.floor((y + half - E) / TILE);
             for (let r = r1; r <= r2; r++) {
                 for (let c = c1; c <= c2; c++) {
                     if (isSolidForTank(c, r)) return false;
@@ -1256,159 +1268,188 @@ const TANK_LEVELS = [
     // веб-страница, а не как игра с картриджа 8-битной эпохи.
     const NES = {
         black: '#000000',
-        grey: '#545454',
-        lightGrey: '#989696',
+        grey: '#6b6b6b',          // швы и промежутки
+        lightGrey: '#bcbcbc',
         white: '#fcfcfc',
-        silver: '#bcbcbc',
-        red: '#982c00',
-        orange: '#ec6a64',
-        gold: '#a0aa00',
+        silver: '#d8d8d8',
+        brick: '#e85d04',         // кирпич в оригинале оранжевый
+        brickLight: '#ffb03b',
+        brickDark: '#a03400',
+        water: '#0058f8',
+        waterLight: '#3cbcfc',
+        ice: '#a4e8fc',
+        trees: '#00a800',
+        treesLight: '#80d010',
+        treesDark: '#005800',
         yellow: '#f8d800',
-        green: '#00b800',
-        darkGreen: '#007800',
-        blue: '#0058f8',
-        lightBlue: '#3cbcfc',
-        cyan: '#38b4cc',
-        tan: '#f0c060',
+        gold: '#fca044',
+        red: '#f83800',
+        player: '#f8d800',
+        enemy: '#bcbcbc',
+        enemyFast: '#00a800',
+        enemyPower: '#f8d800',
+        enemyArmor: '#fcfcfc',
     };
 
     const COLORS = {
         bg: NES.black,
-        brick: NES.white,
-        brickDark: NES.grey,
+        brick: NES.brick,
+        brickDark: NES.brickDark,
         steel: NES.silver,
         steelDark: NES.grey,
-        water: NES.blue,
-        waterLight: NES.lightBlue,
-        trees: NES.green,
-        treesDark: NES.darkGreen,
-        ice: NES.cyan,
-        base: NES.white,
+        water: NES.water,
+        waterLight: NES.waterLight,
+        trees: NES.trees,
+        treesDark: NES.treesDark,
+        ice: NES.ice,
+        base: NES.silver,
         baseDark: NES.grey,
         baseFrame: NES.silver,
-        player: NES.yellow,
+        player: NES.player,
         // Типы врагов в оригинале различаются цветом: серый, зелёный,
-        // жёлтый и мигающий бронированный
-        enemy: NES.silver,
-        enemyFast: NES.green,
-        enemyPower: NES.yellow,
-        enemyArmor: NES.white,
+        // жёлтый и белый бронированный
+        enemy: NES.enemy,
+        enemyFast: NES.enemyFast,
+        enemyPower: NES.enemyPower,
+        enemyArmor: NES.enemyArmor,
         bullet: NES.white,
         power: NES.gold,
     };
 
-    // Один «пиксель» рисунка. Всё рисуется кратно этому размеру, иначе
-    // картинка рассыпается: у NES пиксель был один, а не полпикселя.
-    const PIX = 2;
+    /**
+     * Рисунки тайлов 8x8 — ровно такие, какие были на картридже.
+     *
+     * Символы: '#' основной цвет, '+' светлее, '-' темнее, '.' шов,
+     * пробел — фон. Каждая клетка рисунка — PIX пикселей на экране.
+     */
+    const TILE_ART = {
+        brick: [
+            '#+##.##-',
+            '####.###',
+            '####.###',
+            '###-.###',
+            '........',
+            '#+##.###',
+            '####.###',
+            '###-.###',
+        ],
+        steel: [
+            '####.###',
+            '#++#.##-',
+            '#++#.##-',
+            '####.###',
+            '........',
+            '####.###',
+            '#++#.##-',
+            '#++#.##-',
+        ],
+        water: [
+            '........',
+            '..--....',
+            '.----...',
+            '..--....',
+            '........',
+            '..--....',
+            '.----...',
+            '..--....',
+        ],
+        ice: [
+            '#+####-#',
+            '+#+#####',
+            '####+--#',
+            '#--#####',
+            '####+--#',
+            '+#+#####',
+            '#+####-#',
+            '####+--#',
+        ],
+        trees: [
+            '#-##+##-',
+            '-##+#+##',
+            '##+#+##-',
+            '+#+##+##',
+            '#-##+##-',
+            '-##+#+##',
+            '##+#+##-',
+            '+#+##+##',
+        ],
+        base: [
+            '#..##..#',
+            '#..##..#',
+            '#.####.#',
+            '########',
+            '.######.',
+            '.######.',
+            '.#....#.',
+            '.######.',
+        ],
+    };
 
+    /** Цвета рисунка по виду клетки. */
+    function paletteFor(t) {
+        if (t === BRICK) return [NES.black, NES.brick, NES.brickLight, NES.brickDark, NES.grey];
+        if (t === STEEL) return [NES.black, NES.silver, NES.white, NES.lightGrey, NES.grey];
+        if (t === WATER) return [NES.black, NES.water, NES.waterLight, NES.waterLight, NES.black];
+        if (t === ICE) return [NES.black, NES.ice, NES.white, NES.water, NES.white];
+        if (t === TREES) return [NES.black, NES.trees, NES.treesLight, NES.treesDark, NES.treesDark];
+        if (t === BASE) return [NES.black, NES.silver, NES.white, NES.lightGrey, NES.red];
+        return [NES.black, NES.white, NES.white, NES.white, NES.white];
+    }
+
+    /**
+     * Рисует рисунок тайла в указанную точку экрана.
+     * @param {number} px левая граница в пикселях
+     * @param {number} py верхняя граница в пикселях
+     * @param {number} t вид клетки
+     * @param {number} [shift] сдвиг строки рисунка — для анимации воды
+     */
+    function blitArt(px, py, t, shift = 0) {
+        const kind = t === BRICK ? 'brick' : t === STEEL ? 'steel' : t === WATER ? 'water'
+            : t === ICE ? 'ice' : t === TREES ? 'trees' : t === BASE ? 'base' : null;
+        if (!kind) return;
+        const art = TILE_ART[kind];
+        const pal = paletteFor(t);
+        for (let y = 0; y < 8; y++) {
+            const row = art[(y + shift) % 8];
+            let color = null;
+            for (let x = 0; x < 8; x++) {
+                const ch = row[x];
+                const col = ch === '#' ? pal[1] : ch === '+' ? pal[2]
+                    : ch === '-' ? pal[3] : ch === '.' ? pal[4] : null;
+                if (col === null) continue;
+                if (col !== color) { ctx.fillStyle = col; color = col; }
+                ctx.fillRect(px + x * PIX, py + y * PIX, PIX, PIX);
+            }
+        }
+    }
+
+    /**
+     * Рисует клетку поля.
+     *
+     * Кирпич и сталь дробятся на четвертинки: стена разрушается по
+     * частям, и это видно — как в оригинале. Вода анимируется сдвигом
+     * рисунка, лёд и кусты остаются неподвижными.
+     */
     function drawCell(c, r) {
         const t = G.tiles[r * COLS + c];
         const x = c * TILE, y = r * TILE;
 
-        if (t === BRICK) {
-            const subSize = TILE / SUB;
+        if (t === BRICK || t === STEEL) {
+            const sub = TILE / SUB;
             for (let sy = 0; sy < SUB; sy++) {
                 for (let sx = 0; sx < SUB; sx++) {
                     if (!subAlive(c, r, sx, sy)) continue;
-                    // Кирпичи в оригинале белые на чёрном, со швом
-                    // через ряд. Раньше здесь был оранжевый цвет и
-                    // сглаженные прямоугольники — это больше не «Денди».
-                    const ox = x + sx * subSize;
-                    const oy = y + sy * subSize;
-                    ctx.fillStyle = COLORS.brickDark;
-                    ctx.fillRect(ox, oy, subSize, subSize);
-                    const shift = sy % 2 === 0 ? 0 : PIX * 2;
-                    ctx.fillStyle = COLORS.brick;
-                    for (let b = 0; b < 2; b++) {
-                        ctx.fillRect(ox + shift + b * PIX * 5, oy + PIX, PIX * 4, subSize - PIX * 2);
-                    }
+                    blitArt(x + sx * sub, y + sy * sub, t);
                 }
             }
             return;
         }
-        if (t === STEEL) {
-            // Броня: сплошной блок со светом сверху и тенью снизу
-            ctx.fillStyle = COLORS.steelDark;
-            ctx.fillRect(x, y, TILE, TILE);
-            ctx.fillStyle = COLORS.steel;
-            ctx.fillRect(x + PIX, y + PIX, TILE - PIX * 2, TILE - PIX * 2);
-            ctx.fillStyle = NES.white;
-            ctx.fillRect(x + PIX, y + PIX, TILE - PIX * 2, PIX);
-            ctx.fillRect(x + PIX, y + PIX, PIX, TILE - PIX * 2);
-            ctx.fillStyle = NES.grey;
-            ctx.fillRect(x + PIX, y + TILE - PIX * 3, TILE - PIX * 2, PIX);
-            ctx.fillRect(x + TILE - PIX * 3, y + PIX, PIX, TILE - PIX * 2);
-            return;
-        }
-        if (t === WATER) {
-            // Вода в оригинале — две горизонтальные волны, сдвинутые
-            // друг относительно друга. Без анимации она выглядит
-            // как обычный синий квадрат.
-            ctx.fillStyle = COLORS.water;
-            ctx.fillRect(x, y, TILE, TILE);
-            const ph = Math.floor(G.tick / 24) % 4;
-            ctx.fillStyle = COLORS.waterLight;
-            for (let row = 0; row < 4; row++) {
-                const yy = y + row * PIX * 3 + PIX;
-                const off = ((row + ph) % 2) * PIX * 3;
-                ctx.fillRect(x + off, yy, TILE - off - PIX * 2, PIX);
-            }
-            return;
-        }
-        if (t === ICE) {
-            ctx.fillStyle = COLORS.water;
-            ctx.fillRect(x, y, TILE, TILE);
-            ctx.fillStyle = COLORS.waterLight;
-            ctx.fillRect(x + PIX, y + PIX, TILE - PIX * 2, TILE - PIX * 2);
-            // Лёд рисуется ровно, без сглаживания: диагональ из углов
-            ctx.fillStyle = NES.white;
-            for (let i = 0; i < 4; i++) {
-                ctx.fillRect(x + i * PIX * 3 + PIX * 2, y + i * PIX * 3 + PIX, PIX, PIX);
-                ctx.fillRect(x + TILE - i * PIX * 3 - PIX * 3, y + i * PIX * 3 + PIX, PIX, PIX);
-            }
-            return;
-        }
-        if (t === BASE) {
-            // Орёл в рамке, как в оригинале. База — единственное место,
-            // где игрок обязан защищать, и она должна читаться сразу.
-            ctx.fillStyle = COLORS.baseDark;
-            ctx.fillRect(x, y, TILE, TILE);
-            ctx.fillStyle = COLORS.base;
-            ctx.fillRect(x + PIX * 2, y + PIX * 2, TILE - PIX * 4, TILE - PIX * 4);
-
-            const c0 = x + TILE / 2;
-            // Крылья: два прямоугольника, расходящиеся от центра
-            ctx.fillStyle = COLORS.baseDark;
-            ctx.fillRect(c0 - PIX * 7, y + PIX * 7, PIX * 4, PIX * 3);
-            ctx.fillRect(c0 + PIX * 3, y + PIX * 7, PIX * 4, PIX * 3);
-            // Тело и голова
-            ctx.fillStyle = NES.black;
-            ctx.fillRect(c0 - PIX * 2, y + PIX * 5, PIX * 4, PIX * 7);
-            ctx.fillRect(c0 - PIX, y + PIX * 3, PIX * 2, PIX * 3);
-            // Клюв
-            ctx.fillStyle = NES.orange;
-            ctx.fillRect(c0 - PIX, y + PIX * 5, PIX * 2, PIX);
-            return;
-        }
-        if (t === TREES) {
-            // Кусты рисуются поверх танков — это и есть маскировка.
-            // В оригинале это плотная зелёная гроздь без градиентов.
-            ctx.fillStyle = COLORS.treesDark;
-            ctx.fillRect(x, y, TILE, TILE);
-            ctx.fillStyle = COLORS.trees;
-            for (let i = 0; i < 4; i++) {
-                const cx = x + (i % 2 ? PIX * 8 : PIX * 5);
-                const cy = y + (i < 2 ? PIX * 5 : PIX * 10);
-                ctx.fillRect(cx - PIX * 3, cy - PIX * 3, PIX * 6, PIX * 6);
-            }
-            ctx.fillStyle = COLORS.treesDark;
-            for (let i = 0; i < 4; i++) {
-                const cx = x + (i % 2 ? PIX * 8 : PIX * 5);
-                const cy = y + (i < 2 ? PIX * 5 : PIX * 10);
-                ctx.fillRect(cx - PIX, cy - PIX, PIX * 2, PIX * 2);
-            }
-        }
+        if (t === WATER) { blitArt(x, y, WATER, Math.floor(G.tick / 26) % 8); return; }
+        if (t === ICE) { blitArt(x, y, ICE); return; }
+        if (t === TREES) { blitArt(x, y, TREES); return; }
+        if (t === BASE) { blitArt(x, y, BASE); return; }
     }
+
 
 /**
      * Танк в стиле 8-битного «Денди»: две гусеницы с прорезями, корпус
@@ -1418,63 +1459,73 @@ const TANK_LEVELS = [
      * и не рассыпается, как было с произвольными координатами. Спрайт
      * всегда носом вверх, поворот делает вызывающий код.
      */
+    /**
+     * Спрайт танка 8x8 — те же пропорции, что у тайлов.
+     *
+     * Раньше танк собирался из прямоугольников по отдельности, и
+     * получался цветной блок без силуэта. Здесь он нарисован целиком
+     * символами, как тайлы: ствол выступает вперёд, по бокам идут
+     * гусеницы, в середине — корпус с башней.
+     *
+     * «#» — цвет танка, «+» — светлее, «-» — темнее, «.» — фон.
+     */
+    const TANK_ART = [
+        '...##...',
+        '...##...',
+        '..####..',
+        '.######.',
+        '.######.',
+        '########',
+        '########',
+        '########',
+    ];
+
+    /** Рисует спрайт танка в точке (cx, cy) с центром посередине. */
     function drawTank(t, color, isPlayer) {
         if (!t.active) return;
-        const S = TILE - PIX * 2;            // 22 пикселя, запас по 2 с каждой стороны
+        const S = TILE;                       // спрайт занимает клетку целиком
         const half = S / 2;
-        const TR = PIX * 2;                   // ширина гусеницы
-        const BW = S - TR * 2;                // ширина корпуса
 
         ctx.save();
         ctx.translate(t.x, t.y);
         ctx.rotate(t.dir * Math.PI / 2);
 
-        // ── Гусеницы ────────────────────────────────────────────────────────
-        ctx.fillStyle = NES.grey;
-        ctx.fillRect(-half, -half, TR, S);
-        ctx.fillRect(half - TR, -half, TR, S);
-        ctx.fillStyle = NES.silver;
-        for (let y = -half + PIX; y < half - PIX; y += PIX * 2) {
-            ctx.fillRect(-half + PIX, y, TR - PIX * 2, PIX);
-            ctx.fillRect(half - TR + PIX, y, TR - PIX * 2, PIX);
-        }
+        const light = '#ffffff';
+        const dark = '#000000';
+        const x0 = -half, y0 = -half;
 
-        // ── Корпус ──────────────────────────────────────────────────────────
-        // Корпус короче спрайта спереди: иначе ствол оказывается внутри
-        // него и танк выглядит просто прямоугольником без оружия
-        const bodyTop = -half + PIX * 3;
-        ctx.fillStyle = color;
-        ctx.fillRect(-BW / 2, bodyTop, BW, half - bodyTop);
+        for (let y = 0; y < 8; y++) {
+            const row = TANK_ART[y];
+            let cur = null;
+            for (let x = 0; x < 8; x++) {
+                const ch = row[x];
+                if (ch === '.') continue;
+                const col = ch === '#' ? color : ch === '+' ? light : dark;
+                if (col !== cur) { ctx.fillStyle = col; cur = col; }
+                ctx.fillRect(x0 + x * PIX, y0 + y * PIX, PIX, PIX);
+            }
+        }
 
         // Броневые танки в оригинале помечены полосами — по ним игрок
         // видит, сколько попаданий выдержит противник
         if (t.kind === 'armor' && t.hp < 4) {
-            ctx.fillStyle = 'rgba(0,0,0,0.35)';
+            ctx.fillStyle = dark;
             const stripes = 4 - t.hp;
             for (let i = 0; i < stripes; i++) {
-                ctx.fillRect(-BW / 2 + PIX, bodyTop + PIX * 4 + i * PIX * 4, BW - PIX * 2, PIX);
+                ctx.fillRect(x0 + PIX * 2, y0 + PIX * (5 + i), PIX * 4, PIX);
             }
         }
 
-        // ── Ствол и башня ───────────────────────────────────────────────────
-        // Ствол выступает перед корпусом — именно он делает силуэт
-        // узнаваемым с первого взгляда
-        ctx.fillStyle = color;
-        ctx.fillRect(-PIX / 2, -half, PIX, PIX * 3);
-        ctx.fillRect(-PIX * 1.5, bodyTop, PIX * 3, PIX * 3);
-        ctx.fillStyle = 'rgba(0,0,0,0.30)';
-        ctx.fillRect(-PIX * 1.5, bodyTop + PIX * 3, PIX * 3, PIX);
-
         // ── Щит игрока ──────────────────────────────────────────────────────
         if (isPlayer && t.shield > 0) {
-            // Мигает: в оригинале щит заметно пульсирует, иначе его
-            // не видно на фоне кирпича
+            // Мигает: в оригинале щит пульсирует, иначе его не видно
+            // на фоне кирпича
             if (Math.floor(G.tick / 6) % 2 === 0) {
                 ctx.fillStyle = COLORS.power;
-                ctx.fillRect(-half - PIX, -half - PIX, PIX, S + PIX * 2);
-                ctx.fillRect(half, -half - PIX, PIX, S + PIX * 2);
-                ctx.fillRect(-half - PIX, -half - PIX, S + PIX * 2, PIX);
-                ctx.fillRect(-half - PIX, half, S + PIX * 2, PIX);
+                ctx.fillRect(x0 - PIX, y0 - PIX, PIX, S + PIX * 2);
+                ctx.fillRect(x0 + S, y0 - PIX, PIX, S + PIX * 2);
+                ctx.fillRect(x0 - PIX, y0 - PIX, S + PIX * 2, PIX);
+                ctx.fillRect(x0 - PIX, y0 + S, S + PIX * 2, PIX);
             }
         }
         ctx.restore();
@@ -1509,8 +1560,8 @@ const TANK_LEVELS = [
             // Снаряд в оригинале маленький и с тёмной обводкой: так его
             // видно и на кирпиче, и на чёрном фоне
             const d = DIRS[b.dir];
-            const long = b.big ? PIX * 5 : PIX * 3;
-            const wide = b.big ? PIX * 3 : PIX * 2;
+            const long = b.big ? PIX * 4 : PIX * 2;
+            const wide = PIX;
             ctx.save();
             ctx.translate(b.x, b.y);
             ctx.rotate(b.dir * Math.PI / 2);
@@ -1601,7 +1652,7 @@ const TANK_LEVELS = [
             if (!icon) continue;
             // Подложка: тёмная рамка, как под иконками в оригинале
             ctx.fillStyle = NES.black;
-            ctx.fillRect(p.x - PIX * 6, p.y - PIX * 6, PIX * 12, PIX * 12);
+            ctx.fillRect(p.x - PIX * 4, p.y - PIX * 4, PIX * 8, PIX * 8);
             drawIcon(icon, p.x, p.y, COLORS.power);
         }
     }

@@ -295,8 +295,58 @@ describe('игровая логика', () => {
     test('рисунок держится пиксельной сетки', () => {
         // Без этого NES-вид рассыпается: смазанные края выдают браузер
         const js = read('game.js');
-        assert.match(js, /const PIX = \d+;/, 'нет шага пикселя');
         assert.match(js, /const NES = \{/, 'нет палитры NES');
+        assert.match(js, /const TILE = \d+;/, 'нет размера клетки');
+        assert.match(js, /const PIX = TILE \/ 8;/,
+            'пиксель должен быть ровно 1/8 клетки — это пропорции тайла NES');
+    });
+
+    test('рисунки тайлов настоящие 8x8, а не цветные прямоугольники', () => {
+        // Раньше кирпич был белым прямоугольником, и это главная причина
+        // «не похоже на Денди». Теперь тайлы заданы символами.
+        const js = read('game.js');
+        assert.match(js, /const TILE_ART = \{/, 'нет рисунков тайлов');
+        assert.match(js, /const TANK_ART = \[/, 'нет спрайта танка');
+
+        // Каждый рисунок — ровно 8 строк по 8 символов
+        const block = js.match(/const TILE_ART = \{([\s\S]*?)\n    \};/);
+        assert.ok(block, 'не найден TILE_ART');
+
+        // Каждый рисунок — ровно 8 строк по 8 символов
+        const arts = [...block[1].matchAll(/(\w+):\s*\[([^\]]*)\]/g)];
+        assert.ok(arts.length >= 6, `мало рисунков: ${arts.length}`);
+        for (const [, name, body] of arts) {
+            const rows = [...body.matchAll(/'([^']*)'/g)].map((m) => m[1]);
+            assert.equal(rows.length, 8, `рисунок ${name}: ${rows.length} строк вместо 8`);
+            for (const r of rows) {
+                assert.equal(r.length, 8, `рисунок ${name}: строка "${r}" длиной ${r.length}`);
+                for (const ch of r) {
+                    assert.ok('#+-. '.includes(ch),
+                        `рисунок ${name}: неизвестный символ "${ch}"`);
+                }
+            }
+        }
+
+        // Кирпич в оригинале оранжевый — это бросается в глаза сразу
+        assert.match(js, /brick: '#e85d04'/, 'кирпич должен быть оранжевым');
+    });
+
+    test('спрайт танка симметричен относительно вертикальной оси', () => {
+        // Иначе танк выглядит перекошенным и не читается как танк
+        const js = read('game.js');
+        const block = js.match(/const TANK_ART = \[([\s\S]*?)\];/);
+        assert.ok(block, 'не найден спрайт танка');
+        const rows = [...block[1].matchAll(/'([^']*)'/g)].map((m) => m[1]);
+        assert.equal(rows.length, 8, `спрайт танка: ${rows.length} строк вместо 8`);
+        for (const r of rows) {
+            assert.equal(r.length, 8, `строка спрайта "${r}" длиной ${r.length}`);
+            for (let x = 0; x < 4; x++) {
+                assert.equal(r[x], r[7 - x],
+                    `спрайт танка несимметричен в строке "${r}"`);
+            }
+        }
+        // Ствол обязан выступать вперёд, иначе танк — просто квадрат
+        assert.notEqual(rows[0], '########', 'ствол не выделяется, силуэт не читается');
     });
 
     test('значки бонусов нарисованы, а не напечатаны буквами', () => {
