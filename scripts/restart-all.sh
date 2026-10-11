@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env bash
+#!/usr/bin/env bash
 # TGGATE — полный рестарт стека: Telemt → панель → nginx → Caddy (через root-хелпер)
 set -euo pipefail
 systemctl restart telemt
