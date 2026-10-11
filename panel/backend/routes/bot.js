@@ -288,7 +288,7 @@ router.post('/users/:tgId/issue', async (req, res, next) => {
         let notified = true;
         try {
             const client = db.prepare('SELECT * FROM clients WHERE username = ?').get(username);
-            const links = clientLinks(client, getAll().mask_domain);
+            const links = clientLinks(client);
             const until = new Date(expires).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' }) + ' МСК';
             let text = `🎁 <b>Администратор выдал вам прокси!</b>\n\n📦 Прокси: <b>${username}</b>\n📅 Действует до: <b>${until}</b>\n\n`;
             if (links.web_https) text += `🌐 <b>Web Proxy</b> (нажми — подключится сам):\n${links.web_https}\n\n`;

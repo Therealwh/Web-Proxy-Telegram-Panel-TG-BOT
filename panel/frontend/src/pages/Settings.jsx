@@ -14,6 +14,7 @@ import { toast, useThemeStore } from '../store';
 import { ACCENTS } from '../accents';
 import { useT } from '../i18n';
 import { Card, Field, Toggle, Skeleton, PageHeader } from '../components/ui';
+import ProtectionCard from '../components/ProtectionCard';
 
 // Описание категорий и их полей (подписи берутся из словаря i18n)
 const CATEGORIES = (t) => [
@@ -289,6 +290,11 @@ export default function Settings() {
                         )}
                     </Card>
                 </div>
+            </div>
+
+            {/* Защита и отказоустойчивость */}
+            <div className="pt-2 space-y-3">
+                <ProtectionCard />
             </div>
 
             {/* Опасная зона */}

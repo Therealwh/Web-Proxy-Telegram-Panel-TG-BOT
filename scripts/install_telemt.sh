@@ -98,6 +98,11 @@ chown -R telemt:telemt /var/lib/telemt
 # Секрет служебного пользователя welcome (стартовый WEB-профиль)
 WELCOME_SECRET="$(openssl rand -hex 16)"
 
+# Перебор WEB-носителей. По умолчанию выключен: клиент работает на https.
+# https обязан оставаться финальным запасным — Telegram iOS умеет только его.
+: "${WEB_CARRIERS:=[]}"
+readonly WEB_CARRIERS
+
 sed -e "s|{{DOMAIN}}|${DOMAIN}|g" \
     -e "s|{{SERVER_IP}}|${SERVER_IP}|g" \
     -e "s|{{MTPROTO_PORT}}|${MTPROTO_PORT}|g" \
@@ -108,6 +113,7 @@ sed -e "s|{{DOMAIN}}|${DOMAIN}|g" \
     -e "s|{{WELCOME_SECRET}}|${WELCOME_SECRET}|g" \
     -e "s|{{WEBSITE_DIR}}|${DATA_DIR}/website|g" \
     -e "s|{{TLSFRONT_DIR}}|${TLSFRONT_DIR}|g" \
+    -e "s|{{WEB_CARRIERS}}|${WEB_CARRIERS}|g" \
     "${INSTALL_DIR}/templates/telemt.toml.tmpl" > "${CONFIG_PATH}"
 
 chmod 640 "${CONFIG_PATH}"

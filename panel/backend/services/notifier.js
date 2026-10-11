@@ -98,7 +98,7 @@ async function sendQrToClient(client, maskDomain) {
     const token = row ? JSON.parse(row.value) : null;
     if (!token) throw new Error('Не настроен токен Telegram-бота (Настройки → Уведомления)');
 
-    const links = clientLinks(client, maskDomain);
+    const links = clientLinks(client);
     if (links.web) {
         const png = await QRCode.toBuffer(links.web, { width: 512 });
         await sendPhoto(token, client.telegram_id, png, '🌐 Web Proxy — наведите камеру или нажмите на ссылку:\n' + links.web_https);

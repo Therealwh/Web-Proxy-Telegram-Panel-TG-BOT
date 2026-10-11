@@ -32,6 +32,8 @@ const SCRIPTS = {
     'restart-panel': path.join(SCRIPTS_DIR, 'restart-panel.sh'),
     'restart-all': path.join(SCRIPTS_DIR, 'restart-all.sh'),
     zapret2: path.join(SCRIPTS_DIR, 'zapret2-ctl.sh'),
+    'telemt-limits': path.join(SCRIPTS_DIR, 'telemt-limits.sh'),
+    'ip-blocklist': path.join(SCRIPTS_DIR, 'ip-blocklist.sh'),
 };
 
 /** Секрет из install.env (генерируется установщиком/install-helper.sh). */
@@ -180,6 +182,20 @@ const server = http.createServer((req, res) => {
         }
 
         const args = parsed.version ? [String(parsed.version)] : [];
+        // Лимиты памяти/CPU: скрипт сам перезапускает telemt, поэтому запускаем
+        // его копией из /tmp в отдельном юните — рестарт хелпера не должен
+        // прерывать применение лимитов на середине.
+        if (parsed.key === 'telemt-limits') {
+            const unit = `tggate-limits-${Date.now()}`;
+            const staged = stageScript(script);
+            log(`Применение лимитов в отдельном юните: ${unit}`);
+            execFile('systemd-run', ['--collect', `--unit=${unit}`, 'bash', staged],
+                { timeout: 30000 }, (err) => {
+                    if (err) log(`systemd-run не удался (${err.message}) — лимиты применяются в cgroup хелпера`);
+                    else fs.unlink(staged, () => {});
+                });
+            return res.end(JSON.stringify({ ok: true }));
+        }
         // Долгие обновления отвязываем от cgroup хелпера (systemd-run):
         // рестарт хелпера больше не убивает установку пакетов посреди пути
         if ((parsed.key === 'panel' || parsed.key === 'telemt') && systemdRunAvailable) {

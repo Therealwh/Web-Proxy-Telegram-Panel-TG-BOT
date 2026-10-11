@@ -71,7 +71,7 @@ router.get('/qr/:token([0-9a-f]{16})', publicLimiter, (req, res) => {
         .run(client.id, 'page', req.ip, String(req.headers['user-agent'] || '').slice(0, 255));
 
     const settings = getAll();
-    const links = clientLinks(client, settings.mask_domain);
+    const links = clientLinks(client);
 
     let body = `<h1>Подключение к прокси</h1>`;
     if (links.web) {
@@ -94,7 +94,7 @@ router.get('/qr/:token([0-9a-f]{16})', publicLimiter, (req, res) => {
 router.get('/qrimg/:token([0-9a-f]{16})/:type.png', publicLimiter, async (req, res) => {
     const client = getClientByToken(req.params.token);
     if (!client || client.status !== 'active') return res.status(404).end();
-    const links = clientLinks(client, getAll().mask_domain);
+    const links = clientLinks(client);
     const link = req.params.type === 'web' ? links.web : links.mtproto;
     if (!link) return res.status(404).end();
 
@@ -242,7 +242,7 @@ router.get('/p/:token([0-9a-f]{16})', publicLimiter, (req, res) => {
         return res.status(404).send(page('Не найдено', '<h1>Ссылка недействительна</h1><p class="muted">Обратитесь к администратору</p>'));
     }
     const settings = getAll();
-    const links = clientLinks(client, settings.mask_domain);
+    const links = clientLinks(client);
     const until = client.expires_at
         ? new Date(client.expires_at).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' }) + ' МСК'
         : '∞';

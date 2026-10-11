@@ -200,53 +200,54 @@ async function cabinetView(ctx, selectedId = null) {
     }
 
     const settings = getAll();
-    const maskDomain = settings.mask_domain;
 
-    // Данные устройств (активные IP + типы из WEB-сессий) — только для выбранного
-    let activeMap = new Map();
-    let webTypes = new Map();
-    try {
-        const telemt = require('./telemtApi');
-        const [ipsRaw, sessionsRaw] = await Promise.all([
-            telemt.getUsersActiveIps().catch(() => []),
-            telemt.getWebSessions({ limit: 200 }).catch(() => []),
-        ]);
-        for (const u of ipsRaw || []) activeMap.set(u.username, u.active_ips || []);
-        const uaType = (ua) => {
-            const s = String(ua || '');
-            if (/iPhone|iPad/i.test(s)) return '📱 iPhone';
-            if (/iPad/i.test(s)) return '📱 iPad';
-            if (/Android/i.test(s)) return '🤖 Android';
-            if (/Windows/i.test(s)) return '🖥 Windows';
-            if (/Macintosh|Mac OS/i.test(s)) return '💻 macOS';
-            if (/Linux/i.test(s)) return '🐧 Linux';
-            return null;
-        };
-        const sessList = Array.isArray(sessionsRaw) ? sessionsRaw : sessionsRaw?.sessions || [];
-        for (const s of sessList) {
-            if (!s.user) continue;
-            const type = uaType(s.user_agent);
-            if (!type) continue;
-            if (!webTypes.has(s.user)) webTypes.set(s.user, new Set());
-            webTypes.get(s.user).add(type);
-        }
-    } catch { /* Telemt недоступен */ }
+const shortDate = (iso) => {
+    const d = new Date(iso);
+    return `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getFullYear()).slice(2)}`;
+};
 
-    const shortDate = (iso) => {
-        const d = new Date(iso);
-        return `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getFullYear()).slice(2)}`;
-    };
-
-    const selected = clients.find((c) => c.id === selectedId) || null;
+const selected = clients.find((c) => c.id === selectedId) || null;
 
     // ── Экран выбранного прокси: действия по нему ──
     if (selected) {
+        // Данные об устройствах тянем только когда открыт конкретный прокси.
+        // Раньше эти два запроса уходили при каждом открытии кабинета, включая
+        // список прокси, где они не нужны — пользователь ждал их впустую.
+        let activeMap = new Map();
+        let webTypes = new Map();
+        try {
+            const telemt = require('./telemtApi');
+            const [ipsRaw, sessionsRaw] = await Promise.all([
+                telemt.getUsersActiveIps().catch(() => []),
+                telemt.getWebSessions({ limit: 200 }).catch(() => []),
+            ]);
+            for (const u of ipsRaw || []) activeMap.set(u.username, u.active_ips || []);
+            const uaType = (ua) => {
+                const s = String(ua || '');
+                if (/iPhone|iPad/i.test(s)) return '📱 iPhone';
+                if (/iPad/i.test(s)) return '📱 iPad';
+                if (/Android/i.test(s)) return '🤖 Android';
+                if (/Windows/i.test(s)) return '🖥 Windows';
+                if (/Macintosh|Mac OS/i.test(s)) return '💻 macOS';
+                if (/Linux/i.test(s)) return '🐧 Linux';
+                return null;
+            };
+            const sessList = Array.isArray(sessionsRaw) ? sessionsRaw : sessionsRaw?.sessions || [];
+            for (const s of sessList) {
+                if (!s.user) continue;
+                const type = uaType(s.user_agent);
+                if (!type) continue;
+                if (!webTypes.has(s.user)) webTypes.set(s.user, new Set());
+                webTypes.get(s.user).add(type);
+            }
+        } catch { /* Telemt недоступен */ }
+
         const kb = new InlineKeyboard();
-        const links = clientLinks(selected, maskDomain);
+        const links = clientLinks(selected);
         const until = selected.expires_at ? fmtMSK(selected.expires_at, false) : '∞';
         const statusIcon = selected.status === 'active' ? '🟢 Активен' : selected.status === 'blocked' ? '🔴 Заблокирован' : '⚠️ Истёк';
         let text =
-            `📱 <b>${selected.username}</b>\n${statusIcon}\n` +
+            `📱 <b>${selected.username}</b> · ${statusIcon}\n` +
             `📅 Действует до: <b>${until}</b>\n` +
             `💰 Баланс: <b>${balance.toFixed(2)}</b>\n`;
         if (selected.status === 'active') {
@@ -259,8 +260,39 @@ async function cabinetView(ctx, selectedId = null) {
                 text += '   🔌 MTProto-клиент\n';
             }
         }
+
+        // Расход трафика: пользователю важно видеть остаток раньше, чем
+        // прокси начнёт отваливаться под конец лимита.
+        const fmtGB = (bytes) => `${(Number(bytes || 0) / 1073741824).toFixed(1)} ГБ`;
+        const used = Number(selected.traffic_used || 0);
+        const limit = Number(selected.traffic_limit || 0);
+        if (limit > 0) {
+            const left = Math.max(0, limit - used);
+            const pct = Math.min(100, Math.round((used / limit) * 100));
+            text += `📊 <b>Трафик:</b> ${fmtGB(used)} из ${fmtGB(limit)} (${pct}%), осталось ${fmtGB(left)}\n`;
+            if (pct >= 90) text += '⚠️ Трафик почти израсходован — продлите или докупите пакет.\n';
+        }
+
+        // Подсказка «что делать» вместо голого статуса
+        if (selected.status === 'blocked') {
+            text += '\n🔴 Прокси заблокирован. Напишите в поддержку — разберёмся.\n';
+        } else if (selected.status !== 'active') {
+            text += '\n⚠️ Срок закончился. Продлите прокси, чтобы вернуть связь.\n';
+        }
+
         if (links.web_https) kb.url('🌐 Подключить Web Proxy', links.web_https).row();
         if (links.mtproto_https) kb.url('🔌 Подключить MTProto', links.mtproto_https);
+        // Fake TLS выдаётся только после проверки домена маскировки; если она
+        // не пройдена, клиент видит обычный MTProto и ничего не ломается.
+        if (links.mtproto_faketls_https) {
+            kb.url('🛡 MTProto Fake TLS (обход DPI)', links.mtproto_faketls_https);
+        }
+        // Кнопка-ссылки Telegram не всегда удобна: часть клиентов не открывает
+        // tg:// автоматически, а скопировать текст из такого сообщения нельзя.
+        // Поэтому рядом всегда есть копия ссылок обычным текстом.
+        kb.row();
+        kb.text('📋 Ссылки текстом', `links:${selected.id}`);
+        kb.text('💳 Пополнить', 'topup');
         kb.text('♻️ Продлить', `renew:${selected.id}`);
         if (settings.auto_renew_enabled) {
             kb.text(selected.auto_renew ? '♻️ Автопродление: ✅' : '♻️ Автопродление: ❌', `autorenew:${selected.id}`);
@@ -268,6 +300,7 @@ async function cabinetView(ctx, selectedId = null) {
         styleButtons(kb, [
             ['Подключить Web Proxy', 'success'],
             ['Подключить MTProto', 'primary'],
+            ['Пополнить', 'danger'],
             ['Продлить', 'success'],
             ['Автопродление: ✅', 'success'],
             ['Автопродление: ❌', 'danger'],
@@ -390,12 +423,15 @@ async function issueAccessFor(tgId, tariff, paymentId) {
         db.prepare("UPDATE payments SET status = 'success', paid_at = datetime('now') WHERE id = ?").run(paymentId);
     }
 
-    const links = clientLinks(client, settings.mask_domain);
+    const links = clientLinks(client);
     let text =
         `🎉 <b>Оплата прошла! Прокси готов</b>\n\n` +
         `📦 Прокси: <b>${username}</b>\n📅 Действует до: <b>${fmtMSK(expires)}</b>\n\n`;
     if (links.web_https) text += `🌐 <b>Web Proxy</b> (нажми — подключится сам):\n${links.web_https}\n\n`;
-    if (links.mtproto_https) text += `🔌 <b>MTProto</b>:\n${links.mtproto_https}\n\n`;
+if (links.mtproto_https) text += `🔌 <b>MTProto</b>:\n${links.mtproto_https}\n\n`;
+            if (links.mtproto_faketls_https) {
+                text += `🛡 <b>MTProto Fake TLS</b> (если обычный не подключается):\n${links.mtproto_faketls_https}\n\n`;
+            }
     if (links.web_https) {
         text += `⚠️ <b>Важно:</b> Web Proxy на iPhone (iOS) пока может не подключаться — на Apple-устройствах используйте MTProto-ссылку.\n\n`;
     }
@@ -502,7 +538,7 @@ async function broadcastNewLinks() {
     for (const [tgId, list] of byUser) {
         let text = '🔄 <b>Домен обновлён — подключитесь заново:</b>\n';
         for (const c of list) {
-            const links = clientLinks(c, maskDomain);
+            const links = clientLinks(c);
             const until = c.expires_at ? fmtMSK(c.expires_at, false) : '∞';
             text += `\n📦 <b>${c.username}</b> — до ${until}\n`;
             if (links.web_https) text += `🌐 Web: ${links.web_https}\n`;
@@ -801,6 +837,33 @@ async function start() {
         await ctx.answerCallbackQuery();
         const view = await cabinetView(ctx, Number(ctx.match[1]));
         await ctx.reply(view.text, { parse_mode: 'HTML', reply_markup: view.kb, disable_web_page_preview: true });
+    });
+
+    // Ссылки обычным текстом: их можно скопировать и вставить руками.
+    // Кнопки-ссылки Telegram в этом не позволяют, а часть клиентов
+    // не открывает tg:// по нажатию.
+    bot.callbackQuery(/^links:(\d+)$/, async (ctx) => {
+        await ctx.answerCallbackQuery();
+        const client = db.prepare('SELECT * FROM clients WHERE id = ? AND telegram_id = ?')
+            .get(Number(ctx.match[1]), ctx.from.id);
+        if (!client) {
+            return ctx.reply('❌ Прокси не найден.', { parse_mode: 'HTML' });
+        }
+        const links = clientLinks(client);
+        const lines = [`<b>${client.username} — ссылки для подключения</b>`, ''];
+        if (links.web_https) lines.push('🌐 <b>Web Proxy</b> (Telegram Desktop, Android, iOS):', links.web_https, '');
+        if (links.mtproto_https) lines.push('🔌 <b>MTProto</b>:', links.mtproto_https, '');
+        if (links.mtproto_faketls_https) {
+            lines.push('🛡 <b>MTProto Fake TLS</b> — если обычный не подключается:', links.mtproto_faketls_https, '');
+        }
+        if (lines.length <= 1) {
+            return ctx.reply('❌ Для этого прокси нет доступных ссылок.', { parse_mode: 'HTML' });
+        }
+        lines.push('Скопируйте нужную ссылку и откройте её в Telegram или вставьте в настройках прокси.');
+        await ctx.reply(lines.join('\n'), {
+            parse_mode: 'HTML',
+            disable_web_page_preview: true,
+        });
     });
 
     bot.hears('🤝 Рефералы', async (ctx) => {
@@ -1201,11 +1264,14 @@ async function start() {
             refPending.delete(tgId);
             db.prepare('DELETE FROM referral_pending WHERE telegram_id = ?').run(tgId);
             const client = db.prepare('SELECT * FROM clients WHERE username = ?').get(`test${tgId}`);
-            const links = clientLinks(client, getAll().mask_domain);
+            const links = clientLinks(client);
 
             let text = `🎁 <b>Тестовый доступ на 3 часа активирован!</b>\n\n⏰ Действует до: <b>${fmtMSK(expires)}</b>\n\n`;
             if (links.web_https) text += `🌐 <b>Web Proxy</b> (нажми — подключится сам):\n${links.web_https}\n\n`;
-            if (links.mtproto_https) text += `🔌 <b>MTProto</b>:\n${links.mtproto_https}\n\n`;
+if (links.mtproto_https) text += `🔌 <b>MTProto</b>:\n${links.mtproto_https}\n\n`;
+    if (links.mtproto_faketls_https) {
+        text += `🛡 <b>MTProto Fake TLS</b> (если обычный не подключается):\n${links.mtproto_faketls_https}\n\n`;
+    }
             text += `❤️ Понравилось? Продлите в личном кабинете!`;
             await ctx.reply(text, { parse_mode: 'HTML', disable_web_page_preview: true });
             require('./notifier').notifyAdmin(getAll(), `🎁 Тест выдан: test${tgId}`).catch(() => {});

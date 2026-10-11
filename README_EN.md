@@ -209,6 +209,99 @@ creation and bulk actions, link rotation.
 Connections in real time, filters by client/IP/protocol, client devices
 (Windows/macOS/iOS/Android), colour markup (✅/❌/⚠️), export for a period.
 
+Location is written when logs are collected rather than computed on view:
+country, city, autonomous system and its operator. This makes logs filterable
+and groupable by country and usable for analytics; all of it is included in the
+CSV export.
+
+### Telegram bot
+Personal cabinet showing traffic usage and the remaining allowance, a clear
+hint when a proxy is blocked or expired, a button that sends all connection
+links as plain text (so they can be copied and pasted by hand), and quick
+top-up straight from the proxy card.
+
+## 🛡 Protection and resilience
+
+All settings live in one place (**Settings → Protection and resilience**).
+Most of them restart the engine when applied — this is stated on the card.
+
+### Fake TLS (MTProto)
+The panel generates Fake TLS links (`ee`) **in addition to** the regular ones
+(`dd`), not instead of them. Links already handed to clients keep working —
+clients simply get a second link and pick whichever works on their carrier.
+
+An `ee` link appears only after the mask domain is verified: it must support
+**TLS 1.3** and resolve to **this server's IP**. If verification fails, no
+`ee` link is shown at all — clients see a working `dd` instead. Verification
+runs every 6 hours and again whenever the mask domain changes.
+
+> Fake TLS applies to MTProto only. Web Proxy already runs over real HTTPS and
+> does not need it.
+
+### Fallback Web Proxy transports
+The panel can enable transport negotiation: the client tries them in order
+until one works (`https-lanes`, `websocket`, `websocket-lanes`). The fallback
+always stays `https` because **Telegram iOS supports only that**, and changing
+it would break every iOS client.
+
+Negotiation is disabled by default. Note that the setting does not support
+hot-reload, so the panel restarts the engine after applying it.
+
+### SNI policy
+Controls what the engine replies to a client that arrives with an unknown SNI:
+
+| Behaviour | Description |
+|-----------|-------------|
+| `drop` | Close the connection silently (default) |
+| `mask` | Forward to the mask — maximum camouflage |
+| `accept` | Treat as valid (weaker protection against probing) |
+| `reject_handshake` | Reject the handshake, like nginx without that host |
+
+### Real site behind the proxy domain (selfmask)
+Instead of the panel placeholder you can serve an actual website: ordinary
+requests to the proxy domain are forwarded to a local backend. A **private
+address** is required (e.g. `127.0.0.1:8099`) — the engine accepts only
+`http://` with a literal private or loopback IP.
+
+### Backup domains
+Extra domains serve the same IP with the same client secret. If the primary
+domain is blocked, clients switch to a backup.
+
+Engine limits worth knowing in advance:
+- at most **8 domains**;
+- every domain needs its own set of client profiles, and only **32** profiles
+  are allowed in total — each new domain multiplies that number. The panel
+  warns you before applying;
+- a domain must **already point at the server IP**, otherwise Let's Encrypt
+  will not issue a certificate and connections will fail.
+
+### IP and subnet blocking
+A list of addresses and subnets in CIDR form. Rules are applied by two
+mechanisms: `deny` in Nginx for the Web Proxy and nftables sets for the
+MTProto port, so packets are dropped before reaching the engine.
+
+**The panel and SSH are not affected:** the panel has its own location and
+MTProto its own port. Otherwise blocking an address would also cut off access
+to the admin panel.
+
+Overly wide subnets (IPv4 wider than `/8`, IPv6 wider than `/16`) are
+rejected — otherwise a single mistyped address would cut off a large part of
+your clients.
+
+### Memory and CPU limits
+The engine is constrained through a systemd drop-in that survives engine
+updates. Limits are computed from the server's actual memory rather than
+entered by hand in megabytes.
+
+`MemoryMax` restricts **only the Telemt processes**: when reached, the engine
+restarts while the panel, Nginx and Caddy stay available. Without a ceiling,
+the OOM killer picks a victim at random and may kill the panel.
+
+Apply it via **Settings → Protection → Memory and CPU limits**, or manually:
+```bash
+sudo bash /opt/tggate/scripts/telemt-limits.sh
+```
+
 ### QR codes
 QR for Web Proxy and MTProto, PNG/SVG, custom colours and sizes, public page
 `/qr/{id}`, scan statistics, sending to Telegram.
@@ -223,6 +316,90 @@ Python and Node.js examples. Create clients with full limits (IP, speed,
 traffic), links, QR codes and renewal.
 
 </details>
+
+## 🛡 Protection and resilience
+
+All settings live in one place (**Settings → Protection and resilience**).
+Most of them restart the engine when applied — this is stated on the card.
+
+### Fake TLS (MTProto)
+The panel generates Fake TLS links (`ee`) **in addition to** the regular ones
+(`dd`), not instead of them. Links already handed to clients keep working —
+clients simply get a second link and pick whichever works on their carrier.
+
+An `ee` link appears only after the mask domain is verified: it must support
+**TLS 1.3** and resolve to **this server's IP**. If verification fails, no
+`ee` link is shown at all — clients see a working `dd` instead. Verification
+runs every 6 hours and again whenever the mask domain changes.
+
+> Fake TLS applies to MTProto only. Web Proxy already runs over real HTTPS and
+> does not need it.
+
+### Fallback Web Proxy transports
+The panel can enable transport negotiation: the client tries them in order
+until one works (`https-lanes`, `websocket`, `websocket-lanes`). The fallback
+always stays `https` because **Telegram iOS supports only that**, and changing
+it would break every iOS client.
+
+Negotiation is disabled by default. Note that the setting does not support
+hot-reload, so the panel restarts the engine after applying it.
+
+### SNI policy
+Controls what the engine replies to a client that arrives with an unknown SNI:
+
+| Behaviour | Description |
+|-----------|-------------|
+| `drop` | Close the connection silently (default) |
+| `mask` | Forward to the mask — maximum camouflage |
+| `accept` | Treat as valid (weaker protection against probing) |
+| `reject_handshake` | Reject the handshake, like nginx without that host |
+
+### Real site behind the proxy domain (selfmask)
+Instead of the panel placeholder you can serve an actual website: ordinary
+requests to the proxy domain are forwarded to a local backend. A **private
+address** is required (e.g. `127.0.0.1:8099`) — the engine accepts only
+`http://` with a literal private or loopback IP.
+
+### Backup domains
+Extra domains serve the same IP with the same client secret. If the primary
+domain is blocked, clients switch to a backup.
+
+Engine limits worth knowing in advance:
+- at most **8 domains**;
+- every domain needs its own set of client profiles, and only **32** profiles
+  are allowed in total — each new domain multiplies that number. The panel
+  warns you before applying;
+- a domain must **already point at the server IP**, otherwise Let's Encrypt
+  will not issue a certificate and connections will fail.
+
+### IP and subnet blocking
+A list of addresses and subnets in CIDR form. Rules are applied by two
+mechanisms: `deny` in Nginx for the Web Proxy and nftables sets for the
+MTProto port, so packets are dropped before reaching the engine.
+
+**The panel and SSH are not affected:** the panel has its own location and
+MTProto its own port. Otherwise blocking an address would also cut off access
+to the admin panel.
+
+Overly wide subnets (IPv4 wider than `/8`, IPv6 wider than `/16`) are
+rejected — otherwise a single mistyped address would cut off a large part of
+your clients.
+
+### Memory and CPU limits
+The engine is constrained through a systemd drop-in that survives engine
+updates. Limits are computed from the server's actual memory rather than
+entered by hand in megabytes.
+
+`MemoryMax` restricts **only the Telemt processes**: when reached, the engine
+restarts while the panel, Nginx and Caddy stay available. Without a ceiling,
+the OOM killer picks a victim at random and may kill the panel.
+
+Apply it via **Settings → Protection → Memory and CPU limits**, or manually:
+```bash
+sudo bash /opt/tggate/scripts/telemt-limits.sh
+```
+
+Current usage and the percentage of the ceiling are visible in **Diagnostics**.
 
 ## 🛠 Management
 

@@ -93,7 +93,7 @@ function enrichClient(row) {
         quota_percent: row.quota_bytes
             ? Math.min(100, Math.round((row.traffic_used / row.quota_bytes) * 100))
             : null,
-        links: clientLinks(row, getMaskDomain()),
+        links: clientLinks(row),
     };
 }
 

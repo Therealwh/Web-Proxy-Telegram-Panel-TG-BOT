@@ -99,6 +99,7 @@ export default function Logs() {
                                     <th className="px-3 py-2">{t('logs.thClient')}</th>
                                     <th className="px-3 py-2">{t('logs.thIp')}</th>
                                     <th className="px-3 py-2">{t('logs.thDevice')}</th>
+                                    <th className="px-3 py-2">{t('logs.thGeo')}</th>
                                     <th className="px-3 py-2">{t('logs.thProto')}</th>
                                     <th className="px-3 py-2">{t('logs.thStatus')}</th>
                                 </tr>
@@ -117,6 +118,17 @@ export default function Logs() {
                                             </td>
                                             <td className="px-3 py-1.5">{log.ip || '—'}</td>
                                             <td className="px-3 py-1.5 whitespace-nowrap" title={log.user_agent || ''}>{dev.icon} {dev.label}</td>
+                                            <td className="px-3 py-1.5 whitespace-nowrap text-slate-500">
+                                                {log.country ? (
+                                                    <span title={[log.city, log.asnOrg].filter(Boolean).join(' · ') || log.country}>
+                                                        {log.country_code
+                                                            ? <img src={`https://flagcdn.com/${log.country_code.toLowerCase()}.svg`} alt="" className="inline-block h-3 w-4 mr-1 align-[-2px] rounded-sm" />
+                                                            : null}
+                                                        {log.city || log.country}
+                                                        {log.asnOrg ? ` · ${log.asnOrg}` : ''}
+                                                    </span>
+                                                ) : '—'}
+                                            </td>
                                             <td className="px-3 py-1.5"><ProtoBadge protocol={log.protocol} /></td>
                                             <td className="px-3 py-1.5">
                                                 <span className={statusBadge(log.status)[0]}>

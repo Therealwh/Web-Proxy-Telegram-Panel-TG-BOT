@@ -46,7 +46,7 @@ function getClientWithLinks(id) {
     const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(id);
     if (!client) throw httpError(404, 'Клиент не найден');
     const settings = getAll();
-    return { client, links: clientLinks(client, settings.mask_domain) };
+    return { client, links: clientLinks(client) };
 }
 
 // --- Генерация QR (PNG/SVG) ---

@@ -471,6 +471,15 @@ export default function Clients() {
                                 </button>
                             </div>
                         )}
+                        {qrClient.links.mtproto_faketls && (
+                            <div className="text-center">
+                                <h4 className="font-medium mb-1">{t('clients.qrFakeTls')}</h4>
+                                <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">{t('clients.fakeTlsHint')}</p>
+                                <button className="btn-secondary w-full" onClick={() => copyText(qrClient.links.mtproto_faketls, t)}>
+                                    <Copy size={14} /> {t('clients.qrCopy')}
+                                </button>
+                            </div>
+                        )}
                     </div>
                 )}
             </Modal>

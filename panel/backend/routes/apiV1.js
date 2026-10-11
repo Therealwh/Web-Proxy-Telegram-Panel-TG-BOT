@@ -86,7 +86,7 @@ router.post('/clients', requireApiKey('write'), async (req, res, next) => {
         syncWebProfiles();
         fireWebhook('client.created', { username: data.username, expires_at: expires });
 
-        res.status(201).json({ client, links: clientLinks(client, settings.mask_domain) });
+        res.status(201).json({ client, links: clientLinks(client) });
     } catch (err) {
         next(err);
     }
@@ -178,7 +178,7 @@ router.get('/clients/:id/links', requireApiKey('read'), (req, res, next) => {
         const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(req.params.id);
         if (!client) throw httpError(404, 'Клиент не найден');
         const settings = getAll();
-        res.json({ links: clientLinks(client, settings.mask_domain) });
+        res.json({ links: clientLinks(client) });
     } catch (err) { next(err); }
 });
 
@@ -189,7 +189,7 @@ router.get('/clients/:id/qr', requireApiKey('read'), async (req, res, next) => {
         if (!client) throw httpError(404, 'Клиент не найден');
         const QRCode = require('qrcode');
         const settings = getAll();
-        const links = clientLinks(client, settings.mask_domain);
+        const links = clientLinks(client);
         const out = {};
         if (links.web) out.web = await QRCode.toDataURL(links.web, { width: 512 });
         if (links.mtproto) out.mtproto = await QRCode.toDataURL(links.mtproto, { width: 512 });

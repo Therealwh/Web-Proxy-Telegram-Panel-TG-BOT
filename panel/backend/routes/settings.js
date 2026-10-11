@@ -140,6 +140,15 @@ router.put('/', (req, res, next) => {
         for (const dk of ['web_domain', 'mtproto_domain']) {
             if (data[dk] !== undefined) data[dk] = normalizeDomain(data[dk]);
         }
+        if (data.mask_domain !== undefined) {
+            const before = getAll().mask_domain;
+            data.mask_domain = normalizeDomain(data.mask_domain);
+            // Смена домена маскировки обесценивает прежнюю проверку Fake TLS:
+            // ee-ссылки хранят домен внутри секрета, поэтому старые надо забыть.
+            if (data.mask_domain !== before) {
+                db.prepare('DELETE FROM settings WHERE key = ?').run('faketls:status');
+            }
+        }
 
         db.transaction(() => {
             for (const [key, value] of Object.entries(data)) {
@@ -166,6 +175,109 @@ router.put('/', (req, res, next) => {
 // --- Текущий домен панели ---
 router.get('/domain', (req, res) => {
     res.json({ domain: config.domain });
+});
+
+// --- Запасные домены ---
+router.get('/backup-domains', (req, res) => {
+    res.json(require('../services/backupDomains').getState());
+});
+
+router.post('/backup-domains', async (req, res, next) => {
+    try {
+        const { domains } = z.object({ domains: z.array(z.string()).max(16) }).parse(req.body);
+        const result = await require('../services/backupDomains').apply(domains);
+        if (!result.ok) throw httpError(400, result.error);
+        res.json({ ok: true, domains: result.domains });
+    } catch (err) {
+        next(err);
+    }
+});
+
+// --- Политика SNI и selfmask ---
+router.get('/masking', async (req, res, next) => {
+    try {
+        res.json(await require('../services/masking').getState());
+    } catch (err) {
+        next(err);
+    }
+});
+
+router.post('/masking/sni', async (req, res, next) => {
+    try {
+        const { action } = z.object({ action: z.string() }).parse(req.body);
+        const result = await require('../services/masking').applySniAction(action);
+        if (!result.ok) throw httpError(400, result.error);
+        res.json({ ok: true, restarted: result.restarted });
+    } catch (err) {
+        next(err);
+    }
+});
+
+router.post('/masking/selfmask', async (req, res, next) => {
+    try {
+        const { enabled, upstream } = z.object({
+            enabled: z.boolean(),
+            upstream: z.string().optional(),
+        }).parse(req.body);
+        const result = await require('../services/masking').applySelfmask(enabled, upstream);
+        if (!result.ok) throw httpError(400, result.error);
+        res.json({ ok: true, restarted: result.restarted, upstream: result.upstream });
+    } catch (err) {
+        next(err);
+    }
+});
+
+// --- Лимиты памяти и CPU для движка ---
+router.get('/engine-limits', async (req, res, next) => {
+    try {
+        res.json(await require('../services/engineLimits').getStatus());
+    } catch (err) {
+        next(err);
+    }
+});
+
+router.post('/engine-limits', async (req, res, next) => {
+    try {
+        const result = await require('../services/engineLimits').apply();
+        if (!result.ok) throw httpError(500, result.error);
+        res.json({ ok: true, message: 'Лимиты применяются, движок будет перезапущен. Статус появится в диагностике через несколько секунд.' });
+    } catch (err) {
+        next(err);
+    }
+});
+
+// --- Резервные WEB-носители (перебор транспортов клиентом) ---
+router.get('/web-carriers', (req, res) => {
+    res.json(require('../services/webCarriers').getState());
+});
+
+router.post('/web-carriers', async (req, res, next) => {
+    try {
+        const { carriers } = z.object({ carriers: z.unknown() }).parse(req.body);
+        const normalized = require('../services/webCarriers').normalize(carriers);
+        db.prepare(
+            'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value'
+        ).run('web_carriers', JSON.stringify(normalized));
+        const result = await require('../services/webCarriers').apply(normalized);
+        res.json({ ok: result.ok, ...result });
+    } catch (err) {
+        next(err);
+    }
+});
+
+// --- Готовность маскировочного домена к Fake TLS ---
+router.get('/faketls', (req, res) => {
+    res.json(require('../services/mtprotoFaketls').getStatus());
+});
+
+// Принудительная перепроверка: после смены mask_domain или правки DNS
+router.post('/faketls/check', async (req, res, next) => {
+    try {
+        const status = await require('../services/mtprotoFaketls').check({ force: true });
+        res.json(status);
+    } catch (err) {
+        next(err);
+    }
 });
 
 // --- Смена домена (через root-Helper, без переустановки) ---

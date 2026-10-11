@@ -570,6 +570,9 @@ install_systemd() {
     systemctl daemon-reload
     systemctl enable telemt tggate-panel caddy nginx
     systemctl restart telemt tggate-panel caddy nginx
+    # Лимиты памяти/CPU двигателя ставим отдельным вызовом: скрипт сам считает
+    # их от фактической памяти сервера и сам перезапускает telemt.
+    bash "${INSTALL_DIR}/scripts/telemt-limits.sh" || echo "(!) Не удалось применить лимиты Telemt — примените позже: bash /opt/tggate/scripts/telemt-limits.sh"
     ok "$(tr ok_systemd)"
 }
 

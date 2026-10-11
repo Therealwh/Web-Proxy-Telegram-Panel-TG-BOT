@@ -471,6 +471,12 @@ function start() {
     setInterval(() => tlsFp.syncOnce().catch(() => {}), 5 * 60 * 1000).unref();
     tlsFp.syncOnce().catch(() => {});
 
+    // Готовность маскировочного домена к Fake TLS: раз в 6 часов.
+    // Пока домен не подтверждён, ee-ссылки клиентам не выдаются.
+    const faketls = require('./mtprotoFaketls');
+    setInterval(() => faketls.check().catch(() => {}), 6 * 60 * 60 * 1000).unref();
+    setTimeout(() => faketls.check().catch(() => {}), 5000).unref();
+
     // Ежечасно: истечения, просроченные, тестовые, диск, автопродление, дожим тестов
     setInterval(() => {
         try { checkExpiring(); } catch (e) { logger.error(e); }

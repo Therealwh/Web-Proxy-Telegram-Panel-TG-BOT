@@ -58,14 +58,16 @@ router.get('/export', (req, res) => {
     if (to) { where += ' AND created_at <= ?'; params.push(String(to)); }
 
     const rows = db.prepare(
-        `SELECT created_at, username, ip, protocol, status, user_agent
+        `SELECT created_at, username, ip, protocol, status, user_agent,
+                country, country_code, city, asn, asn_org
          FROM connection_logs WHERE ${where} ORDER BY created_at DESC LIMIT 100000`
     ).all(...params);
 
-    const header = 'created_at,username,ip,protocol,status,user_agent';
+    const header = 'created_at,username,ip,protocol,status,user_agent,country,country_code,city,asn,asn_org';
     const escape = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
     const lines = rows.map((r) =>
-        [r.created_at, r.username, r.ip, r.protocol, r.status, r.user_agent].map(escape).join(',')
+        [r.created_at, r.username, r.ip, r.protocol, r.status, r.user_agent,
+            r.country, r.country_code, r.city, r.asn, r.asn_org].map(escape).join(',')
     );
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', 'attachment; filename="tggate-logs.csv"');

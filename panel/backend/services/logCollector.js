@@ -12,6 +12,7 @@ const telemt = require('./telemtApi');
 const wsHub = require('./wsHub');
 const logger = require('../utils/logger');
 const { getAll } = require('../routes/settings');
+const geo = require('./geo');
 
 let running = false;
 let lastPrune = 0;
@@ -59,15 +60,39 @@ async function pollOnce() {
 
     // Дельта: новые ключи = новые подключения
     const insert = db.prepare(
-        `INSERT INTO connection_logs (username, ip, protocol, status, user_agent, created_at)
-         VALUES (?, ?, ?, ?, ?, ?)`
+        `INSERT INTO connection_logs
+         (username, ip, protocol, status, user_agent, country, country_code, city, asn, asn_org, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     );
+
+    // Сначала собираем новые записи, потом одним проходом получаем геоданные:
+    // запрос к ip-api идёт только для тех, кого раньше не видели, и не блокирует
+    // запись остальных подключений, даже если внешний сервис не отвечает.
+    const fresh = [];
     for (const [key, rec] of snapshot) {
         if (prevKeys.has(key)) continue;
+        fresh.push(rec);
+    }
+
+    if (fresh.length > 0) {
+        let geoByIp = {};
         try {
-            insert.run(rec.username, rec.ip, rec.protocol, rec.status, rec.user_agent, rec.created_at);
-            wsHub.broadcast('log', rec);
-        } catch { /* БД не должна падать */ }
+            geoByIp = await geo.lookupFullMany(fresh.map((r) => r.ip));
+        } catch (e) {
+            logger.warn('GeoIP для логов не получен, пишем без страны', { error: e.message });
+        }
+
+        for (const rec of fresh) {
+            try {
+                const g = geoByIp[rec.ip] || {};
+                insert.run(
+                    rec.username, rec.ip, rec.protocol, rec.status, rec.user_agent,
+                    g.country ?? null, g.code ?? null, g.city || null, g.asn ?? null, g.asnOrg || null,
+                    rec.created_at
+                );
+                wsHub.broadcast('log', { ...rec, ...g });
+            } catch { /* БД не должна падать */ }
+        }
     }
     // Полный провал опроса — не сбрасываем prevKeys, чтобы после
     // восстановления Telemt не задублировать все подключения

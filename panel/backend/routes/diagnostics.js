@@ -112,9 +112,10 @@ async function runChecks() {
     const telemtP = run('systemctl', ['is-active', 'telemt']);
     const nginxP = run('systemctl', ['is-active', 'nginx']);
     const panelP = run('systemctl', ['is-active', 'tggate-panel']);
+    const limitsP = require('../services/engineLimits').getStatus().catch(() => null);
 
-    const [load, versions, telemtSvc, nginxSvc, panelSvc] =
-        await Promise.all([loadP, versionsP, telemtP, nginxP, panelP]);
+    const [load, versions, telemtSvc, nginxSvc, panelSvc, limits] =
+        await Promise.all([loadP, versionsP, telemtP, nginxP, panelP, limitsP]);
 
     const setting = (key) => {
         const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key);
@@ -169,6 +170,37 @@ async function runChecks() {
             : (load && (load.ram?.percent ?? 0) >= 90 ? 'warn' : OK),
         items: items.length ? items : [{ label: 'Данные', value: 'не удалось получить' }],
     });
+
+    // --- Лимиты ресурсов движка ---
+    // Пользователь должен видеть потолок памяти и долю от него, иначе о том,
+    // что движок упирается в лимит, он узнает только после падения всего.
+    if (limits?.available) {
+        const mb = (b) => (b === null ? '—' : `${Math.round(b / 1048576)} МБ`);
+        const nearLimit = (limits.usagePercent ?? 0) >= 90;
+        groups.push({
+            id: 'engine_limits',
+            status: !limits.applied ? 'warn' : nearLimit ? 'warn' : OK,
+            items: [
+                {
+                    label: 'Потолок памяти Telemt',
+                    value: limits.applied ? mb(limits.memoryMax) : 'не установлен',
+                },
+                {
+                    label: 'Сейчас занимает',
+                    value: limits.memoryCurrent === null
+                        ? '—'
+                        : `${mb(limits.memoryCurrent)}${limits.usagePercent !== null ? ` (${limits.usagePercent}% от лимита)` : ''}`,
+                },
+                { label: 'Мягкий порог', value: mb(limits.memoryHigh) },
+                {
+                    label: 'Пояснение',
+                    value: limits.applied
+                        ? 'При достижении потолка перезапустится только движок, панель останется доступна'
+                        : 'Без лимита OOM-killer может убить панель или nginx вместо движка',
+                },
+            ],
+        });
+    }
 
     // --- База данных ---
     const dbs = dbHealth();

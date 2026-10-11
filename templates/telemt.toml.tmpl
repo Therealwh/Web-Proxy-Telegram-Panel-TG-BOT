@@ -66,10 +66,16 @@ tls_emulation = true
 tls_front_dir = "{{TLSFRONT_DIR}}"
 
 # === Web Proxy (WEB-режим Telemt) ===
-# Carrier "https" — максимальная совместимость (в т.ч. Telegram iOS)
+# Carrier "https" — максимальная совместимость (в т.ч. Telegram iOS).
+# Он же остаётся финальным запасным вариантом, поэтому его нельзя убирать:
+# Telegram iOS поддерживает только https.
+# carriers — перебор кандидатов ДО запасного: клиент пробует по очереди, пока
+# не выберет рабочий. Пустой массив = перебора нет (только https).
+# ВНИМАНИЕ: carriers не поддерживает hot-reload, применяется после рестарта.
 [web]
 enabled = true
 carrier = "https"
+carriers = {{WEB_CARRIERS}}
 
 # Диагностика WEB (страница /web-status в Control API).
 # При больших нагрузках можно выключить (enabled = false).
