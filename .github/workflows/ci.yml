@@ -36,6 +36,9 @@ jobs:
       - name: Установка зависимостей
         working-directory: panel/frontend
         run: npm install
+      - name: ESLint
+        working-directory: panel/frontend
+        run: npm run lint
       - name: Сборка
         working-directory: panel/frontend
         run: npm run build

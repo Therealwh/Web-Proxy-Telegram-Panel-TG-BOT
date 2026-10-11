@@ -1,5 +1,13 @@
 // Panel UI translations: English
 export default {
+    // Page failed to render — error card (ErrorBoundary)
+    error: {
+        title: 'This page failed to render',
+        hint: 'The rest of the panel still works. Try reloading the page or go to the dashboard.',
+        retry: 'Try again',
+        toDashboard: 'Go to dashboard',
+        details: 'Technical details',
+    },
     dashboard: {
         title: 'Dashboard',
         subtitle: 'Server and services status in real time',
@@ -94,7 +102,7 @@ export default {
         problemsNone: 'No problems',
         pQuality: 'Connection quality: {p}% (30-day checks)',
         pSsl: 'SSL certificate expires in {d} days',
-        dcPartial: 'Partial datacenter degradation',
+        pDcPartial: 'Partial datacenter degradation',
         pQuota: '{u}: quota {p}% used',
         pExpire: '{u}: expires in {d} d.',
         pSvc: 'Service down: {list}',

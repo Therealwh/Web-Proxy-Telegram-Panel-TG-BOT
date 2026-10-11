@@ -215,7 +215,7 @@ export default function Dashboard() {
             list.push({ kind: 'bad', text: t('dashboard.dcDegraded') });
         }
         if (dc?.enabled && dc?.overall === 'partial') {
-            list.push({ kind: 'warn', text: t('dashboard.dcPartial') });
+            list.push({ kind: 'warn', text: t('dashboard.pDcPartial') });
         }
         if (quality != null && quality < 95) {
             list.push({ kind: 'warn', text: t('dashboard.pQuality', { p: quality.toFixed(1) }) });

@@ -1,6 +1,6 @@
 // Каркас приложения: боковое меню, шапка, маршрутизация
 import React, { useEffect, useState } from 'react';
-import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import {
     LayoutDashboard, Users, BarChart3, ScrollText, Settings, QrCode, Globe,
     Globe2, KeyRound, Bot, RefreshCw, Code2, Moon, Sun, LogOut, Menu, X, Activity, Shield,
@@ -9,6 +9,7 @@ import { useAuthStore, useThemeStore, useLangStore } from '../store';
 import { get, post, put } from '../api';
 import { toast } from '../store';
 import { Toasts } from './ui';
+import ErrorBoundary from './ErrorBoundary';
 import { useT } from '../i18n';
 
 // Пункты меню
@@ -63,6 +64,7 @@ export default function Layout() {
     const [version, setVersion] = useState('');
     const [badges, setBadges] = useState({ online: 0, pending: 0, updates: false });
     const navigate = useNavigate();
+    const location = useLocation();
 
     // Язык по умолчанию — из настроек панели (если не выбран вручную)
     useEffect(() => {
@@ -212,7 +214,9 @@ export default function Layout() {
                     </button>
                 </header>
                 <main className="flex-1 p-4 lg:p-6 max-w-[1400px] w-full mx-auto">
-                    <Outlet />
+                    <ErrorBoundary key={location.pathname}>
+                        <Outlet />
+                    </ErrorBoundary>
                 </main>
                 <footer className="px-6 py-4 text-center text-xs text-slate-400 dark:text-slate-500 space-y-1">
                     <FooterLine version={version} />
