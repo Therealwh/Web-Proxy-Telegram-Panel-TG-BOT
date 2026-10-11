@@ -13,6 +13,7 @@ const { z } = require('zod');
 // Загрузка файлов в память (лимит 5 МБ), запись на диск после проверки имени
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 const config = require('../config');
+const db = require('../db');
 const { httpError } = require('../middleware/errorHandler');
 const telemt = require('../services/telemtApi');
 const logger = require('../utils/logger');
@@ -127,6 +128,27 @@ router.post('/upload', upload.single('file'), async (req, res, next) => {
     }
 });
 
+/** Читает версию шаблона из его каталога. */
+function templateVersion(dir) {
+    try {
+        const f = path.join(dir, 'template.json');
+        if (!fs.existsSync(f)) return null;
+        return JSON.parse(fs.readFileSync(f, 'utf8')).version || null;
+    } catch {
+        return null;
+    }
+}
+
+/** Какой шаблет установлен и какой версии — из настроек панели. */
+function installedTemplate() {
+    try {
+        const row = db.prepare('SELECT value FROM settings WHERE key = ?').get('website_template');
+        return row ? JSON.parse(row.value) : null;
+    } catch {
+        return null;
+    }
+}
+
 // --- Список шаблонов сайтов ---
 router.get('/templates', (req, res) => {
     const names = {
@@ -135,15 +157,27 @@ router.get('/templates', (req, res) => {
         women: '💄 Женский портал',
         tanks: '🎮 Танчики — браузерная аркада',
     };
+    const installed = installedTemplate();
     const templates = [];
     if (fs.existsSync(INSTALL_TEMPLATES)) {
         for (const dir of fs.readdirSync(INSTALL_TEMPLATES)) {
-            if (fs.statSync(path.join(INSTALL_TEMPLATES, dir)).isDirectory()) {
-                templates.push({ id: dir, name: names[dir] || dir });
-            }
+            if (!fs.statSync(path.join(INSTALL_TEMPLATES, dir)).isDirectory()) continue;
+            const full = path.join(INSTALL_TEMPLATES, dir);
+            const version = templateVersion(full);
+            const isInstalled = installed?.id === dir;
+            templates.push({
+                id: dir,
+                name: names[dir] || dir,
+                version,
+                installed: isInstalled,
+                // Ключевое: шаблон копируется в каталог сайта один раз, и
+                // обновление панели эту копию не трогает. Без такого
+                // признака пользователь видит «ничего не изменилось».
+                outdated: isInstalled && !!version && installed.version !== version,
+            });
         }
     }
-    res.json({ templates });
+    res.json({ templates, installed });
 });
 
 // --- Применить шаблон ---
@@ -162,7 +196,19 @@ router.post('/apply-template', async (req, res, next) => {
         fs.rmSync(config.websiteDir, { recursive: true, force: true });
         fs.cpSync(src, config.websiteDir, { recursive: true });
 
-        logger.info('Применён шаблон сайта', { template, backup: backupDir });
+        // Запоминаем, какой шаблон и какой версии установлен: иначе после
+        // обновления панели нельзя понять, что файлы сайта устарели
+        const version = templateVersion(src);
+        try {
+            db.prepare(
+                'INSERT INTO settings (key, value) VALUES (?, ?) ' +
+                'ON CONFLICT(key) DO UPDATE SET value = excluded.value'
+            ).run('website_template', JSON.stringify({ id: template, version, at: new Date().toISOString() }));
+        } catch (e) {
+            logger.warn('Шаблон применён, но версию записать не удалось', { error: e.message });
+        }
+
+        logger.info('Применён шаблон сайта', { template, version, backup: backupDir });
         await reloadTelemt();
         res.json({ ok: true, backup: backupDir });
     } catch (err) {

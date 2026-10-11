@@ -102,10 +102,24 @@ export default function Website() {
 
             {/* Шаблоны */}
             <Card title={t('website.tplTitle')} subtitle={t('website.tplSub')}>
+                {/* Шаблон копируется в каталог сайта один раз, и обновление
+                    панели эту копию не трогает. Без предупреждения
+                    выглядит так, будто «ничего не изменилось». */}
+                {templates.some((tpl) => tpl.outdated) && (
+                    <p className="text-sm text-amber-600 dark:text-amber-400 mb-3">
+                        {t('website.tplOutdated')}
+                    </p>
+                )}
                 <div className="flex flex-wrap gap-2">
                     {templates.map((tpl) => (
-                        <button key={tpl.id} className="btn-secondary" onClick={() => applyTemplate(tpl.id)}>
+                        <button key={tpl.id} onClick={() => applyTemplate(tpl.id)}
+                            className={tpl.outdated ? 'btn-primary' : 'btn-secondary'}>
                             {tpl.name}
+                            {tpl.installed && (
+                                <span className="ml-1 opacity-70">
+                                    {tpl.outdated ? `→ ${tpl.version}` : `· ${tpl.version}`}
+                                </span>
+                            )}
                         </button>
                     ))}
                 </div>

@@ -315,6 +315,7 @@ export default {
         tplApplied: 'Template applied',
         tplTitle: 'Ready templates',
         tplSub: 'Applying replaces all site files',
+        tplOutdated: 'The template was updated together with the panel, but the installed copy of the site is still the old one. Click the template again to update the site files.',
         filesTitle: 'Site files',
         filesEmpty: 'No files. Apply a template or upload files.',
         editor: 'Editor',
