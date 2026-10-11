@@ -103,21 +103,32 @@ export default function Website() {
             {/* Шаблоны */}
             <Card title={t('website.tplTitle')} subtitle={t('website.tplSub')}>
                 {/* Шаблон копируется в каталог сайта один раз, и обновление
-                    панели эту копию не трогает. Без предупреждения
+                    панели эту копию не трогает. Без заметного предупреждения
                     выглядит так, будто «ничего не изменилось». */}
                 {templates.some((tpl) => tpl.outdated) && (
-                    <p className="text-sm text-amber-600 dark:text-amber-400 mb-3">
-                        {t('website.tplOutdated')}
-                    </p>
+                    <div className="flex items-start gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 mb-4">
+                        <span className="text-xl leading-none" aria-hidden="true">⚠</span>
+                        <div className="text-sm">
+                            <p className="font-semibold text-amber-700 dark:text-amber-400">
+                                {t('website.tplOutdatedTitle')}
+                            </p>
+                            <p className="text-amber-700/90 dark:text-amber-400/90 mt-0.5">
+                                {t('website.tplOutdated')}
+                            </p>
+                        </div>
+                    </div>
                 )}
                 <div className="flex flex-wrap gap-2">
                     {templates.map((tpl) => (
                         <button key={tpl.id} onClick={() => applyTemplate(tpl.id)}
                             className={tpl.outdated ? 'btn-primary' : 'btn-secondary'}>
+                            {tpl.outdated && <span aria-hidden="true">↓ </span>}
                             {tpl.name}
                             {tpl.installed && (
                                 <span className="ml-1 opacity-70">
-                                    {tpl.outdated ? `→ ${tpl.version}` : `· ${tpl.version}`}
+                                    {tpl.outdated
+                                        ? `${tpl.installedVersion} → ${tpl.version}`
+                                        : `· ${tpl.version}`}
                                 </span>
                             )}
                         </button>

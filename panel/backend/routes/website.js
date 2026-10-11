@@ -139,11 +139,25 @@ function templateVersion(dir) {
     }
 }
 
-/** Какой шаблет установлен и какой версии — из настроек панели. */
-function installedTemplate() {
+/**
+ * Что на самом деле лежит в каталоге сайта.
+ *
+ * Раньше установленный шаблон искался только в настройках панели. Но эта
+ * запись появляется лишь с того момента, как шаблон начали применять
+ * через новую версию. Тот, кто применил шаблон раньше, получал молчание:
+ * панель считала, что ничего не установлено, и предупреждение об
+ * устаревшей копии не показывала никогда.
+ *
+ * Правда лежит на диске: применённый шаблон кладёт рядом с файлами
+ * свой template.json. Читаем его — и версия известна всегда.
+ */
+function deployedTemplate() {
     try {
-        const row = db.prepare('SELECT value FROM settings WHERE key = ?').get('website_template');
-        return row ? JSON.parse(row.value) : null;
+        const f = path.join(config.websiteDir, 'template.json');
+        if (!fs.existsSync(f)) return null;
+        const data = JSON.parse(fs.readFileSync(f, 'utf8'));
+        if (!data.id) return null;
+        return { id: data.id, version: data.version || null };
     } catch {
         return null;
     }
@@ -157,27 +171,29 @@ router.get('/templates', (req, res) => {
         women: '💄 Женский портал',
         tanks: '🎮 Танчики — браузерная аркада',
     };
-    const installed = installedTemplate();
+    // На диске — достовернее настроек: там лежит реально обслуживаемый сайт
+    const deployed = deployedTemplate();
     const templates = [];
     if (fs.existsSync(INSTALL_TEMPLATES)) {
         for (const dir of fs.readdirSync(INSTALL_TEMPLATES)) {
             if (!fs.statSync(path.join(INSTALL_TEMPLATES, dir)).isDirectory()) continue;
             const full = path.join(INSTALL_TEMPLATES, dir);
             const version = templateVersion(full);
-            const isInstalled = installed?.id === dir;
+            const isInstalled = deployed?.id === dir;
             templates.push({
                 id: dir,
                 name: names[dir] || dir,
                 version,
                 installed: isInstalled,
+                installedVersion: isInstalled ? deployed.version : null,
                 // Ключевое: шаблон копируется в каталог сайта один раз, и
                 // обновление панели эту копию не трогает. Без такого
                 // признака пользователь видит «ничего не изменилось».
-                outdated: isInstalled && !!version && installed.version !== version,
+                outdated: isInstalled && !!version && deployed.version !== version,
             });
         }
     }
-    res.json({ templates, installed });
+    res.json({ templates, installed: deployed });
 });
 
 // --- Применить шаблон ---
