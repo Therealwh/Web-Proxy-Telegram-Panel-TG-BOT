@@ -71,7 +71,7 @@
 }
 </script>
 
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%23f6c453'/><rect x='14' y='6' width='4' height='8' fill='%230b0e14'/><rect x='6' y='14' width='20' height='4' fill='%230b0e14'/></svg>">
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -83,7 +83,7 @@
       <span class="logo-text">ТАНЧИКИ<small>ретро-аркада</small></span>
     </a>
     <nav class="nav" aria-label="Разделы">
-      <a href="#game">Игра</a>
+      <a href="#play">Игра</a>
       <a href="#scores">Рекорды</a>
       <a href="#how">Как играть</a>
     </nav>
@@ -101,12 +101,13 @@
     </p>
   </section>
 
-  <section id="game" class="play-area">
+  <section id="play" class="play-area">
     <div class="hud" role="status" aria-label="Состояние игры">
       <span><b id="hud-score">0</b><small>очки</small></span>
       <span><b id="hud-level">1</b><small>уровень</small></span>
       <span><b id="hud-lives">3</b><small>жизни</small></span>
       <span><b id="hud-best">0</b><small>рекорд</small></span>
+      <button id="fs-btn" class="hud-fs" type="button" aria-pressed="false" title="Во весь экран">⛶</button>
     </div>
 
     <div class="stage">
@@ -115,7 +116,7 @@
         <div class="overlay-box">
           <h2 id="ov-title">ТАНКИ</h2>
           <p id="ov-sub">Пробел или Enter — начать игру</p>
-          <div id="submit-form" class="submit" style="display:none">
+          <div id="submit-form" class="submit is-hidden">
             <input id="nick" type="text" maxlength="16" placeholder="Ваш позывной" aria-label="Позывной для таблицы рекордов" autocomplete="off">
             <button id="start-btn" class="btn">В игру!</button>
           </div>
@@ -163,7 +164,7 @@
   <section id="scores" class="card">
     <h2>Таблица рекордов</h2>
     <p class="muted">Лучшие результаты игроков. Победите кого-нибудь — запишите своё имя.</p>
-    <ol id="scores" class="scores">
+    <ol id="scores-list" class="scores">
       <li class="empty">Загрузка…</li>
     </ol>
   </section>
@@ -186,7 +187,6 @@
   </div>
 </footer>
 
-<script>document.getElementById('year').textContent = new Date().getFullYear();</script>
 <script src="game.js"></script>
 </body>
 </html>

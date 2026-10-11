@@ -341,9 +341,13 @@ Built-in file manager and code editor, 4 ready templates, SEO fields,
 preview. The domain looks like a normal website.
 
 One of the templates is **"Tanks"**, a browser arcade game in the spirit
-of the Dendy-era Tanks: 20 levels, destructible walls, cover, power-ups,
-keyboard and touch controls, and a leaderboard. Nothing is loaded from
-third parties, so the page works even without an internet connection.
+of the Dendy-era Tanks: 55 levels, destructible walls, cover, power-ups,
+fullscreen mode and a leaderboard. Nothing is loaded from third parties,
+so the page works even without an internet connection.
+
+Levels are built with three types of symmetry — plain, wide and diagonal —
+so the field looks different even at the same amount of description, and
+no two levels are identical.
 
 The template is fully covered for SEO: `title` and `description` target
 real search queries, there is Open Graph for a proper link preview in

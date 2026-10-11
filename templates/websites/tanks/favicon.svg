@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <!-- Значок «Танчики»: корпус, гусеницы и ствол.
+       Отдельным файлом, а не data: URI — политика безопасности заглушки
+       запрещает img-src 'self', и подпись вкладки осталась бы пустой. -->
+  <rect width="32" height="32" rx="6" fill="#f6c453"/>
+  <rect x="6" y="12" width="20" height="12" fill="#0b0e14"/>
+  <rect x="6" y="13" width="20" height="2" fill="#2d3748"/>
+  <rect x="6" y="21" width="20" height="2" fill="#2d3748"/>
+  <rect x="9" y="15" width="14" height="6" fill="#f6c453"/>
+  <rect x="14" y="5" width="4" height="9" fill="#0b0e14"/>
+</svg>

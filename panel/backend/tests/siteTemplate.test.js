@@ -121,30 +121,155 @@ describe('SEO-разметка', () => {
     });
 });
 
-describe('игровая логика', () => {
-    test('уровней много, и все описаны', () => {
-        const js = read('game.js');
-        const start = js.indexOf('const HALF_LEVELS');
-        const end = js.indexOf('];', start);
-        const block = js.slice(start, end);
-        // 13 строк на уровень × N уровней
-        const rows = (block.match(/'/g) || []).length;
-        assert.ok(rows >= 130, `похоже, уровней мало: строк ${rows}`);
+describe('совместимость с политикой безопасности', () => {
+    // Заглушку отдаёт движок со строгим CSP: default-src 'self', без
+    // unsafe-inline и без data: в img-src. Нарушения не бросают исключений —
+    // страница просто выглядит сломанной. Проверяем превентивно.
+    const html = () => read('index.html');
+
+    test('нет инлайновых скриптов (ld+json — блок данных, не скрипт)', () => {
+        const bad = html().match(/<script(?![^>]*\ssrc=)(?![^>]*ld\+json)[^>]*>/g) || [];
+        assert.deepEqual(bad, [], `инлайновые скрипты: ${bad.join(' ')}`);
     });
 
-    test('каждая строка уровня — 13 символов', () => {
-        const js = read('game.js');
-        const start = js.indexOf('const HALF_LEVELS');
-        const end = js.indexOf('];', start);
-        const rows = [...js.slice(start, end).matchAll(/'([^']{7,13})'/g)].map((m) => m[1]);
-        assert.ok(rows.length > 0, 'не нашли строк уровней');
-        for (const r of rows) {
-            // Либо 7 символов (левая половина), либо 13 (если описана целиком)
-            assert.ok(r.length === 7 || r.length === 13, `строка уровня неверной длины (${r.length}): ${r}`);
-            for (const ch of r) {
-                assert.ok('.B#~TIE'.includes(ch), `неизвестный символ уровня: ${ch}`);
+    test('нет инлайновых стилей и обработчиков', () => {
+        assert.deepEqual(html().match(/\sstyle="/g) || [], [], 'найден атрибут style=');
+        assert.deepEqual(html().match(/\son[a-z]+\s*=/gi) || [], [], 'найден инлайновый обработчик');
+        assert.deepEqual(html().match(/<style[\s>]/g) || [], [], 'найден тег <style>');
+    });
+
+    test('нет data:-URI — img-src их не разрешает', () => {
+        assert.deepEqual(html().match(/(?:src|href)\s*=\s*["']data:/g) || [],
+            [], 'найден data:-URI в src/href');
+    });
+
+    test('id уникальны: дубли ломают getElementById', () => {
+        const ids = [...html().matchAll(/\sid="([^"]+)"/g)].map((m) => m[1]);
+        const dup = [...new Set(ids.filter((v, i) => ids.indexOf(v) !== i))];
+        assert.deepEqual(dup, [], `дублирующиеся id: ${dup.join(', ')}`);
+    });
+
+    test('id="game" принадлежит canvas, а не секции', () => {
+        // Регрессия: id="game" был и у секции, и у canvas. getElementById
+        // возвращал секцию, и игра падала с «canvas.getContext is not a function».
+        assert.ok(/<canvas[^>]*\sid="game"/.test(html()), 'canvas должен владеть id="game"');
+    });
+
+    test('все id, к которым обращается скрипт, есть в разметке', () => {
+        const ids = [...html().matchAll(/\sid="([^"]+)"/g)].map((m) => m[1]);
+        const used = [...new Set([...read('game.js').matchAll(/getElementById\('([^']+)'\)/g)].map((m) => m[1]))];
+        const missing = used.filter((u) => !ids.includes(u));
+        assert.deepEqual(missing, [], `в разметке нет: ${missing.join(', ')}`);
+        assert.ok(used.includes('game'), 'скрипт должен обращаться к canvas по id');
+    });
+
+    test('якоря меню ведут на существующие id', () => {
+        const ids = [...html().matchAll(/\sid="([^"]+)"/g)].map((m) => m[1]);
+        const anchors = [...html().matchAll(/href="#([^"]+)"/g)].map((m) => m[1]);
+        const broken = anchors.filter((a) => !ids.includes(a));
+        assert.deepEqual(broken, [], `битые якоря: ${broken.join(', ')}`);
+    });
+
+    test('файл фавикона существует', () => {
+        const m = html().match(/rel="icon"[^>]*href="([^"]+)"/);
+        assert.ok(m, 'нет подписи на иконку');
+        assert.ok(fs.existsSync(path.join(DIR, m[1])), `нет файла ${m[1]}`);
+    });
+});
+
+/**
+ * Вытаскивает уровни из game.js настоящим разбором, а не поиском подстроки:
+ * иначе тест молча проверяет пустой срез, если имя массива поменяли.
+ * @returns {{mode: string, rows: string[]}[]}
+ */
+function parseLevels(js) {
+    const src = fs.readFileSync(path.join(DIR, 'game.js'), 'utf8');
+    const start = src.indexOf('const TANK_LEVELS = [');
+    assert.ok(start >= 0, 'в game.js нет массива TANK_LEVELS');
+    const body = src.slice(start + 'const TANK_LEVELS = ['.length);
+    const end = body.indexOf('\n];');
+    assert.ok(end > 0, 'не найден конец массива уровней');
+
+    const levels = [];
+    let cur = null;
+    // Уровень начинается со строки «{» на уровне вложенности массива.
+    // Раньше уровень без явного mode приклеивался к предыдущему — из-за
+    // этого и вёрстка, и проверки считали неверное число уровней.
+    for (const line of body.slice(0, end).split('\n')) {
+        if (/^\s{4}\{\s*$/.test(line)) {
+            if (cur) levels.push(cur);
+            cur = { mode: 'v', rows: [] };
+            continue;
+        }
+        if (!cur) continue;
+        const mode = line.match(/mode:\s*'(\w)'/);
+        if (mode) { cur.mode = mode[1]; continue; }
+        const row = line.match(/^\s*'([^']+)',\s*$/);
+        if (row) cur.rows.push(row[1]);
+    }
+    if (cur) levels.push(cur);
+    return levels;
+}
+
+describe('игровая логика', () => {
+    test('уровней много, и все описаны', () => {
+        const levels = parseLevels(read('game.js'));
+        assert.ok(levels.length >= 50, `уровней мало: ${levels.length}`);
+        for (const [i, lv] of levels.entries()) {
+            assert.equal(lv.rows.length, 7, `уровень ${i + 1}: строк ${lv.rows.length}`);
+        }
+    });
+
+    test('строки уровней корректной ширины для своего режима', () => {
+        const levels = parseLevels(read('game.js'));
+        for (const [i, lv] of levels.entries()) {
+            // 'h' описывается во всю ширину, остальные — половиной
+            const want = lv.mode === 'h' ? 13 : 7;
+            for (const r of lv.rows) {
+                assert.equal(r.length, want, `уровень ${i + 1} (${lv.mode}): "${r}" — длина ${r.length}`);
             }
         }
+    });
+
+    test('в уровнях только известные символы', () => {
+        const levels = parseLevels(read('game.js'));
+        for (const [i, lv] of levels.entries()) {
+            for (const r of lv.rows) {
+                for (const ch of r) {
+                    assert.ok('.B#~TIE'.includes(ch), `уровень ${i + 1}: неизвестный символ "${ch}"`);
+                }
+                assert.ok(!r.includes('E'), `уровень ${i + 1}: база в описании не нужна, ставится автоматически`);
+            }
+        }
+    });
+
+    test('уровни не повторяются — иначе это не «много уровней»', () => {
+        const levels = parseLevels(read('game.js'));
+        const sig = levels.map((l) => l.mode + '|' + l.rows.join(','));
+        const uniq = new Set(sig);
+        assert.equal(uniq.size, sig.length,
+            `дубликаты уровней: ${sig.length} описаний, уникальных ${uniq.size}`);
+    });
+
+    test('используются все три типа симметрии', () => {
+        const levels = parseLevels(read('game.js'));
+        const modes = new Set(levels.map((l) => l.mode));
+        assert.ok(modes.has('v'), 'нет режима v (зеркало по обеим осям)');
+        assert.ok(modes.has('h'), 'нет режима h (широкие строки)');
+        assert.ok(modes.has('d'), 'нет режима d (диагональ)');
+    });
+
+    test('сложность растёт: у поздних уровней больше препятствий', () => {
+        const levels = parseLevels(read('game.js'));
+        const density = (lv) => {
+            const all = lv.rows.join('');
+            const wall = (all.match(/[B#]/g) || []).length;
+            return wall / all.length;
+        };
+        const early = levels.slice(0, 5).reduce((s, l) => s + density(l), 0) / 5;
+        const late = levels.slice(-8).reduce((s, l) => s + density(l), 0) / 8;
+        assert.ok(late > early,
+            `плотность стен должна расти: начало ${early.toFixed(2)}, конец ${late.toFixed(2)}`);
     });
 
     test('нет обращений к удалённым функциям', () => {
