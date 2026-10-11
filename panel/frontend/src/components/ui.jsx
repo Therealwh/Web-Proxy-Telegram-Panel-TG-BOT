@@ -144,6 +144,13 @@ export function Modal({ open, onClose, title, children, wide }) {
     const openerRef = useRef(null);
     const titleId = useId();
 
+    // onClose берём в ref: обработчики вида `() => setModal(null)` создаются
+    // заново при каждом рендере, и если оставить их в зависимостях эффекта,
+    // он будет перезапускаться на каждый введённый символ — фокус скачет на
+    // кнопку закрытия (она первая в DOM), и в поле удаётся вбить один символ.
+    const onCloseRef = useRef(onClose);
+    onCloseRef.current = onClose;
+
     // Esc закрывает, Tab не уводит фокус за пределы окна, при закрытии фокус
     // возвращается на кнопку, которая окно открыла. Без этого диалог «ловушка»
     // для клавиатуры: уйти из него нечем.
@@ -155,12 +162,19 @@ export function Modal({ open, onClose, title, children, wide }) {
             ? [...panelRef.current.querySelectorAll(FOCUSABLE)].filter((el) => el.offsetParent !== null)
             : []);
 
-        focusables()[0]?.focus();
+        // Сначала ставим фокус в первое поле ввода: фокус на кнопке «×» — это
+        // и неудобно, и опасно — она закрывает окно по нажатию Enter.
+        const inputs = panelRef.current
+            ? [...panelRef.current.querySelectorAll(FOCUSABLE)].filter(
+                (el) => el.offsetParent !== null && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)
+            )
+            : [];
+        (inputs[0] ?? focusables()[0])?.focus();
 
         const onKey = (e) => {
             if (e.key === 'Escape') {
                 e.stopPropagation();
-                onClose();
+                onCloseRef.current();
                 return;
             }
             if (e.key !== 'Tab') return;
@@ -182,7 +196,9 @@ export function Modal({ open, onClose, title, children, wide }) {
             document.removeEventListener('keydown', onKey, true);
             openerRef.current?.focus?.();
         };
-    }, [open, onClose]);
+        // Зависимость только от open: эффект отвечает за открытие и закрытие
+        // окна, а не за каждое изменение его содержимого.
+    }, [open]);
 
     if (!open) return null;
     return (
