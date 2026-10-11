@@ -1,16 +1,24 @@
-// Настройки панели с категориями
-import React, { useEffect, useRef, useState } from 'react';
-import { Save, Pencil, Settings as SettingsIcon } from 'lucide-react';
+// Настройки панели: категории слева, поля справа, автосохранение по полю.
+//
+// Раньше всё редактировалось через модалку с одной кнопкой «Сохранить» на всю
+// страницу: тумблер нельзя было щёлкнуть, не открыв карточку, а сохранение
+// уходило одним PUT со всеми настройками сразу — с риском затереть значение.
+// Теперь каждое поле сохраняется отдельно и сразу, а состояние видно в строке.
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import {
+    Globe, Bell, RefreshCcw, Palette, Database, ScrollText, Satellite, Radar,
+    Search, Check, Loader2, AlertCircle, SlidersHorizontal,
+} from 'lucide-react';
 import { get, post, put } from '../api';
 import { toast, useThemeStore } from '../store';
 import { ACCENTS } from '../accents';
 import { useT } from '../i18n';
-import { Card, Field, Toggle, Skeleton, Modal, PageHeader } from '../components/ui';
+import { Card, Field, Toggle, Skeleton, PageHeader } from '../components/ui';
 
 // Описание категорий и их полей (подписи берутся из словаря i18n)
 const CATEGORIES = (t) => [
     {
-        id: 'network', icon: '🌐', title: t('settings.catNetwork'),
+        id: 'network', Icon: Globe, title: t('settings.catNetwork'),
         fields: [
             { key: 'mask_domain', label: t('settings.fMaskDomain'), hint: t('settings.fMaskHint') },
             { key: 'ad_tag_global', label: t('settings.fAdTag'), hint: t('settings.fAdTagHint') },
@@ -21,9 +29,9 @@ const CATEGORIES = (t) => [
         ],
     },
     {
-        id: 'notify', icon: '🔔', title: t('settings.catNotify'),
+        id: 'notify', Icon: Bell, title: t('settings.catNotify'),
         fields: [
-            { key: 'tg_bot_token', label: t('settings.fTgToken'), hint: t('settings.fTgTokenHint') },
+            { key: 'tg_bot_token', label: t('settings.fTgToken'), hint: t('settings.fTgTokenHint'), secret: true },
             { key: 'tg_admin_chat_id', label: t('settings.fTgChat'), hint: t('settings.fTgChatHint') },
             { key: 'notify_disk', label: t('settings.fDisk'), type: 'toggle' },
             { key: 'notify_services', label: t('settings.fServices'), type: 'toggle' },
@@ -34,14 +42,14 @@ const CATEGORIES = (t) => [
         ],
     },
     {
-        id: 'quotareset', icon: '♻️', title: t('settings.catQuotaReset'),
+        id: 'quotareset', Icon: RefreshCcw, title: t('settings.catQuotaReset'),
         fields: [
             { key: 'quota_reset_mode', label: t('settings.fQrMode'), type: 'select', options: [['off', t('settings.qrOff')], ['daily', t('settings.qrDaily')], ['weekly', t('settings.qrWeekly')], ['monthly', t('settings.qrMonthly')]] },
             { key: 'quota_reset_day', label: t('settings.fQrDay'), hint: t('settings.fQrDayHint'), type: 'number' },
         ],
     },
     {
-        id: 'appearance', icon: '🎨', title: t('settings.catAppearance'),
+        id: 'appearance', Icon: Palette, title: t('settings.catAppearance'),
         fields: [
             { key: 'brand_name', label: t('settings.fBrand') },
             { key: 'theme', label: t('settings.fTheme'), type: 'select', options: [['dark', t('settings.themeDark')], ['light', t('settings.themeLight')]] },
@@ -50,20 +58,20 @@ const CATEGORIES = (t) => [
         ],
     },
     {
-        id: 'backup', icon: '📊', title: t('settings.catBackup'),
+        id: 'backup', Icon: Database, title: t('settings.catBackup'),
         fields: [
             { key: 'backup_auto', label: t('settings.fBackupAuto'), type: 'toggle' },
             { key: 'backup_keep_days', label: t('settings.fBackupKeep'), type: 'number' },
         ],
     },
     {
-        id: 'logs', icon: '📜', title: t('settings.catLogs'),
+        id: 'logs', Icon: ScrollText, title: t('settings.catLogs'),
         fields: [
             { key: 'logs_keep_days', label: t('settings.fLogsKeep'), hint: t('settings.fLogsKeepHint'), type: 'number' },
         ],
     },
     {
-        id: 'dc', icon: '🛰️', title: t('settings.catDc'),
+        id: 'dc', Icon: Satellite, title: t('settings.catDc'),
         fields: [
             { key: 'dc_monitor_enabled', label: t('settings.fDcMonitor'), type: 'toggle' },
             { key: 'dc_coverage_threshold', label: t('settings.fDcThreshold'), hint: t('settings.fDcThresholdHint'), type: 'number' },
@@ -72,7 +80,7 @@ const CATEGORIES = (t) => [
         ],
     },
     {
-        id: 'avail', icon: '🌍', title: t('settings.catAvail'),
+        id: 'avail', Icon: Radar, title: t('settings.catAvail'),
         fields: [
             { key: 'avail_enabled', label: t('settings.fAvailMonitor'), type: 'toggle' },
             { key: 'avail_interval_min', label: t('settings.fAvailInterval'), hint: t('settings.fAvailIntervalHint'), type: 'number' },
@@ -80,175 +88,315 @@ const CATEGORIES = (t) => [
             { key: 'avail_threshold', label: t('settings.fAvailThreshold'), hint: t('settings.fAvailThresholdHint'), type: 'number' },
             { key: 'avail_target', label: t('settings.fAvailTarget'), hint: t('settings.fAvailTargetHint') },
             { key: 'avail_port', label: t('settings.fAvailPort'), hint: t('settings.fAvailPortHint'), type: 'number' },
-            { key: 'avail_token', label: t('settings.fAvailToken'), hint: t('settings.fAvailTokenHint') },
+            { key: 'avail_token', label: t('settings.fAvailToken'), hint: t('settings.fAvailTokenHint'), secret: true },
         ],
     },
 ];
 
+/** Состояние сохранения одного поля: idle | saving | ok | error */
+const useFieldSave = () => {
+    const [state, setState] = useState({}); // key -> { status, error }
+    const mark = (key, patch) => setState((s) => ({ ...s, [key]: { status: 'ok', error: null, ...patch } }));
+
+    const save = async (key, value, request) => {
+        mark(key, { status: 'saving' });
+        try {
+            await request();
+            mark(key, { status: 'ok' });
+            setTimeout(() => setState((s) => {
+                const cur = s[key];
+                if (!cur || cur.status !== 'ok') return s;
+                const next = { ...s };
+                delete next[key];
+                return next;
+            }), 1600);
+        } catch (e) {
+            mark(key, { status: 'error', error: e.message });
+            toast.error(e.message);
+        }
+    };
+    return { state, save, mark };
+};
+
 export default function Settings() {
     const [settings, setSettings] = useState(null);
-    const [saving, setSaving] = useState(false);
-    const [editingCat, setEditingCat] = useState(null); // id категории в модалке
+    const [initial, setInitial] = useState(null);
+    const [active, setActive] = useState('network');
+    const [query, setQuery] = useState('');
+    const [onlyChanged, setOnlyChanged] = useState(false);
+    const [highlight, setHighlight] = useState(null);
+    const { state, save } = useFieldSave();
     const t = useT();
-    const cats = CATEGORIES(t);
+    const cats = useMemo(() => CATEGORIES(t), [t]);
     const accent = useThemeStore((s) => s.accent);
     const setAccent = useThemeStore((s) => s.setAccent);
 
     useEffect(() => {
-        get('/settings').then((d) => setSettings(d.settings)).catch((e) => toast.error(e.message));
+        get('/settings')
+            .then((d) => { setSettings(d.settings); setInitial(d.settings); })
+            .catch((e) => toast.error(e.message));
     }, []);
 
     const setValue = (key, value) => setSettings((s) => ({ ...s, [key]: value }));
 
-    const save = async () => {
-        setSaving(true);
-        try {
-            await put('/settings', settings);
-            toast.success(t('settings.saved'));
-        } catch (e) {
-            toast.error(e.message);
-        } finally {
-            setSaving(false);
-        }
+    /** Сохраняет одно поле — запрос уходит с единственным ключом. */
+    const commit = (key, value) => save(key, value, () => put('/settings', { [key]: value }));
+
+    const revert = (key) => {
+        setValue(key, initial[key]);
+        save(key, initial[key], () => put('/settings', { [key]: initial[key] }));
     };
 
-    // Отображение текущего значения поля в сводке
-    const displayValue = (f) => {
-        if (f.type === 'accent') return t(`settings.accent_${accent}`);
-        const v = settings[f.key];
-        if (f.type === 'toggle') return v ? t('bot.yes') : t('bot.no');
-        if (f.type === 'select') {
-            const opt = (f.options || []).find(([ov]) => String(ov) === String(v ?? ''));
-            return (opt && opt[1]) || v || '—';
+    const isChanged = (key) => initial && settings
+        && JSON.stringify(settings[key]) !== JSON.stringify(initial[key]);
+
+    const changedCount = settings && initial
+        ? cats.reduce((n, c) => n + c.fields.filter((f) => isChanged(f.key)).length, 0)
+        : 0;
+
+    const changedIn = (cat) => cat.fields.filter((f) => isChanged(f.key)).length;
+
+    // Поиск по всем категориям сразу
+    const results = useMemo(() => {
+        const q = query.trim().toLowerCase();
+        if (!q) return null;
+        const out = [];
+        for (const cat of cats) {
+            // Совпадение с названием категории показывает её целиком
+            const byTitle = String(cat.title).toLowerCase().includes(q);
+            const hits = byTitle ? cat.fields : cat.fields.filter((f) => {
+                const label = String(f.label).toLowerCase();
+                const value = String(f.key === 'accent' ? t(`settings.accent_${accent}`) : settings?.[f.key] ?? '').toLowerCase();
+                return label.includes(q) || f.key.toLowerCase().includes(q) || value.includes(q);
+            });
+            if (hits.length) out.push({ cat, hits });
         }
-        if (f.type === 'number') return v ?? '—';
-        const s = String(v ?? '');
-        return s === '' ? '—' : (s.length > 80 ? `${s.slice(0, 80)}…` : s);
+        return out;
+    }, [query, cats, settings, accent, t]);
+
+    const visibleFields = (cat) => {
+        let fields = cat.fields;
+        if (query.trim()) {
+            const group = results?.find((r) => r.cat.id === cat.id);
+            fields = group ? group.hits : [];
+        }
+        if (onlyChanged) fields = fields.filter((f) => isChanged(f.key));
+        return fields;
     };
 
-    // Форма редактирования категории (в модалке)
-    const renderCatFields = (cat) => (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {cat.fields.map((f) => {
-                if (f.type === 'toggle') {
-                    return (
-                        <div key={f.key}>
-                            <Toggle label={f.label}
-                                    checked={!!settings[f.key]}
-                                    onChange={(v) => setValue(f.key, v)} />
-                            {f.backupNow && (
-                                <button className="btn-secondary !min-h-0 !py-1.5 text-xs mt-2"
-                                        onClick={async () => {
-                                            if (!settings[f.key]) return toast.error(t('settings.enableFirst'));
-                                            try {
-                                                const r = await post('/bot/backup-tg', {});
-                                                toast.success(t('settings.backupSent', { f: r.filename }));
-                                            } catch (e) { toast.error(e.message); }
-                                        }}>
-                                    {t('settings.sendBackupNow')}
-                                </button>
-                            )}
-                        </div>
-                    );
-                }
-                if (f.type === 'select') {
-                    return (
-                        <Field key={f.key} label={f.label} hint={f.hint}>
-                            <select className="input" value={settings[f.key] ?? ''}
-                                    onChange={(e) => setValue(f.key, e.target.value)}>
-                                {f.options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                            </select>
-                        </Field>
-                    );
-                }
-                if (f.type === 'accent') {
-                    return (
-                        <div key={f.key} className="md:col-span-2">
-                            <span className="block text-sm font-medium mb-1.5">{f.label}</span>
-                            {f.hint && <span className="block text-xs text-slate-500 mt-0 mb-2">{f.hint}</span>}
-                            <div className="flex flex-wrap gap-2">
-                                {ACCENTS.map((a) => {
-                                    const active = accent === a.id;
-                                    return (
-                                        <button key={a.id} type="button"
-                                                title={t(`settings.accent_${a.id}`)}
-                                                onClick={() => setAccent(a.id)}
-                                                className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-sm transition-all
-                                                    ${active
-                                                        ? 'border-primary bg-primary/10 text-primary shadow-sm shadow-primary/20'
-                                                        : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'}`}>
-                                            <span className="w-5 h-5 rounded-full shrink-0 ring-1 ring-black/10"
-                                                  style={{ backgroundColor: a.swatch }} />
-                                            {t(`settings.accent_${a.id}`)}
-                                        </button>
-                                    );
-                                })}
-                            </div>
-                        </div>
-                    );
-                }
-                return (
-                    <Field key={f.key} label={f.label} hint={f.hint}>
-                        <input className="input"
-                               type={f.type === 'number' ? 'number' : 'text'}
-                               value={settings[f.key] ?? ''}
-                               onChange={(e) => setValue(f.key, f.type === 'number' ? Number(e.target.value) : e.target.value)} />
-                    </Field>
-                );
-            })}
-        </div>
-    );
+    const jumpTo = (catId, key) => {
+        setActive(catId);
+        setQuery('');
+        setTimeout(() => setHighlight(key), 30);
+        setTimeout(() => setHighlight(null), 2200);
+    };
 
-    if (!settings) return <div className="space-y-4">{[...Array(3)].map((_, i) => <Skeleton key={i} className="h-48" />)}</div>;
+    if (!settings || !initial) {
+        return <div className="space-y-4">{[...Array(3)].map((_, i) => <Skeleton key={i} className="h-48" />)}</div>;
+    }
+
+    const activeCat = cats.find((c) => c.id === active) || cats[0];
+    const activeFields = visibleFields(activeCat);
 
     return (
-        <div className="space-y-6">
-            <PageHeader icon={<SettingsIcon size={20} />} title={t('settings.title')}
+        <div className="space-y-4">
+            <PageHeader icon={<SlidersHorizontal size={20} />} title={t('settings.title')}
                         subtitle={t('settings.subtitle')} />
 
-
-            {/* Смена домена без переустановки */}
-            <DomainCard />
-
-            {cats.map((cat) => (
-                <Card key={cat.id} title={`${cat.icon} ${cat.title}`} actions={
-                    <button className="btn-ghost !min-h-0 !p-2" title={t('common.edit')}
-                            onClick={() => setEditingCat(cat.id)}>
-                        <Pencil size={16} />
+            {/* Поиск и счётчик изменённых */}
+            <Card className="!p-3">
+                <div className="flex flex-wrap items-center gap-3">
+                    <div className="relative flex-1 min-w-[220px]">
+                        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                        <input className="input !pl-9" value={query} placeholder={t('settings.searchPlaceholder')}
+                               onChange={(e) => setQuery(e.target.value)} />
+                    </div>
+                    <button onClick={() => setOnlyChanged((v) => !v)}
+                            className={`btn-secondary !min-h-0 !py-2 text-sm ${onlyChanged ? 'ring-1 ring-primary text-primary' : ''}`}>
+                        <SlidersHorizontal size={15} /> {t('settings.onlyChanged')}
                     </button>
-                }>
-                    <div>
-                        {cat.fields.map((f) => (
-                            <div key={f.key} className="flex flex-wrap items-baseline justify-between gap-2 py-1.5 border-b border-slate-100 dark:border-slate-800/60 last:border-0">
-                                <span className="text-sm text-slate-500 dark:text-slate-400">{f.label}</span>
-                                <span className="text-sm font-medium text-right break-all max-w-[60%]">{displayValue(f)}</span>
+                    {changedCount > 0 && (
+                        <span className="text-sm text-amber-500 whitespace-nowrap">
+                            {t('settings.changedCount', { n: changedCount })}
+                        </span>
+                    )}
+                </div>
+
+                {results && (
+                    <div className="mt-3 border-t border-slate-100 dark:border-slate-800 pt-3 space-y-2">
+                        {results.length === 0 ? (
+                            <p className="text-sm text-slate-500 py-2">{t('settings.searchEmpty')}</p>
+                        ) : results.map(({ cat, hits }) => (
+                            <div key={cat.id}>
+                                <p className="text-xs font-medium text-slate-400 mb-1">{cat.title}</p>
+                                {hits.map((f) => (
+                                    <button key={f.key} onClick={() => jumpTo(cat.id, f.key)}
+                                            className="w-full text-left text-sm px-2 py-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 flex items-baseline justify-between gap-3">
+                                        <span>{f.label}</span>
+                                        <span className="text-xs text-slate-400 truncate max-w-[50%]">
+                                            {f.key === 'accent' ? t(`settings.accent_${accent}`) : String(settings[f.key] ?? '—')}
+                                        </span>
+                                    </button>
+                                ))}
                             </div>
                         ))}
                     </div>
-                </Card>
-            ))}
+                )}
+            </Card>
 
-            {/* Модал редактирования категории */}
-            <Modal open={!!editingCat} onClose={() => setEditingCat(null)} wide
-                   title={(() => { const c = cats.find((x) => x.id === editingCat); return c ? `${c.icon} ${c.title}` : ''; })()}>
-                {(() => { const c = cats.find((x) => x.id === editingCat); return c ? renderCatFields(c) : null; })()}
-                <div className="flex justify-end gap-2 mt-4">
-                    <button className="btn-secondary" onClick={() => setEditingCat(null)}>{t('common.cancel')}</button>
-                    <button className="btn-primary" disabled={saving}
-                            onClick={async () => { await save(); setEditingCat(null); }}>
-                        <Save size={14} /> {saving ? t('common.saving') : t('common.save')}
-                    </button>
+            <div className="grid grid-cols-1 lg:grid-cols-[240px_1fr] gap-4 items-start">
+                {/* Категории */}
+                <nav className="flex lg:flex-col gap-1 overflow-x-auto pb-1 lg:pb-0 lg:sticky lg:top-4">
+                    {cats.map((cat) => {
+                        const Icon = cat.Icon;
+                        const n = changedIn(cat);
+                        const on = cat.id === active;
+                        return (
+                            <button key={cat.id} onClick={() => setActive(cat.id)}
+                                    className={`flex items-center gap-2.5 whitespace-nowrap rounded-xl px-3 py-2.5 text-sm transition-colors shrink-0
+                                        ${on ? 'bg-primary/10 text-primary ring-1 ring-primary/30'
+                                              : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'}`}>
+                                <Icon size={17} className="shrink-0" />
+                                <span className="truncate">{cat.title}</span>
+                                {n > 0 && (
+                                    <span className="ml-auto shrink-0 rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400 px-1.5 text-[11px] font-semibold">
+                                        {n}
+                                    </span>
+                                )}
+                            </button>
+                        );
+                    })}
+                </nav>
+
+                {/* Поля активной категории */}
+                <div className="space-y-3">
+                    <Card title={activeCat.title} subtitle={t('settings.autoSaveHint')}>
+                        {activeFields.length === 0 ? (
+                            <p className="text-sm text-slate-500 py-4">{t('settings.noFields')}</p>
+                        ) : (
+                            <div className="space-y-4">
+                                {activeFields.map((f) => (
+                                    <SettingField key={f.key} f={f}
+                                                  settings={settings} setValue={setValue}
+                                                  commit={commit} revert={revert}
+                                                  changed={isChanged(f.key)}
+                                                  status={state[f.key]?.status}
+                                                  error={state[f.key]?.error}
+                                                  highlight={highlight === f.key}
+                                                  accent={accent} setAccent={setAccent} />
+                                ))}
+                            </div>
+                        )}
+                    </Card>
                 </div>
-            </Modal>
+            </div>
 
-            {/* Резервное копирование: экспорт/импорт всех данных */}
-            <BackupCard />
-
-            {/* Отдельный домен Web Proxy (под Cloudflare) */}
-            <WebDomainCard />
+            {/* Опасная зона */}
+            <div className="pt-2 space-y-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-red-500">{t('settings.dangerZone')}</p>
+                <p className="text-xs text-slate-500 -mt-1">{t('settings.dangerZoneHint')}</p>
+                <DomainCard />
+                <WebDomainCard />
+                <BackupCard />
+            </div>
         </div>
     );
 }
+
+/** Одно поле настройки: переключатель, выбор, число, текст или акцент. */
+function SettingField({ f, settings, setValue, commit, revert, changed, status, error, highlight, accent, setAccent }) {
+    const t = useT();
+    const value = settings[f.key];
+
+    const statusIcon = () => {
+        if (status === 'saving') return <Loader2 size={14} className="animate-spin text-slate-400" />;
+        if (status === 'error') return (
+            <span className="inline-flex items-center gap-1 text-red-500" title={error}>
+                <AlertCircle size={14} /> <button onClick={() => revert(f.key)} className="underline">{t('settings.retry')}</button>
+            </span>
+        );
+        if (status === 'ok') return <Check size={14} className="text-emerald-500" />;
+        if (changed) return (
+            <button onClick={() => revert(f.key)} title={t('settings.revert')}
+                    className="inline-flex items-center gap-1 text-amber-500 hover:text-amber-400">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500" /> {t('settings.revert')}
+            </button>
+        );
+        return null;
+    };
+
+    const onBlur = () => {
+        if (changed) commit(f.key, value);
+    };
+
+    let control;
+    if (f.type === 'toggle') {
+        control = (
+            <Toggle label={f.label} checked={!!value}
+                    onChange={(v) => { setValue(f.key, v); commit(f.key, v); }} />
+        );
+    } else if (f.type === 'select') {
+        control = (
+            <select className="input" value={value ?? ''}
+                    onChange={(e) => { setValue(f.key, e.target.value); commit(f.key, e.target.value); }}>
+                {f.options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            </select>
+        );
+    } else if (f.type === 'accent') {
+        control = (
+            <div className="flex flex-wrap gap-2">
+                {ACCENTS.map((a) => {
+                    const on = accent === a.id;
+                    return (
+                        <button key={a.id} type="button" title={t(`settings.accent_${a.id}`)}
+                                onClick={() => { setAccent(a.id); commit(f.key, a.id); }}
+                                className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-sm transition-all
+                                    ${on ? 'border-primary bg-primary/10 text-primary shadow-sm shadow-primary/20'
+                                         : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'}`}>
+                            <span className="w-5 h-5 rounded-full shrink-0 ring-1 ring-black/10" style={{ backgroundColor: a.swatch }} />
+                            {t(`settings.accent_${a.id}`)}
+                        </button>
+                    );
+                })}
+            </div>
+        );
+    } else {
+        control = (
+            <input className="input" type={f.type === 'number' ? 'number' : 'text'}
+                   value={value ?? ''}
+                   placeholder={f.secret ? '••••••' : ''}
+                   onChange={(e) => setValue(f.key, f.type === 'number' ? Number(e.target.value) : e.target.value)}
+                   onBlur={onBlur}
+                   onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }} />
+        );
+    }
+
+    return (
+        <div className={`rounded-xl px-3 py-3 -mx-3 transition-colors
+                        ${highlight ? 'bg-primary/5 ring-1 ring-primary/30' : ''}`}>
+            <div className="flex items-start justify-between gap-3 mb-1.5">
+                {!f.type && <span className="text-sm font-medium shrink-0">{f.label}</span>}
+                <div className="ml-auto shrink-0">{statusIcon()}</div>
+            </div>
+            {f.type === 'accent' && <span className="block text-sm font-medium mb-1.5">{f.label}</span>}
+            {control}
+            {f.hint && <span className="block text-xs text-slate-500 mt-1">{f.hint}</span>}
+            {f.backupNow && (
+                <button className="btn-secondary !min-h-0 !py-1.5 text-xs mt-2"
+                        onClick={async () => {
+                            if (!settings[f.key]) return toast.error(t('settings.enableFirst'));
+                            try {
+                                const r = await post('/bot/backup-tg', {});
+                                toast.success(t('settings.backupSent', { f: r.filename }));
+                            } catch (e) { toast.error(e.message); }
+                        }}>
+                    {t('settings.sendBackupNow')}
+                </button>
+            )}
+        </div>
+    );
+}
+
 
 /** Карточка бэкапа: скачать все данные / восстановить из файла */
 function BackupCard() {
