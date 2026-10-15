@@ -775,7 +775,15 @@ async function start() {
     });
 
     // ═══ 0. Своя сумма пополнения — до гейта подписки, чтобы текст не проглатывался ═══
-    bot.on('message:text', async (ctx, next) => {
+    /* Чек от клиента: фото или PDF. Без этой подписки бот молча
+ * игнорировал вложения — пересылка админу не работала. */
+bot.on(['message:photo', 'message:document'], async (ctx) => {
+    try { await handleReceipt(ctx); } catch (e) {
+        logger.error('Ошибка обработки чека', { error: e.message });
+    }
+});
+
+bot.on('message:text', async (ctx, next) => {
         if (!isAwaitingAmount(ctx.from.id)) return next();
         logger.info('deposit: получена сумма', { tgId: ctx.from.id, text: ctx.message.text });
         // Пользователь часто дописывает валюту — «1 200 ₽» — и это должно
