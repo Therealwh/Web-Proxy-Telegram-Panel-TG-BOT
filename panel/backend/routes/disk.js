@@ -13,7 +13,7 @@ const path = require('path');
 const { execFile } = require('child_process');
 const config = require('../config');
 const logger = require('../utils/logger');
-const httpError = require('../utils/httpError');
+const { httpError } = require('../middleware/errorHandler');
 
 const router = express.Router();
 
