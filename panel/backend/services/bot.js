@@ -684,6 +684,63 @@ async function createAndSendDeposit(ctx, amount) {
     }
 }
 
+/* Пересланный чек содержит реквизиты плательщика. Сутки в чате
+ * админа — достаточно для проверки оплаты, дольше хранить лишнее. */
+const receiptDeleteTimers = new Map();
+
+/** Ставит чек в очередь на удаление через ttl секунд. */
+function scheduleReceiptDelete(chatId, messageId, ttl) {
+    const key = chatId + ':' + messageId;
+    if (receiptDeleteTimers.has(key)) return;
+    receiptDeleteTimers.set(key, Date.now() + ttl * 1000);
+    persistReceiptDeletions();
+    setTimeout(() => deleteReceipt(chatId, messageId), ttl * 1000);
+}
+
+/** Удаляет сообщение с чеком и снимает его с учёта. */
+async function deleteReceipt(chatId, messageId) {
+    receiptDeleteTimers.delete(chatId + ':' + messageId);
+    persistReceiptDeletions();
+    if (!bot) return;
+    try {
+        await bot.api.deleteMessage(chatId, messageId);
+        logger.info('Чек удалён по TTL', { chatId, messageId });
+    } catch (e) {
+        // «message to delete not found» — норма: админ удалил вручную
+        logger.warn('Чек уже недоступен для удаления', { chatId, messageId, error: e.message });
+    }
+}
+
+/** Очередь в settings: переживает рестарт панели. */
+function persistReceiptDeletions() {
+    try {
+        const list = [...receiptDeleteTimers.entries()].map(([key, fireAt]) => ({ key, fireAt }));
+        db.prepare(
+            'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value'
+        ).run('bot_receipt_deletions', JSON.stringify(list));
+    } catch (e) {
+        logger.warn('Не удалось сохранить очередь удаления чеков', { error: e.message });
+    }
+}
+
+/** Восстановление очереди после рестарта: просроченное удаляется сразу. */
+function restoreReceiptDeletions() {
+    try {
+        const row = db.prepare('SELECT value FROM settings WHERE key = ?').get('bot_receipt_deletions');
+        if (!row) return;
+        const list = JSON.parse(row.value);
+        for (const { key, fireAt } of list) {
+            const [chatId, messageId] = key.split(':').map(Number);
+            if (!chatId || !messageId) continue;
+            receiptDeleteTimers.set(key, fireAt);
+            setTimeout(() => deleteReceipt(chatId, messageId), Math.max(0, fireAt - Date.now()));
+        }
+        if (list.length) logger.info('Очередь удаления чеков восстановлена', { count: list.length });
+    } catch (e) {
+        logger.warn('Не удалось восстановить очередь удаления чеков', { error: e.message });
+    }
+}
+
 /** Приём чека: фото/PDF пересылаются админу. */
 async function handleReceipt(ctx) {
     const paymentId = receiptState.get(ctx.from.id);
@@ -700,14 +757,29 @@ async function handleReceipt(ctx) {
 
     try {
         if (admin && bot) {
+            /* Чек содержит реквизиты плательщика: сутки в чате админа
+             * достаточно для проверки, дольше — лишняя выдержка ПДн. */
+            const RECEIPT_TTL = 24 * 3600;
+            let sent = null;
             if (ctx.message.photo) {
                 const best = ctx.message.photo[ctx.message.photo.length - 1].file_id;
-                await bot.api.sendPhoto(admin, best, { caption, parse_mode: 'HTML' });
+                sent = await bot.api.sendPhoto(admin, best, { caption, parse_mode: 'HTML' });
             } else if (ctx.message.document) {
-                await bot.api.sendDocument(admin, ctx.message.document.file_id, { caption, parse_mode: 'HTML' });
+                sent = await bot.api.sendDocument(admin, ctx.message.document.file_id, { caption, parse_mode: 'HTML' });
             }
+            if (sent) {
+                scheduleReceiptDelete(sent.chat.id, sent.message_id, RECEIPT_TTL);
+                await ctx.reply(
+                    `✅ <b>Чек получен!</b> Администратор проверит оплату — доступ придёт в этот чат.\nЗаказ #${paymentId}\n\n` +
+                    `<i>Чек удалится из чата администратора через сутки.</i>`,
+                    { parse_mode: 'HTML' }
+                );
+            } else {
+                await ctx.reply(`✅ <b>Чек получен!</b> Администратор проверит оплату — доступ придёт в этот чат.\nЗаказ #${paymentId}`, { parse_mode: 'HTML' });
+            }
+        } else {
+            await ctx.reply(`✅ <b>Чек получен!</b> Администратор проверит оплату — доступ придёт в этот чат.\nЗаказ #${paymentId}`, { parse_mode: 'HTML' });
         }
-        await ctx.reply(`✅ <b>Чек получен!</b> Администратор проверит оплату — доступ придёт в этот чат.\nЗаказ #${paymentId}`, { parse_mode: 'HTML' });
     } catch (e) {
         logger.error('Не удалось переслать чек админу', { error: e.message, paymentId });
         await ctx.reply('⚠️ Не удалось передать чек. Отправьте его в поддержку ' + SUPPORT_USERNAME);
@@ -1595,6 +1667,9 @@ if (links.mtproto_https) text += `🔌 <b>MTProto</b>:\n${links.mtproto_https}\n
             logger.warn('Бэкфилл юзернеймов не удался', { error: e.message });
         }
     })();
+
+    // Чеки, дождавшиеся удаления во время простоя, удаляются сейчас
+    restoreReceiptDeletions();
 
     bot.start({ drop_pending_updates: true }).catch((err) => {
         logger.error('TG-бот упал', { error: err.message });

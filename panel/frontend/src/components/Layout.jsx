@@ -1,7 +1,7 @@
 // Каркас приложения: боковое меню, шапка, маршрутизация
 import React, { useEffect, useState } from 'react';
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
-import {
+import { HardDrive,
     LayoutDashboard, Users, BarChart3, ScrollText, Settings, QrCode, Globe,
     Globe2, KeyRound, Bot, RefreshCw, Code2, Moon, Sun, LogOut, Menu, X, Activity, Shield,
     Webhook, ClipboardList, Stethoscope,
@@ -30,6 +30,7 @@ const NAV = [
     { to: '/webhooks', icon: Webhook, label: 'nav.webhooks' },
     { to: '/audit', icon: ClipboardList, label: 'nav.audit' },
     { to: '/diagnostics', icon: Stethoscope, label: 'nav.diagnostics' },
+    { to: '/disk', icon: HardDrive, label: 'nav.disk' },
     { to: '/zapret2', icon: Shield, label: 'nav.zapret2' },
     { to: '/settings', icon: Settings, label: 'nav.settings' },
 ];

@@ -35,6 +35,8 @@ const SCRIPTS = {
     'telemt-limits': path.join(SCRIPTS_DIR, 'telemt-limits.sh'),
     'ip-blocklist': path.join(SCRIPTS_DIR, 'ip-blocklist.sh'),
     warp: path.join(SCRIPTS_DIR, 'warp.sh'),
+    cleanup: path.join(SCRIPTS_DIR, 'cleanup-disk.sh'),
+    'disk-stats': path.join(SCRIPTS_DIR, 'disk-stats.sh'),
 };
 
 /** Секрет из install.env (генерируется установщиком/install-helper.sh). */
@@ -149,6 +151,22 @@ const server = http.createServer((req, res) => {
                 log(`zapret2 ${action} завершено: ${err ? 'ОШИБКА: ' + (stderr || err.message).slice(0, 500) : 'успех'}`);
             });
             return res.end(JSON.stringify({ ok: true }));
+        }
+
+        // Статистика диска: короткий скрипт, stdout возвращается сразу.
+        // Остальные root-скрипты работают в фоне, но цифры нужны панели
+        // прямо сейчас, чтобы нарисовать виджет.
+        if (parsed.key === 'disk-stats') {
+            execFile('bash', [script], { timeout: 20000 }, (err, stdout, stderr) => {
+                if (err) {
+                    log('disk-stats: ОШИБКА: ' + (stderr || err.message).slice(0, 300));
+                    res.statusCode = 500;
+                    return res.end(JSON.stringify({ ok: false, error: 'disk-stats failed' }));
+                }
+                try { res.end(JSON.stringify({ ok: true, ...JSON.parse(String(stdout)) })); }
+                catch { res.statusCode = 500; res.end(JSON.stringify({ ok: false, error: 'bad json from disk-stats' })); }
+            });
+            return;
         }
 
         // Zapret2: мгновенный статус через systemd (достоверный ответ, без флага busy).

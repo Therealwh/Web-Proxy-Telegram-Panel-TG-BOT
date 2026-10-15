@@ -24,6 +24,7 @@ const Geo = lazy(() => import('./pages/Geo'));
 const Webhooks = lazy(() => import('./pages/Webhooks'));
 const Audit = lazy(() => import('./pages/Audit'));
 const Diagnostics = lazy(() => import('./pages/Diagnostics'));
+const Disk = lazy(() => import('./pages/Disk'));
 
 /** Обертка: пускает только авторизованных */
 function Protected({ children }) {
@@ -61,6 +62,7 @@ export default function App() {
                 <Route path="webhooks" element={<Suspense fallback={PageLoader}><Webhooks /></Suspense>} />
                 <Route path="audit" element={<Suspense fallback={PageLoader}><Audit /></Suspense>} />
                 <Route path="diagnostics" element={<Suspense fallback={PageLoader}><Diagnostics /></Suspense>} />
+                <Route path="disk" element={<Suspense fallback={PageLoader}><Disk /></Suspense>} />
                 <Route path="settings" element={<Suspense fallback={PageLoader}><Settings /></Suspense>} />
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />

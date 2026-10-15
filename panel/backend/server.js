@@ -116,6 +116,7 @@ app.use('/api/auth', csrfProtection, authRouter);
 // Защищённые API: JWT + CSRF + аудит
 app.use('/api/clients', requireAuth, csrfProtection, audit(db), clientsRouter);
 app.use('/api/stats', requireAuth, statsRouter);
+app.use('/api/disk', requireAuth, csrfProtection, require('./routes/disk'));
 app.use('/api/telemt', requireAuth, csrfProtection, audit(db), telemtRouter);
 app.use('/api/logs', requireAuth, logsRouter);
 app.use('/api/settings', requireAuth, csrfProtection, audit(db), settingsModule.router);
