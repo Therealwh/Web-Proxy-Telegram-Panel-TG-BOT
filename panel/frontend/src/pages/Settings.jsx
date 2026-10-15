@@ -5,7 +5,7 @@
 // уходило одним PUT со всеми настройками сразу — с риском затереть значение.
 // Теперь каждое поле сохраняется отдельно и сразу, а состояние видно в строке.
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import {
+import { Save,
     Globe, Bell, RefreshCcw, Palette, Database, ScrollText, Satellite, Radar,
     Search, Check, Loader2, AlertCircle, SlidersHorizontal,
 } from 'lucide-react';
@@ -303,9 +303,67 @@ export default function Settings() {
                 <p className="text-xs text-slate-500 -mt-1">{t('settings.dangerZoneHint')}</p>
                 <DomainCard />
                 <WebDomainCard />
+                <WebProfilesLimitCard />
                 <BackupCard />
             </div>
         </div>
+    );
+}
+
+/** Карточка лимита WEB-профилей Telemt (сколько клиентов с Web Proxy). */
+function WebProfilesLimitCard() {
+    const [panel, setPanel] = useState('');
+    const [engine, setEngine] = useState(null);
+    const [hardCap, setHardCap] = useState(512);
+    const [busy, setBusy] = useState(false);
+    const t = useT();
+
+    useEffect(() => {
+        get('/settings/web-profile-limit')
+            .then((d) => { setPanel(String(d.panel ?? '')); setEngine(d.engine); setHardCap(d.hardCap || 512); })
+            .catch((e) => toast.error(e.message));
+    }, []);
+
+    const apply = async () => {
+        const v = Number(panel);
+        if (!Number.isInteger(v) || v < 1) { toast.error(t('settings.wplBad')); return; }
+        if (v > hardCap) { toast.error(t('settings.wplTooBig', { cap: hardCap })); return; }
+        setBusy(true);
+        try {
+            const r = await post('/settings/web-profile-limit', { limit: v });
+            toast.success(r.message || t('settings.wplDone', { v }));
+            setPanel(String(v));
+            get('/settings/web-profile-limit').then((d) => setEngine(d.engine)).catch(() => {});
+        } catch (e) {
+            toast.error(e.message);
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    return (
+        <Card title={t('settings.wplTitle')} subtitle={t('settings.wplSubtitle')}>
+            <div className="flex flex-wrap items-end gap-3">
+                <label className="block">
+                    <span className="text-xs text-slate-500 dark:text-slate-400 block mb-1">{t('settings.wplField')}</span>
+                    <input type="number" min="1" max={hardCap} value={panel}
+                           onChange={(e) => setPanel(e.target.value)}
+                           className="w-32 px-3 py-2 rounded-lg bg-slate-500/10 border border-slate-500/30 focus:border-indigo-500 outline-none" />
+                </label>
+                <button className="btn-primary" onClick={apply} disabled={busy || !panel}>
+                    {busy ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+                    {t('settings.wplApply')}
+                </button>
+            </div>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-3">
+                {t('settings.wplHint')}
+                {engine !== null && (
+                    <span className="block mt-1">
+                        {t('settings.wplEngine', { v: engine })}
+                    </span>
+                )}
+            </p>
+        </Card>
     );
 }
 
