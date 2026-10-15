@@ -314,20 +314,18 @@ export default function Settings() {
 function WebProfilesLimitCard() {
     const [panel, setPanel] = useState('');
     const [engine, setEngine] = useState(null);
-    const [hardCap, setHardCap] = useState(512);
     const [busy, setBusy] = useState(false);
     const t = useT();
 
     useEffect(() => {
         get('/settings/web-profile-limit')
-            .then((d) => { setPanel(String(d.panel ?? '')); setEngine(d.engine); setHardCap(d.hardCap || 512); })
+            .then((d) => { setPanel(String(d.panel ?? '')); setEngine(d.engine); })
             .catch((e) => toast.error(e.message));
     }, []);
 
     const apply = async () => {
         const v = Number(panel);
         if (!Number.isInteger(v) || v < 1) { toast.error(t('settings.wplBad')); return; }
-        if (v > hardCap) { toast.error(t('settings.wplTooBig', { cap: hardCap })); return; }
         setBusy(true);
         try {
             const r = await post('/settings/web-profile-limit', { limit: v });
@@ -346,7 +344,7 @@ function WebProfilesLimitCard() {
             <div className="flex flex-wrap items-end gap-3">
                 <label className="block">
                     <span className="text-xs text-slate-500 dark:text-slate-400 block mb-1">{t('settings.wplField')}</span>
-                    <input type="number" min="1" max={hardCap} value={panel}
+                    <input type="number" min="1" value={panel}
                            onChange={(e) => setPanel(e.target.value)}
                            className="w-32 px-3 py-2 rounded-lg bg-slate-500/10 border border-slate-500/30 focus:border-indigo-500 outline-none" />
                 </label>

@@ -3,8 +3,12 @@
  *
  * Telemt отклоняет конфиг с ошибкой «WEB profiles exceed
  * web.limits.max_profiles», когда клиентов с Web Proxy больше лимита
- * (по умолчанию 32). Панель теперь хранит лимит в настройках и
- * применяет его в конфиг Telemt перед синхронизацией профилей.
+ * (по умолчанию 32). Панель хранит лимит в настройках и применяет его
+ * в конфиг Telemt перед синхронизацией профилей.
+ *
+ * Свой потолок не вводится: настоящий предел знает только Telemt, он
+ * сам отклонит недопустимое значение — панели остаётся показать его
+ * ошибку пользователю.
  */
 const express = require('express');
 const { z } = require('zod');
@@ -17,10 +21,15 @@ const router = express.Router();
 
 const KEY = 'web_max_profiles';
 const DEFAULT_LIMIT = 32;
-/** Разумный потолок: профили держатся в памяти движка, бесконечно их задавать нельзя. */
-const HARD_CAP = 512;
+/** Защита от опечаток вида 999999999, не бизнес-лимит. */
+const SANITY_CAP = 1_000_000;
 
-const LIMIT_RE = /^[1-9]\d{0,3}$/;
+// ВАЖНО: zod-схема, а не RegExp. Раньше сюда был передан RegExp —
+// zod падал с TypeError без статуса, и пользователь видел безликое
+// «Внутренняя ошибка сервера» на любом значении.
+const LimitSchema = z.object({
+    limit: z.coerce.number().int().min(1).max(SANITY_CAP),
+});
 
 /** Текущий лимит: из настроек панели, иначе 32. */
 function getLimit() {
@@ -50,7 +59,7 @@ router.get('/web-profile-limit', async (req, res, next) => {
             const v = cfg?.web?.limits?.max_profiles;
             if (Number.isInteger(v)) engine = v;
         } catch { /* движок недоступен — покажем только панельное значение */ }
-        res.json({ panel, engine, default: DEFAULT_LIMIT, hardCap: HARD_CAP });
+        res.json({ panel, engine, default: DEFAULT_LIMIT, sanityCap: SANITY_CAP });
     } catch (err) {
         next(err);
     }
@@ -59,23 +68,24 @@ router.get('/web-profile-limit', async (req, res, next) => {
 // --- Применить лимит ---
 router.post('/web-profile-limit', async (req, res, next) => {
     try {
-        const schema = z.object({ limit: LIMIT_RE });
-        const { limit } = schema.parse(req.body);
-        const value = Math.min(Number(limit), HARD_CAP);
+        const { limit } = LimitSchema.parse(req.body);
 
-        // 1. Патчим конфиг Telemt: web.limits.max_profiles
-        //    reload=false — только в файл; профили применит следующий sync
-        await telemt.patchConfig({ web: { limits: { max_profiles: value } } }, false);
+        // 1. Патчим конфиг Telemt: web.limits.max_profiles.
+        //    reload=false — только в файл; профили применит следующий sync.
+        //    Если движок отклонил значение (свой потолок/формат) — показываем
+        //    его текст как есть: это ответ на ввод пользователя, а не поломка.
+        try {
+            await telemt.patchConfig({ web: { limits: { max_profiles: limit } } }, false);
+        } catch (e) {
+            return next(httpError(400, e.message));
+        }
 
         // 2. Фиксируем в настройках панели
-        setLimit(value);
+        setLimit(limit);
 
-        logger.info('Лимит WEB-профилей обновлён', { value });
-        res.json({ ok: true, limit: value, message: `Лимит WEB-профилей: ${value}. Применён при следующей синхронизации профилей.` });
+        logger.info('Лимит WEB-профилей обновлён', { limit });
+        res.json({ ok: true, limit, message: `Лимит WEB-профилей: ${limit}. Применён при следующей синхронизации профилей.` });
     } catch (err) {
-        if (err.message && err.message.includes('Telemt')) {
-            return next(httpError(502, err.message));
-        }
         next(err);
     }
 });
