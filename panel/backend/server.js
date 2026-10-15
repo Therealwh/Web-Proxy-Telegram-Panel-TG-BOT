@@ -120,6 +120,7 @@ app.use('/api/disk', requireAuth, csrfProtection, require('./routes/disk'));
 app.use('/api/telemt', requireAuth, csrfProtection, audit(db), telemtRouter);
 app.use('/api/logs', requireAuth, logsRouter);
 app.use('/api/settings', requireAuth, csrfProtection, audit(db), settingsModule.router);
+app.use('/api/settings', requireAuth, csrfProtection, require('./routes/webProfilesLimit'));
 app.use('/api/qr', qrRouter); // JWT проверяется внутри роутера (header или ?token=)
 app.use('/api/website', requireAuth, csrfProtection, audit(db), websiteRouter);
 app.use('/api/bot', requireAuth, csrfProtection, audit(db), botRouter);
