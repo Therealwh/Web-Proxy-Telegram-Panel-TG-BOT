@@ -12,6 +12,8 @@
  */
 
 const { Bot, InlineKeyboard, Keyboard, InputFile } = require('grammy');
+const path = require('path');
+const fs = require('fs');
 const db = require('../db');
 const { deductBalanceSpread } = require('../utils/balance');
 const telemt = require('./telemtApi');
@@ -226,6 +228,59 @@ function styleButtons(kb, mapping) {
     return kb;
 }
 
+/** Строка с баром остатка срока подписки: «⏳ 12 дн. (40%) + ▓▓▓░░░░░░░». */
+function expiryBarLine(selected) {
+    if (!selected.expires_at || !selected.created_at) return '';
+    const created = new Date(selected.created_at).getTime();
+    const exp = new Date(selected.expires_at).getTime();
+    const total = Math.max(1, exp - created);
+    const left = Math.max(0, exp - Date.now());
+    const pct = Math.min(100, Math.round((left / total) * 100));
+    const filled = Math.round((pct / 100) * 10);
+    const days = Math.ceil(left / 86400000);
+    const bar = '█'.repeat(filled) + '░'.repeat(10 - filled);
+    return `\n⏳ Осталось: <b>${days} дн.</b> (${pct}%)\n<code>${bar}</code>\n`;
+}
+
+/** Каталог с визуальными ассетами бота (обложка /start, гайды). */
+const BOT_ASSETS_DIR = path.join(__dirname, '..', 'assets', 'bot');
+
+/** Отправляет картинку-ассет с кэшем file_id (повторные отправки — без
+ *  повторного аплоада). При сбое аккуратно уходит в текстовый fallback:
+ *  сообщение пользователю теряться не должно. */
+async function sendAsset(chatId, assetKey, fileName, caption, extra = {}) {
+    try {
+        const settingKey = `bot_asset_${assetKey}`;
+        let fileId = null;
+        try {
+            const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(settingKey);
+            fileId = JSON.parse(row?.value || '{}').file_id || null;
+        } catch { /* нет записи — загрузим заново */ }
+        const payload = { ...(caption ? { caption } : {}), ...extra };
+        let msg = null;
+        if (fileId) {
+            msg = await bot.api.sendPhoto(chatId, fileId, payload);
+        } else {
+            const filePath = path.join(BOT_ASSETS_DIR, fileName);
+            if (!fs.existsSync(filePath)) return null; // ассет не задеплоен
+            msg = await bot.api.sendPhoto(chatId, new InputFile(filePath), payload);
+            const fid = msg?.photo?.[msg.photo.length - 1]?.file_id;
+            if (fid) {
+                db.prepare(
+                    "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value"
+                ).run(settingKey, JSON.stringify({ file_id: fid }));
+            }
+        }
+        return msg;
+    } catch (e) {
+        logger.warn('Картинка-ассет не отправилась — текстовый fallback', { assetKey, error: e.message });
+        if (caption) {
+            try { await bot.api.sendMessage(chatId, caption, extra); } catch { /* не критично */ }
+        }
+        return null;
+    }
+}
+
 async function cabinetView(ctx, selectedId = null) {
     const clients = db.prepare(
         'SELECT * FROM clients WHERE telegram_id = ? ORDER BY id'
@@ -288,6 +343,7 @@ const selected = clients.find((c) => c.id === selectedId) || null;
         let text =
             `📱 <b>${selected.username}</b> · ${statusIcon}\n` +
             `📅 Действует до: <b>${until}</b>\n` +
+            expiryBarLine(selected) +
             `💰 Баланс: <b>${balance.toFixed(2)}</b>\n`;
         if (selected.status === 'active') {
             const ips = activeMap.get(selected.username) || [];
@@ -930,6 +986,8 @@ bot.on('message:text', async (ctx, next) => {
             botSettings.welcome_text || DEFAULT_WELCOME,
             { name: ctx.from.first_name }
         );
+        // Обложка: тихо, кэш file_id, при сбое — просто текст без неё
+        await sendAsset(ctx.chat.id, 'cover', 'cover-start.png', null, { disable_notification: true }).catch(() => {});
         await ctx.reply(text, {
             parse_mode: 'HTML',
             reply_markup: mainReplyKeyboard(ctx),
@@ -1046,7 +1104,10 @@ bot.on('message:text', async (ctx, next) => {
                 `1️⃣ В «📱 Личном кабинете» нажмите ссылку подключения — Telegram предложит добавить прокси.\n\n` +
                 `2️⃣ Вручную: Настройки → Данные и память → Настройки прокси → Добавить прокси → вставьте данные из кабинета.`,
         };
-        await ctx.reply(guides[ctx.match[1]], { parse_mode: 'HTML', disable_web_page_preview: true });
+        const platform = ctx.match[1];
+        await sendAsset(ctx.chat.id, `guide_${platform}`, `guide-${platform}.png`, guides[platform], {
+            parse_mode: 'HTML', disable_web_page_preview: true,
+        });
     });
 
     bot.hears('👑 Админ-панель', async (ctx) => {
