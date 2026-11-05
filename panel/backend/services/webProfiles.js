@@ -60,6 +60,7 @@ const WEB_LIMITS_TUNED = {
     max_frame_payload_bytes: 524288,
     carrier_batch_bytes: 1048576,
     max_body_bytes_global: 33554432,
+    websocket_bytes_global: 100663296,
     http_connection_capacity_action: 'wait',
 };
 
