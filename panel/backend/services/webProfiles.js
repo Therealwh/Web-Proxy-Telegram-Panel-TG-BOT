@@ -41,6 +41,28 @@ const CLIENT_PROFILE_DEFAULTS = {
 /** Лимит профилей по умолчанию в движке (запас для продаж). */
 const DEFAULT_LIMIT = 1024;
 
+/** Тюнинг web.limits движка: панель патчит ВЕСЬ блок web.limits целиком
+ *  (Telemt на частичный патч отвечает полной заменой блока на дефолты),
+ *  поэтому продакшн-значения держатся здесь и уходят в движок одним патчем.
+ *  Без этого каждое применение max_profiles затирает остальные лимиты. */
+const WEB_LIMITS_TUNED = {
+    max_sessions_global: 2048,
+    max_http_connections: 4096,
+    max_streams_global: 16384,
+    max_bootstraps_global: 2048,
+    max_http_overload_connections: 256,
+    control_bytes_global: 268435456,
+    pending_items_global: 1048576,
+    pending_bytes_global: 402653184,
+    max_tombstones_per_session: 128,
+    max_header_bytes: 8192,
+    max_body_bytes: 1048576,
+    max_frame_payload_bytes: 524288,
+    carrier_batch_bytes: 1048576,
+    max_body_bytes_global: 33554432,
+    http_connection_capacity_action: 'wait',
+};
+
 /** Кэш последнего применённого списка, чтобы не слать лишние PATCH. */
 let lastSyncedJson = null;
 
@@ -99,7 +121,9 @@ async function syncWebProfiles(excludeUsername = null) {
         // Лимит меняем только когда он отличается: лишний PATCH = reload
         if (Number.isInteger(currentLimit) && currentLimit !== limit) {
             try {
-                await telemt.patchConfig({ web: { limits: { max_profiles: limit } } });
+                await telemt.patchConfig({
+        web: { limits: { ...WEB_LIMITS_TUNED, max_profiles: limit } },
+    }, false);
                 logger.info('WEB: лимит профилей применён в движок', { limit });
             } catch (e) {
                 logger.warn('WEB: не удалось применить лимит профилей', { limit, error: e.message });
@@ -125,4 +149,4 @@ function invalidateCache() {
     lastSyncedJson = null;
 }
 
-module.exports = { syncWebProfiles, invalidateCache, configuredLimit, DEFAULT_LIMIT };
+module.exports = { syncWebProfiles, invalidateCache, configuredLimit, DEFAULT_LIMIT, WEB_LIMITS_TUNED };

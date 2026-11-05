@@ -21,6 +21,7 @@ const router = express.Router();
 
 const KEY = 'web_max_profiles';
 const DEFAULT_LIMIT = 1024;
+const { WEB_LIMITS_TUNED } = require('../services/webProfiles');
 /** Защита от опечаток вида 999999999, не бизнес-лимит. */
 const SANITY_CAP = 1_000_000;
 
@@ -75,7 +76,9 @@ router.post('/web-profile-limit', async (req, res, next) => {
         //    Если движок отклонил значение (свой потолок/формат) — показываем
         //    его текст как есть: это ответ на ввод пользователя, а не поломка.
         try {
-            await telemt.patchConfig({ web: { limits: { max_profiles: limit } } }, false);
+            await telemt.patchConfig({
+        web: { limits: { ...WEB_LIMITS_TUNED, max_profiles: limit } },
+    }, false);
         } catch (e) {
             return next(httpError(400, e.message));
         }
