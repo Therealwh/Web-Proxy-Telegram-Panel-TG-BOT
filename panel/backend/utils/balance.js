@@ -64,17 +64,19 @@ function deductBalanceSpread(telegramId, amount) {
     // Транзакция: если суммы не хватает на все строки — полный откат,
     // частичное списание без выдачи доступа исключено.
     const spread = db.transaction(() => {
-        const rows = db.prepare(
-            'SELECT id, balance FROM clients WHERE telegram_id = ? AND balance > 0 ORDER BY balance DESC'
-        ).all(telegramId);
         const upd = db.prepare('UPDATE clients SET balance = balance - ? WHERE id = ? AND balance >= ?');
-        for (const row of rows) {
-            if (left <= 0) break;
-            const take = Math.min(row.balance, left);
-            const result = upd.run(take, row.id, take);
-            if (result.changes === 0) continue; // остаток изменился параллельно
-            touched.push({ id: row.id, amount: take });
-            left -= take;
+        for (let pass = 0; pass < 2 && left > 0; pass++) {
+            const rows = db.prepare(
+                'SELECT id, balance FROM clients WHERE telegram_id = ? AND balance > 0 ORDER BY balance DESC'
+            ).all(telegramId);
+            for (const row of rows) {
+                if (left <= 0) break;
+                const take = Math.min(row.balance, left);
+                const result = upd.run(take, row.id, take);
+                if (result.changes === 0) continue; // строка изменилась — повторный проход подхватит
+                touched.push({ id: row.id, amount: take });
+                left -= take;
+            }
         }
         if (left > 0) throw new Error('INSUFFICIENT_TOTAL_BALANCE');
     });

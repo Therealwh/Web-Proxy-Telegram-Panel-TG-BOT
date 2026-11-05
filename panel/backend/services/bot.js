@@ -1457,7 +1457,10 @@ if (links.mtproto_https) text += `🔌 <b>MTProto</b>:\n${links.mtproto_https}\n
         // Оплата с общего баланса пользователя (как при покупке)
         const balance = totalBalance(ctx.from.id);
         if (balance >= tariff.price) {
-            deductBalance(ctx.from.id, tariff.price);
+            const deduct = deductBalanceSpread(ctx.from.id, tariff.price);
+            if (!deduct.ok) {
+                return ctx.answerCallbackQuery({ text: 'Недостаточно средств на балансе', show_alert: true });
+            }
             const base = client.expires_at && new Date(client.expires_at) > new Date()
                 ? new Date(client.expires_at) : new Date();
             const newExpiry = new Date(base.getTime() + tariff.days * 86400000).toISOString();
@@ -1695,4 +1698,4 @@ const isRunning = () => bot !== null;
 /** Telegram Bot API для фоновых задач планировщика (null — бот выключен). */
 const getApi = () => (bot ? bot.api : null);
 
-module.exports = { start, stop, isRunning, getApi, tariffsKeyboard, getBotSettings, issueAccessFor, notifyDeposit, sendMessageTo, broadcastNewLinks, sendFileTo, totalBalance, deductBalance };
+module.exports = { start, stop, isRunning, getApi, tariffsKeyboard, getBotSettings, issueAccessFor, notifyDeposit, sendMessageTo, broadcastNewLinks, sendFileTo, totalBalance };

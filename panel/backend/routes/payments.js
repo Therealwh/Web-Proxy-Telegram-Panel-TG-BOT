@@ -93,15 +93,19 @@ async function completePayment(paymentId) {
     // Пополнение баланса (платёж без тарифа): начисляем сумму на счёт клиента
     if (!tariff && payment.telegram_id) {
         const client = db.prepare('SELECT * FROM clients WHERE telegram_id = ?').get(payment.telegram_id);
-        if (client) {
-            db.prepare('UPDATE clients SET balance = balance + ? WHERE id = ?')
-                .run(payment.amount, client.id);
-        } else {
-            // Прокси ещё нет — баланс хранится в bot_users до первой покупки
-            db.prepare('UPDATE bot_users SET balance = balance + ? WHERE telegram_id = ?')
-                .run(payment.amount, payment.telegram_id);
-        }
-        markSuccess();
+        // Начисление и markSuccess — в одной транзакции: крэш между ними
+        // не задвоит начисление при повторе вебхука (issuing → повторный claim)
+        db.transaction(() => {
+            if (client) {
+                db.prepare('UPDATE clients SET balance = balance + ? WHERE id = ?')
+                    .run(payment.amount, client.id);
+            } else {
+                // Прокси ещё нет — баланс хранится в bot_users до первой покупки
+                db.prepare('UPDATE bot_users SET balance = balance + ? WHERE telegram_id = ?')
+                    .run(payment.amount, payment.telegram_id);
+            }
+            markSuccess();
+        })();
         const bot = require('../services/bot');
         await bot.notifyDeposit(payment.telegram_id, payment.amount).catch(() => {});
         fireWebhook('payment.success', { payment_id: paymentId, amount: payment.amount, currency: payment.currency, kind: 'deposit' });

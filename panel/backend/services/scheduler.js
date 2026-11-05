@@ -9,6 +9,7 @@ const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 const db = require('../db');
+const balance = require('../utils/balance');
 const config = require('../config');
 const { getAll } = require('../routes/settings');
 const notifier = require('./notifier');
@@ -270,7 +271,15 @@ async function autoRenew() {
                 continue;
             }
 
-            bot.deductBalance(client.telegram_id, tariff.price);
+            const deduct = balance.deductBalanceSpread(client.telegram_id, tariff.price);
+            if (!deduct.ok) {
+                // гонка: баланс ушёл между проверкой и списанием
+                notifier.notifyAdmin(getAll(),
+                    `Пополните счёт в личном кабинете — продлим автоматически.`).catch(() => {});
+                db.prepare("INSERT INTO audit_log (admin, action, details) VALUES ('system', 'notify.autorenew.fail', ?)")
+                    .run(`Недостаточно баланса для автопродления (гонка): ${client.username}`);
+                continue;
+            }
             const base = client.expires_at && new Date(client.expires_at) > new Date()
                 ? new Date(client.expires_at) : new Date();
             const newExpiry = new Date(base.getTime() + tariff.days * 86400000).toISOString();

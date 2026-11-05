@@ -100,17 +100,19 @@ function makeBalanceModule(db) {
         let left = amount;
         const touched = [];
         const spreadTx = db.transaction(() => {
-            const rows = db.prepare(
-                'SELECT id, balance FROM clients WHERE telegram_id = ? AND balance > 0 ORDER BY balance DESC'
-            ).all(telegramId);
             const upd = db.prepare('UPDATE clients SET balance = balance - ? WHERE id = ? AND balance >= ?');
-            for (const c of rows) {
-                if (left <= 0) break;
-                const take = Math.min(c.balance, left);
-                const r = upd.run(take, c.id, take);
-                if (r.changes === 0) continue;
-                touched.push({ id: c.id, amount: take });
-                left -= take;
+            for (let pass = 0; pass < 2 && left > 0; pass++) {
+                const rows = db.prepare(
+                    'SELECT id, balance FROM clients WHERE telegram_id = ? AND balance > 0 ORDER BY balance DESC'
+                ).all(telegramId);
+                for (const c of rows) {
+                    if (left <= 0) break;
+                    const take = Math.min(c.balance, left);
+                    const r = upd.run(take, c.id, take);
+                    if (r.changes === 0) continue;
+                    touched.push({ id: c.id, amount: take });
+                    left -= take;
+                }
             }
             if (left > 0) throw new Error('INSUFFICIENT_TOTAL_BALANCE');
         });
