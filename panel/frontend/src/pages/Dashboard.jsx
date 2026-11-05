@@ -239,8 +239,33 @@ export default function Dashboard() {
         bad: { border: 'border-red-500/50 bg-red-500/5', dot: 'bg-red-500', text: 'text-red-600 dark:text-red-400' },
     }[level];
 
-    // Платежи к подтверждению
-    const pending = (pay?.payments || []).filter((p) => p.status === 'pending');
+    // Платежи к подтверждению: свежие (<24 ч) — яркие сверху, старше суток — приглушённые внизу
+    const STALE_HOURS = 24;
+    const nowMs = Date.now();
+    const parseTs = (s) => {
+        if (!s) return null;
+        const str = String(s);
+        const d = new Date(str.includes('T') ? str : str.replace(' ', 'T') + 'Z');
+        return isNaN(d.getTime()) ? null : d.getTime();
+    };
+    const ageText = (h, t) => {
+        if (h == null) return '';
+        if (h < 1) return t('dashboard.ageMin', { n: Math.max(1, Math.round(h * 60)) });
+        if (h < 24) return t('dashboard.ageHours', { n: Math.round(h) });
+        return t('dashboard.ageDays', { n: Math.floor(h / 24) });
+    };
+    const pending = (pay?.payments || [])
+        .filter((p) => p.status === 'pending')
+        .map((p) => {
+            const ts = parseTs(p.created_at);
+            const ageH = ts != null ? (nowMs - ts) / 3.6e6 : null;
+            return { ...p, stale: ageH != null && ageH >= STALE_HOURS, ageH };
+        })
+        .sort((a, b) => {
+            if (a.stale !== b.stale) return a.stale ? 1 : -1;
+            if (a.ageH == null || b.ageH == null) return (a.ageH == null ? 1 : 0) - (b.ageH == null ? 1 : 0);
+            return a.stale ? b.ageH - a.ageH : a.ageH - b.ageH;
+        });
 
     // Пул писателей / апстримы (поля могут быть null)
     const writers = engine?.pool?.writers || null;
@@ -622,11 +647,15 @@ export default function Dashboard() {
                         ) : (
                             <div className="space-y-2.5">
                                 {pending.map((p) => (
-                                    <div key={p.id} className="flex items-center gap-2 text-sm">
-                                        <Wallet size={15} className="text-slate-400 shrink-0" />
+                                    <div key={p.id} className={`flex items-center gap-2 text-sm rounded-lg px-1 ${p.stale ? 'opacity-50' : 'bg-emerald-50/60 dark:bg-emerald-500/5'}`}>
+                                        <Wallet size={15} className={`shrink-0 ${p.stale ? 'text-slate-400' : 'text-emerald-500'}`} />
                                         <div className="min-w-0 flex-1">
-                                            <div className="font-medium truncate">{p.username || t('dashboard.topupFallback')}</div>
-                                            <div className="text-xs text-slate-400">#{p.id}</div>
+                                            <div className="font-medium truncate flex items-center gap-1.5">
+                                                <span className="truncate">{p.username || t('dashboard.topupFallback')}</span>
+                                                {!p.stale && <span className="shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400">{t('dashboard.pendingFresh')}</span>}
+                                                {p.stale && <span className="shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500 dark:bg-slate-700/60 dark:text-slate-400">{t('dashboard.pendingStale')}</span>}
+                                            </div>
+                                            <div className="text-xs text-slate-400">#{p.id}{p.ageH != null && <> · {ageText(p.ageH, t)}</>}</div>
                                         </div>
                                         <span className="font-bold shrink-0">{p.amount}</span>
                                         <button className="btn-ghost !min-h-0 !px-2 !py-1 text-xs text-emerald-600" onClick={() => approvePayment(p.id)}>
