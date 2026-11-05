@@ -183,7 +183,7 @@ async function disableExpired() {
 
 /**
  * Удаление просроченных ТЕСТОВЫХ клиентов (username = test<tgId>):
- * через 24 часа после истечения удаляются из Telemt и из базы.
+ * через 1 час после истечения удаляются из Telemt и из базы.
  * Удаляем в Telemt только при успехе — запись из базы.
  */
 async function cleanupTestClients() {
@@ -192,7 +192,7 @@ async function cleanupTestClients() {
          WHERE username GLOB 'test[0-9]*'
            AND status IN ('expired', 'blocked')
            AND expires_at IS NOT NULL
-           AND expires_at < datetime('now', '-24 hours')`
+           AND expires_at < datetime('now', '-1 hour')`
     ).all();
     const telemt = require('./telemtApi');
     const { syncWebProfiles } = require('./webProfiles');
@@ -477,18 +477,21 @@ function start() {
     setInterval(() => faketls.check().catch(() => {}), 6 * 60 * 60 * 1000).unref();
     setTimeout(() => faketls.check().catch(() => {}), 5000).unref();
 
-    // Ежечасно: истечения, просроченные, тестовые, диск, автопродление, дожим тестов
+    // Ежечасно: напоминания, диск, автопродление, дожим тестов, syncLimits
     setInterval(() => {
         try { checkExpiring(); } catch (e) { logger.error(e); }
-        disableExpired().catch(() => {});
-        cleanupTestClients().catch(() => {});
         try { checkDisk(); } catch (e) { logger.error(e); }
-        syncLimits().catch((e) => logger.warn('syncLimits', { error: e.message }));
-        try { checkQuotaReset(); } catch (e) { logger.error(e); }
         syncLimits().catch((e) => logger.warn('syncLimits', { error: e.message }));
         autoRenew().catch((e) => logger.error('Ошибка автопродления', { error: e.message }));
         try { testFollowup(); } catch (e) { logger.error(e); }
     }, 60 * 60 * 1000).unref();
+
+    // Каждые 15 минут: истёкшие и просроченные тесты — быстрое отключение и удаление
+    setInterval(() => {
+        disableExpired().catch(() => {});
+        cleanupTestClients().catch(() => {});
+        try { checkQuotaReset(); } catch (e) { logger.error(e); }
+    }, 15 * 60 * 1000).unref();
     // Первый прогон через 2 минуты после старта
     setTimeout(() => {
         try { checkExpiring(); } catch (e) { logger.error(e); }

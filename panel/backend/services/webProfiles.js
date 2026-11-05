@@ -38,8 +38,8 @@ const CLIENT_PROFILE_DEFAULTS = {
     max_streams_per_session: 64,
 };
 
-/** Лимит профилей по умолчанию в движке. */
-const DEFAULT_LIMIT = 32;
+/** Лимит профилей по умолчанию в движке (запас для продаж). */
+const DEFAULT_LIMIT = 1024;
 
 /** Кэш последнего применённого списка, чтобы не слать лишние PATCH. */
 let lastSyncedJson = null;

@@ -20,7 +20,7 @@ const { httpError } = require('../middleware/errorHandler');
 const router = express.Router();
 
 const KEY = 'web_max_profiles';
-const DEFAULT_LIMIT = 32;
+const DEFAULT_LIMIT = 1024;
 /** Защита от опечаток вида 999999999, не бизнес-лимит. */
 const SANITY_CAP = 1_000_000;
 
