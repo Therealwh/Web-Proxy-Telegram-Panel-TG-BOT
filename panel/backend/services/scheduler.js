@@ -9,7 +9,7 @@ const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 const db = require('../db');
-const balance = require('../utils/balance');
+const balanceUtil = require('../utils/balance');
 const config = require('../config');
 const { getAll } = require('../routes/settings');
 const notifier = require('./notifier');
@@ -271,7 +271,7 @@ async function autoRenew() {
                 continue;
             }
 
-            const deduct = balance.deductBalanceSpread(client.telegram_id, tariff.price);
+            const deduct = balanceUtil.deductBalanceSpread(client.telegram_id, tariff.price);
             if (!deduct.ok) {
                 // гонка: баланс ушёл между проверкой и списанием
                 notifier.notifyAdmin(getAll(),
