@@ -152,6 +152,13 @@ else
     exit 1
 fi
 
+# Нормализация владельцев: git checkout выполняется от root и делает файлы
+# root-owned. Панель и её npm работают от tggate — при смешанных запусках
+# (SSH-обновления от root + обновления из панели) inode'ы с root-владельцем
+# роняли npm install с EACCES на первом же файле.
+chown -R tggate:tggate "${INSTALL_DIR}/panel" 2>/dev/null || true
+chown tggate:tggate "${INSTALL_DIR}/VERSION" 2>/dev/null || true
+
 NEW_VERSION="$(cat VERSION 2>/dev/null || echo 'unknown')"
 info "Новая версия: ${NEW_VERSION}"
 
@@ -202,6 +209,13 @@ run_robust() {
 # ---------------------------------------------------------------------------
 # Git от root в каталоге пользователя tggate: явно доверяем репозиторию
 git config --global --add safe.directory "${INSTALL_DIR}" 2>/dev/null || true
+
+# Детерминированный npm-кэш: и root-запуски, и панель (tggate) пишут в один
+# каталог. Домашний кэш tggate (/opt/tggate/.npm) бывал root-owned после
+# SSH-операций от root — тогда npm install умирал с EACCES моментально.
+mkdir -p "${INSTALL_DIR}/.npm"
+chown -R tggate:tggate "${INSTALL_DIR}/.npm" 2>/dev/null || true
+export npm_config_cache="${INSTALL_DIR}/.npm"
 
 set_status 3 6 "Установка зависимостей backend..." running
 npm_install_robust "${INSTALL_DIR}/panel/backend" install --omit=dev --no-audit --no-fund
