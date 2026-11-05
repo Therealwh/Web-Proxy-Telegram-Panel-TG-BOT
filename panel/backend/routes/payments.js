@@ -22,17 +22,29 @@ const router = express.Router();
  * @param {number} paymentId - id платежа в БД
  */
 async function completePayment(paymentId) {
-    // Атомарный захват: помечаем успех ДО ветвления — исключает двойную
-    // выдачу/начисление при параллельных вебхуке и ручном подтверждении
+    // Атомарный захват: pending/issuing → issuing. Двойная выдача исключена,
+    // а сбой выдачи возвращает платёж в 'pending' — вебхук/админ могут
+    // повторить попытку (самовосстановление вместо «деньги есть, доступа нет»).
     const claim = db.prepare(
-        "UPDATE payments SET status = 'success', paid_at = datetime('now') WHERE id = ? AND status = 'pending'"
+        "UPDATE payments SET status = 'issuing' WHERE id = ? AND status IN ('pending', 'issuing')"
     ).run(paymentId);
     if (claim.changes === 0) {
         const existing = db.prepare('SELECT * FROM payments WHERE id = ?').get(paymentId);
         if (!existing) throw httpError(404, 'Платёж не найден');
-        return existing; // уже обработан — идемпотентность
+        if (existing.status === 'issuing') {
+            throw httpError(409, 'Выдача доступа уже выполняется — повторите через минуту');
+        }
+        return existing; // success/failed/cancelled — идемпотентность
     }
     const payment = db.prepare('SELECT * FROM payments WHERE id = ?').get(paymentId);
+    const markSuccess = () => db.prepare(
+        "UPDATE payments SET status = 'success', paid_at = datetime('now') WHERE id = ?"
+    ).run(paymentId);
+    const backToPending = (e) => {
+        db.prepare("UPDATE payments SET status = 'pending', paid_at = NULL WHERE id = ? AND status = 'issuing'")
+            .run(paymentId);
+        logger.error('Выдача доступа не удалась — платёж возвращён в очередь', { paymentId, error: e.message });
+    };
 
     const tariff = db.prepare('SELECT * FROM tariffs WHERE id = ?').get(payment.tariff_id);
 
@@ -46,7 +58,12 @@ async function completePayment(paymentId) {
             const patch = { expiration_rfc3339: newExpiry };
             if (tariff.max_ips) patch.max_unique_ips = tariff.max_ips;
             if (tariff.quota_gb) patch.data_quota_bytes = Math.round(tariff.quota_gb * 1024 ** 3);
-            await telemt.patchUser(client.username, patch).catch(() => {});
+            try {
+                await telemt.patchUser(client.username, patch);
+            } catch (e) {
+                backToPending(e);
+                throw httpError(502, 'Не удалось обновить срок в Telemt — платёж возвращён в очередь, повторите попытку');
+            }
             db.prepare("UPDATE clients SET expires_at = ?, status = 'active' WHERE id = ?").run(newExpiry, client.id);
             // Выбранный при продлении набор протоколов ('web'|'mtproto'|'both')
             const mode = payment.renew_protocols;
@@ -55,7 +72,7 @@ async function completePayment(paymentId) {
                 db.prepare('UPDATE clients SET web_enabled = ?, mtproto_enabled = ? WHERE id = ?')
                     .run(...modeFlags[mode], client.id);
             }
-            db.prepare("UPDATE payments SET status = 'success', paid_at = datetime('now') WHERE id = ?").run(paymentId);
+            markSuccess();
 
             const bot = require('../services/bot');
             if (payment.telegram_id && bot.isRunning()) {
@@ -84,7 +101,7 @@ async function completePayment(paymentId) {
             db.prepare('UPDATE bot_users SET balance = balance + ? WHERE telegram_id = ?')
                 .run(payment.amount, payment.telegram_id);
         }
-        db.prepare("UPDATE payments SET status = 'success', paid_at = datetime('now') WHERE id = ?").run(paymentId);
+        markSuccess();
         const bot = require('../services/bot');
         await bot.notifyDeposit(payment.telegram_id, payment.amount).catch(() => {});
         fireWebhook('payment.success', { payment_id: paymentId, amount: payment.amount, currency: payment.currency, kind: 'deposit' });
@@ -95,9 +112,14 @@ async function completePayment(paymentId) {
     // Если платёж из бота — выдаём доступ и отправляем ссылки покупателю
     if (payment.telegram_id && tariff) {
         const bot = require('../services/bot');
-        await bot.issueAccessFor(payment.telegram_id, tariff, paymentId);
+        try {
+            await bot.issueAccessFor(payment.telegram_id, tariff, paymentId);
+        } catch (e) {
+            backToPending(e);
+            throw httpError(502, 'Не удалось выдать доступ — платёж возвращён в очередь, повторите попытку');
+        }
     } else {
-        db.prepare("UPDATE payments SET status = 'success', paid_at = datetime('now') WHERE id = ?").run(paymentId);
+        markSuccess();
     }
 
     fireWebhook('payment.success', { payment_id: paymentId, amount: payment.amount, currency: payment.currency });

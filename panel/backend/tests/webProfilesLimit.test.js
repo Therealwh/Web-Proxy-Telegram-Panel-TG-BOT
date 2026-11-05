@@ -63,9 +63,9 @@ describe('лимит WEB-профилей', () => {
         db.prepare('DELETE FROM clients').run();
     });
 
-    test('дефолтный лимит — 32 (как в движке)', () => {
-        assert.equal(webProfiles.configuredLimit(), 32);
-        assert.equal(webProfiles.DEFAULT_LIMIT, 32);
+    test('дефолтный лимит — 1024 (запас для продаж)', () => {
+        assert.equal(webProfiles.configuredLimit(), 1024);
+        assert.equal(webProfiles.DEFAULT_LIMIT, 1024);
     });
 
     test('сохранённый лимит читается из settings', () => {
@@ -75,7 +75,7 @@ describe('лимит WEB-профилей', () => {
 
     test('битое значение в settings откатывается на дефолт', () => {
         setLimit('мусор');
-        assert.equal(webProfiles.configuredLimit(), 32);
+        assert.equal(webProfiles.configuredLimit(), 1024);
     });
 
     test('клиенты обрезаются до лимита минус служебный welcome', async () => {

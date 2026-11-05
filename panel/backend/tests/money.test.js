@@ -94,5 +94,62 @@ function makeBalanceModule(db) {
         ).run(amount, telegramId);
         return result.changes === 1;
     };
-    return { deductBalanceAtomic: deduct, totalBalance: total, creditBalance: credit };
+    /** Спред-списание: распределяет сумму по строкам от большего остатка. */
+    function spread(telegramId, amount) {
+        if (!(amount > 0)) return { ok: false, touched: [], left: amount };
+        let left = amount;
+        const touched = [];
+        const spreadTx = db.transaction(() => {
+            const rows = db.prepare(
+                'SELECT id, balance FROM clients WHERE telegram_id = ? AND balance > 0 ORDER BY balance DESC'
+            ).all(telegramId);
+            const upd = db.prepare('UPDATE clients SET balance = balance - ? WHERE id = ? AND balance >= ?');
+            for (const c of rows) {
+                if (left <= 0) break;
+                const take = Math.min(c.balance, left);
+                const r = upd.run(take, c.id, take);
+                if (r.changes === 0) continue;
+                touched.push({ id: c.id, amount: take });
+                left -= take;
+            }
+            if (left > 0) throw new Error('INSUFFICIENT_TOTAL_BALANCE');
+        });
+        try {
+            spreadTx();
+        } catch (e) {
+            if (e.message !== 'INSUFFICIENT_TOTAL_BALANCE') throw e;
+            return { ok: false, touched: [], left: amount };
+        }
+        return { ok: true, touched, left: 0 };
+    }
+    return { deductBalanceAtomic: deduct, deductBalanceSpread: spread, totalBalance: total, creditBalance: credit };
 }
+
+test('deductBalanceSpread: баланс размазан по строкам — списывается ровно', () => {
+    const db = makeDb();
+    db.prepare("INSERT INTO clients (username, telegram_id, balance) VALUES ('u1', 100, 200)").run();
+    db.prepare("INSERT INTO clients (username, telegram_id, balance) VALUES ('u2', 100, 100)").run();
+    const balancePath = require.resolve('../utils/balance');
+    require.cache[balancePath] = { id: balancePath, filename: balancePath, loaded: true, exports: makeBalanceModule(db) };
+    const { deductBalanceSpread } = require('../utils/balance');
+
+    const result = deductBalanceSpread(100, 300);
+    assert.strictEqual(result.ok, true, 'спред-списание должно покрыть сумму с двух строк');
+    assert.strictEqual(result.touched.length, 2, 'затронуты обе строки');
+    const rows = db.prepare('SELECT balance FROM clients WHERE telegram_id = 100 ORDER BY balance').all();
+    assert.deepStrictEqual(rows.map((r) => r.balance), [0, 0], 'остатки нулевые');
+});
+
+test('deductBalanceSpread: суммы больше total — отказ без изменений', () => {
+    const db = makeDb();
+    db.prepare("INSERT INTO clients (username, telegram_id, balance) VALUES ('u1', 100, 200)").run();
+    db.prepare("INSERT INTO clients (username, telegram_id, balance) VALUES ('u2', 100, 100)").run();
+    const balancePath = require.resolve('../utils/balance');
+    require.cache[balancePath] = { id: balancePath, filename: balancePath, loaded: true, exports: makeBalanceModule(db) };
+    const { deductBalanceSpread } = require('../utils/balance');
+
+    const result = deductBalanceSpread(100, 301);
+    assert.strictEqual(result.ok, false, 'списание сверх total должно быть отклонено');
+    const rows = db.prepare('SELECT balance FROM clients WHERE telegram_id = 100 ORDER BY balance').all();
+    assert.deepStrictEqual(rows.map((r) => r.balance), [100, 200], 'баланс не должен измениться');
+});

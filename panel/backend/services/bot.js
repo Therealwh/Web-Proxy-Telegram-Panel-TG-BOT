@@ -13,6 +13,7 @@
 
 const { Bot, InlineKeyboard, Keyboard, InputFile } = require('grammy');
 const db = require('../db');
+const { deductBalanceSpread } = require('../utils/balance');
 const telemt = require('./telemtApi');
 const { clientLinks } = require('./links');
 const { getAll } = require('../routes/settings');
@@ -391,20 +392,6 @@ function renewKeyboard(clientId, mode) {
 /** Общий баланс пользователя. */
 function totalBalance(tgId) {
     return db.prepare('SELECT COALESCE(SUM(balance),0) AS b FROM clients WHERE telegram_id = ?').get(tgId).b;
-}
-
-/** Списание с баланса (по клиентам, от большего остатка). */
-function deductBalance(tgId, amount) {
-    let left = amount;
-    const rows = db.prepare(
-        'SELECT id, balance FROM clients WHERE telegram_id = ? AND balance > 0 ORDER BY balance DESC'
-    ).all(tgId);
-    for (const c of rows) {
-        if (left <= 0) break;
-        const take = Math.min(c.balance, left);
-        db.prepare('UPDATE clients SET balance = balance - ? WHERE id = ?').run(take, c.id);
-        left -= take;
-    }
 }
 
 /**
@@ -1254,11 +1241,20 @@ bot.on('message:text', async (ctx, next) => {
         }
         await ctx.answerCallbackQuery('Оформляю...');
 
-        deductBalance(ctx.from.id, tariff.price);
+        // Атомарное списание с проверкой покрытия — закрывает гонку двойного клика
+        const { ok, touched } = deductBalanceSpread(ctx.from.id, tariff.price);
+        if (!ok) {
+            return ctx.answerCallbackQuery({ text: 'Недостаточно средств на балансе', show_alert: true });
+        }
         try {
             await issueAccessFor(ctx.from.id, tariff, paymentId);
         } catch (e) {
-            db.prepare('UPDATE clients SET balance = balance + ? WHERE telegram_id = ?').run(tariff.price, ctx.from.id);
+            // Возврат ровно затронутым строкам (а не всем клиентам по telegram_id)
+            db.transaction((rows) => {
+                for (const t of rows) {
+                    db.prepare('UPDATE clients SET balance = balance + ? WHERE id = ?').run(t.amount, t.id);
+                }
+            })(touched);
             db.prepare("UPDATE payments SET status = 'failed' WHERE id = ?").run(paymentId);
             logger.error('Покупка с баланса не удалась, средства возвращены', { error: e.message });
             await ctx.reply(`⚠️ Произошла ошибка — средства возвращены. Напишите в поддержку ${SUPPORT_USERNAME}`);

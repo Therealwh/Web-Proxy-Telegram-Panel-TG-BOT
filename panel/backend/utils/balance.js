@@ -47,4 +47,44 @@ function creditBalance(telegramId, amount) {
     return result.changes === 1;
 }
 
-module.exports = { deductBalanceAtomic, totalBalance, creditBalance };
+/**
+ * Атомарно списывает сумму, распределяя её по строкам клиента (от большего
+ * остатка). Каждый UPDATE требует достаточного остатка на конкретной строке —
+ * гонка двойного списания и уход в минус исключены. Работает и когда баланс
+ * размазан по нескольким прокси (сумма ≥ любого отдельного остатка).
+ * @param {number} telegramId
+ * @param {number} amount - положительная сумма
+ * @returns {{ ok: boolean, touched: Array<{id: number, amount: number}>, left: number }}
+ *          touched — затронутые строки для точного возврата при сбое выдачи.
+ */
+function deductBalanceSpread(telegramId, amount) {
+    if (!(amount > 0)) return { ok: false, touched: [], left: amount };
+    let left = amount;
+    const touched = [];
+    // Транзакция: если суммы не хватает на все строки — полный откат,
+    // частичное списание без выдачи доступа исключено.
+    const spread = db.transaction(() => {
+        const rows = db.prepare(
+            'SELECT id, balance FROM clients WHERE telegram_id = ? AND balance > 0 ORDER BY balance DESC'
+        ).all(telegramId);
+        const upd = db.prepare('UPDATE clients SET balance = balance - ? WHERE id = ? AND balance >= ?');
+        for (const row of rows) {
+            if (left <= 0) break;
+            const take = Math.min(row.balance, left);
+            const result = upd.run(take, row.id, take);
+            if (result.changes === 0) continue; // остаток изменился параллельно
+            touched.push({ id: row.id, amount: take });
+            left -= take;
+        }
+        if (left > 0) throw new Error('INSUFFICIENT_TOTAL_BALANCE');
+    });
+    try {
+        spread();
+    } catch (e) {
+        if (e.message !== 'INSUFFICIENT_TOTAL_BALANCE') throw e;
+        return { ok: false, touched: [], left: amount };
+    }
+    return { ok: true, touched, left: 0 };
+}
+
+module.exports = { deductBalanceAtomic, deductBalanceSpread, totalBalance, creditBalance };
