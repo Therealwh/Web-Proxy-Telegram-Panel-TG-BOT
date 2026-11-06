@@ -20,6 +20,7 @@
  */
 
 const FRAME_COST = 8 + 4 + 256;            // 268: header + tag + queue item
+const STREAMS_PER_SESSION = 128;           // потоков на сессию (не тюнится)
 const ITEMS_PER_SESSION = 16 + 128 * 3;    // 400: streams_per_session = 128
 const LANE_STATE_BYTES = 1024;
 const QUEUE_PROGRESS_BYTES = 3 * 1024 * 1024; // body 1MiB + frames 1MiB + batch 1MiB
@@ -103,7 +104,7 @@ function recommendLimits(ramBytes) {
         const pendingItemsGlobal = Math.ceil(itemsPerSessionGlobal(sessions) * 1.3);
         const pendingBytesGlobal = controlBytesGlobal + 96 * 1024 ** 2 + QUEUE_PROGRESS_BYTES + 16 * 1024 ** 2;
         const websocketBytesGlobal = pendingBytesGlobal - controlBytesGlobal - QUEUE_PROGRESS_BYTES;
-        const laneState = (streamsPerSession + 129) * sessions * LANE_STATE_BYTES;
+        const laneState = (STREAMS_PER_SESSION + 129) * sessions * LANE_STATE_BYTES;
         const httpHeader = httpConnections * 8192;
         const overload = 256 * 4096;
         const capabilityIndex = 1024 * 64;
