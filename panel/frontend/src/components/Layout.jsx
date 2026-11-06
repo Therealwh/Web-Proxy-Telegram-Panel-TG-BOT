@@ -4,7 +4,7 @@ import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { HardDrive,
     LayoutDashboard, Users, BarChart3, ScrollText, Settings, QrCode, Globe,
     Globe2, KeyRound, Bot, RefreshCw, Code2, Moon, Sun, LogOut, Menu, X, Activity, Shield,
-    Webhook, ClipboardList, Stethoscope,
+    Webhook, ClipboardList, Stethoscope, SlidersHorizontal, FileText,
 } from 'lucide-react';
 import { useAuthStore, useThemeStore, useLangStore } from '../store';
 import { get, post, put } from '../api';
@@ -26,6 +26,8 @@ const NAV = [
     { to: '/developers', icon: Code2, label: 'nav.developers' },
     { to: '/updates', icon: RefreshCw, label: 'nav.updates' },
     { to: '/engine', icon: Activity, label: 'nav.engine' },
+    { to: '/tuning', icon: SlidersHorizontal, label: '⚙️ Движок и лимиты' },
+    { to: '/config-toml', icon: FileText, label: '📄 Конфиг Telemt (TOML)' },
     { to: '/geo', icon: Globe2, label: 'nav.geo' },
     { to: '/webhooks', icon: Webhook, label: 'nav.webhooks' },
     { to: '/audit', icon: ClipboardList, label: 'nav.audit' },

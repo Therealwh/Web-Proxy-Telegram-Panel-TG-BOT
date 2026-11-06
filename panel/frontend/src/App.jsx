@@ -19,6 +19,8 @@ const ApiKeys = lazy(() => import('./pages/ApiKeys'));
 const Developers = lazy(() => import('./pages/Developers'));
 const Updates = lazy(() => import('./pages/Updates'));
 const Engine = lazy(() => import('./pages/Engine'));
+const Tuning = lazy(() => import('./pages/Tuning'));
+const ConfigToml = lazy(() => import('./pages/ConfigToml'));
 const Zapret2 = lazy(() => import('./pages/Zapret2'));
 const Geo = lazy(() => import('./pages/Geo'));
 const Webhooks = lazy(() => import('./pages/Webhooks'));
@@ -57,6 +59,8 @@ export default function App() {
                 <Route path="developers" element={<Suspense fallback={PageLoader}><Developers /></Suspense>} />
                 <Route path="updates" element={<Suspense fallback={PageLoader}><Updates /></Suspense>} />
                 <Route path="engine" element={<Suspense fallback={PageLoader}><Engine /></Suspense>} />
+                <Route path="tuning" element={<Suspense fallback={PageLoader}><Tuning /></Suspense>} />
+                <Route path="config-toml" element={<Suspense fallback={PageLoader}><ConfigToml /></Suspense>} />
                 <Route path="zapret2" element={<Suspense fallback={PageLoader}><Zapret2 /></Suspense>} />
                 <Route path="geo" element={<Suspense fallback={PageLoader}><Geo /></Suspense>} />
                 <Route path="webhooks" element={<Suspense fallback={PageLoader}><Webhooks /></Suspense>} />

@@ -33,6 +33,8 @@ const SCRIPTS = {
     'restart-all': path.join(SCRIPTS_DIR, 'restart-all.sh'),
     zapret2: path.join(SCRIPTS_DIR, 'zapret2-ctl.sh'),
     'telemt-limits': path.join(SCRIPTS_DIR, 'telemt-limits.sh'),
+    'telemt-config-read': path.join(SCRIPTS_DIR, 'telemt-config-read.sh'),
+    'telemt-config-apply': path.join(SCRIPTS_DIR, 'telemt-config-apply.sh'),
     'ip-blocklist': path.join(SCRIPTS_DIR, 'ip-blocklist.sh'),
     warp: path.join(SCRIPTS_DIR, 'warp.sh'),
     cleanup: path.join(SCRIPTS_DIR, 'cleanup-disk.sh'),
@@ -165,6 +167,38 @@ const server = http.createServer((req, res) => {
                 }
                 try { res.end(JSON.stringify({ ok: true, ...JSON.parse(String(stdout)) })); }
                 catch { res.statusCode = 500; res.end(JSON.stringify({ ok: false, error: 'bad json from disk-stats' })); }
+            });
+            return;
+        }
+
+        // Чтение конфига Telemt для TOML-редактора (root читает файл с секретами;
+        // секрет хелпера защищает эндпоинт, stdout возвращается панели целиком).
+        if (parsed.key === 'telemt-config-read') {
+            execFile('bash', [script], { timeout: 10000 }, (err, stdout) => {
+                if (err) {
+                    res.statusCode = 500;
+                    return res.end(JSON.stringify({ ok: false, error: 'read failed' }));
+                }
+                res.end(JSON.stringify({ ok: true, content: stdout }));
+            });
+            return;
+        }
+
+        // Применение конфига из черновика TOML-редактора: путь строго из
+        // /var/lib/tggate (панель кладёт черновик сама), скрипт делает
+        // бэкап → установку → рестарт → автооткат при сбое. stdout — отчёт.
+        if (parsed.key === 'telemt-config-apply') {
+            const draft = String(parsed.version || '');
+            if (!draft.startsWith('/var/lib/tggate/') || draft.includes('..')) {
+                res.statusCode = 400;
+                return res.end(JSON.stringify({ ok: false, error: 'bad draft path' }));
+            }
+            busy = true;
+            log(`telemt-config-apply: ${draft}`);
+            execFile('bash', [script, draft], { timeout: 120000 }, (err, stdout, stderr) => {
+                busy = false;
+                log(`telemt-config-apply завершено: ${err ? 'ОШИБКА' : 'успех'}`);
+                res.end(JSON.stringify({ ok: !err, log: String(stdout || '') + String(stderr || '') }));
             });
             return;
         }
