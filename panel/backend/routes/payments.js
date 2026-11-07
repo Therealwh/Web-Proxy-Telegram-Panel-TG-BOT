@@ -85,6 +85,10 @@ async function completePayment(paymentId) {
                     `✅ <b>Продление оплачено!</b>\n\n📦 ${client.username} — до <b>${fmt(newExpiry)}</b>${modeText}`
                 );
             }
+            try {
+                const { notifyAdmin } = require('../services/notifier');
+                await notifyAdmin(getAll(), `🔄 <b>Прокси продлён</b>\n📦 ${client.username} — до ${fmt(newExpiry)}\n👤 tg${payment.telegram_id}`);
+            } catch { /* уведомление не критично */ }
             logger.info('Прокси продлён', { paymentId, username: client.username });
             return payment;
         }
@@ -108,6 +112,10 @@ async function completePayment(paymentId) {
         })();
         const bot = require('../services/bot');
         await bot.notifyDeposit(payment.telegram_id, payment.amount).catch(() => {});
+        try {
+            const { notifyAdmin } = require('../services/notifier');
+            await notifyAdmin(getAll(), `💰 <b>Баланс пополнен</b>\n💵 +${payment.amount} ${payment.currency}\n👤 tg${payment.telegram_id}`);
+        } catch { /* не критично */ }
         fireWebhook('payment.success', { payment_id: paymentId, amount: payment.amount, currency: payment.currency, kind: 'deposit' });
         logger.info('Баланс пополнен', { paymentId, amount: payment.amount });
         return payment;

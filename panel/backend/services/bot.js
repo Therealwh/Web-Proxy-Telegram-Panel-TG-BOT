@@ -536,7 +536,7 @@ if (links.mtproto_https) text += `🔌 <b>MTProto</b>:\n${links.mtproto_https}\n
 
     const notifier = require('./notifier');
     notifier.notifyAdmin(settings,
-        `💰 <b>Новая продажа!</b>\n📦 ${tariff.name} — ${tariff.price} ${currencySign(tariff.currency)}\n👤 ${username}`
+        `💰 <b>Новая продажа!</b>\n📦 ${tariff.name} — ${tariff.price} ${currencySign(tariff.currency)}\n👤 ${username}\n📅 Доступ до ${fmtMSK(expires, false)}`
     ).catch(() => {});
 
     payReferralBonus(client.id, tariff.days).catch((e) =>
