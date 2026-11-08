@@ -9,6 +9,7 @@ import { Card, StatusBadge, ProgressBar, Modal, Field, Toggle, formatBytes, form
 // Пустая форма клиента
 const EMPTY_FORM = {
     username: '', quota_gb: '', expires_at: '', max_ips: '',
+    max_sessions: '', max_streams: '', max_streams_per_session: '',
     rate_down_mbps: '', rate_up_mbps: '', ad_tag: '',
     web_enabled: true, mtproto_enabled: true, note: '',
     quota_auto_reset: false,
@@ -21,6 +22,9 @@ function formToPayload(f) {
         quota_bytes: f.quota_gb ? Math.round(parseFloat(f.quota_gb) * 1024 ** 3) : null,
         expires_at: f.expires_at ? new Date(f.expires_at).toISOString() : null,
         max_ips: f.max_ips ? parseInt(f.max_ips, 10) : null,
+        max_sessions: f.max_sessions ? parseInt(f.max_sessions, 10) : null,
+        max_streams: f.max_streams ? parseInt(f.max_streams, 10) : null,
+        max_streams_per_session: f.max_streams_per_session ? parseInt(f.max_streams_per_session, 10) : null,
         rate_down_bps: f.rate_down_mbps ? Math.round(parseFloat(f.rate_down_mbps) * 1_000_000) : null,
         rate_up_bps: f.rate_up_mbps ? Math.round(parseFloat(f.rate_up_mbps) * 1_000_000) : null,
         ad_tag: f.ad_tag || null,
@@ -102,6 +106,9 @@ export default function Clients() {
             quota_gb: c.quota_bytes ? (c.quota_bytes / 1024 ** 3).toFixed(2) : '',
             expires_at: c.expires_at ? c.expires_at.slice(0, 10) : '',
             max_ips: c.max_ips ?? '',
+            max_sessions: c.max_sessions ?? '',
+            max_streams: c.max_streams ?? '',
+            max_streams_per_session: c.max_streams_per_session ?? '',
             rate_down_mbps: c.rate_down_bps ? c.rate_down_bps / 1e6 : '',
             rate_up_mbps: c.rate_up_bps ? c.rate_up_bps / 1e6 : '',
             ad_tag: c.ad_tag ?? '',
@@ -411,6 +418,18 @@ export default function Clients() {
                     <Field label={t('clients.fMaxIps')} hint={t('clients.fMaxIpsHint')}>
                         <input className="input" type="number" min="1" max="100" value={form.max_ips}
                                onChange={(e) => setForm({ ...form, max_ips: e.target.value })} />
+                    </Field>
+                    <Field label={t('clients.fMaxSessions')} hint={t('clients.fMaxSessionsHint')}>
+                        <input className="input" type="number" min="1" max="65536" value={form.max_sessions}
+                               onChange={(e) => setForm({ ...form, max_sessions: e.target.value })} />
+                    </Field>
+                    <Field label={t('clients.fMaxStreams')} hint={t('clients.fMaxStreamsHint')}>
+                        <input className="input" type="number" min="64" max="262144" value={form.max_streams}
+                               onChange={(e) => setForm({ ...form, max_streams: e.target.value })} />
+                    </Field>
+                    <Field label={t('clients.fMaxStreamsPerSession')} hint={t('clients.fMaxStreamsPerSessionHint')}>
+                        <input className="input" type="number" min="16" max="65535" value={form.max_streams_per_session}
+                               onChange={(e) => setForm({ ...form, max_streams_per_session: e.target.value })} />
                     </Field>
                     <Field label={t('clients.fRateDown')} hint={t('clients.fRateHint')}>
                         <input className="input" type="number" min="0" value={form.rate_down_mbps}

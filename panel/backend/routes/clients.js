@@ -60,6 +60,9 @@ const clientSchema = z.object({
     quota_bytes: z.coerce.number().int().positive().nullable().optional(),
     expires_at: dateField,
     max_ips: numField(1, 100),
+    max_sessions: numField(1, 65536),
+    max_streams: numField(64, 262144),
+    max_streams_per_session: numField(16, 65535),
     rate_down_bps: numField(0),
     rate_up_bps: numField(0),
     ad_tag: z.string().regex(/^[0-9a-f]{32}$/, 'Ad Tag — 32 hex-символа').nullable().optional(),
@@ -163,15 +166,17 @@ router.post('/', async (req, res, next) => {
         const result = db.prepare(
             `INSERT INTO clients
              (username, secret, quota_bytes, expires_at, max_ips, rate_down_bps,
-              rate_up_bps, ad_tag, web_enabled, mtproto_enabled, note)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+              rate_up_bps, ad_tag, web_enabled, mtproto_enabled, note,
+              max_sessions, max_streams, max_streams_per_session)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         ).run(
             data.username, secret,
             data.quota_bytes ?? null, data.expires_at ?? null, data.max_ips ?? null,
             data.rate_down_bps ?? null, data.rate_up_bps ?? null, data.ad_tag ?? null,
             data.web_enabled === false ? 0 : 1,
             data.mtproto_enabled === false ? 0 : 1,
-            data.note ?? null
+            data.note ?? null,
+            data.max_sessions ?? null, data.max_streams ?? null, data.max_streams_per_session ?? null
         );
 
         logger.info('Клиент создан', { username: data.username });
@@ -252,7 +257,8 @@ router.patch('/:id', async (req, res, next) => {
         const fields = [];
         const params = [];
         for (const key of ['quota_bytes', 'expires_at', 'max_ips', 'rate_down_bps',
-                           'rate_up_bps', 'ad_tag', 'note']) {
+                           'rate_up_bps', 'ad_tag', 'note',
+                           'max_sessions', 'max_streams', 'max_streams_per_session']) {
             if (key in data) {
                 fields.push(`${key} = ?`);
                 params.push(data[key]);

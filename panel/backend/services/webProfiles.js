@@ -88,10 +88,11 @@ function configuredLimit() {
  */
 async function syncWebProfiles(excludeUsername = null) {
     try {
-        // Клиенты с включённым Web Proxy
-        const users = db.prepare(
-            'SELECT username FROM clients WHERE web_enabled = 1 AND username != ? ORDER BY id'
-        ).all(excludeUsername || '').map((r) => r.username);
+        // Клиенты с включённым Web Proxy (+ пер-клиентские лимиты, NULL = дефолт)
+        const clients = db.prepare(
+            `SELECT username, max_sessions, max_streams, max_streams_per_session
+             FROM clients WHERE web_enabled = 1 AND username != ? ORDER BY id`
+        ).all(excludeUsername || '');
 
         // Лимит из настроек панели: применяем в движок, если отличается
         const limit = configuredLimit();
@@ -109,16 +110,23 @@ async function syncWebProfiles(excludeUsername = null) {
         // Наш vhost по домену (или первый)
         const profiles = vhosts[target].profiles || [];
         const cap = Math.max(1, limit - 1); // минус служебный welcome
-        const trimmedUsers = users.slice(0, cap);
+        const trimmedClients = clients.slice(0, cap);
 
+        // Пер-клиентские лимиты: NULL (не задано) = значения по умолчанию
         const wanted = [
             WELCOME_PROFILE,
-            ...trimmedUsers.map((u) => ({ user: u, ...CLIENT_PROFILE_DEFAULTS })),
+            ...trimmedClients.map((c) => ({
+                user: c.username,
+                secret_mode: CLIENT_PROFILE_DEFAULTS.secret_mode,
+                max_sessions: c.max_sessions ?? CLIENT_PROFILE_DEFAULTS.max_sessions,
+                max_streams: c.max_streams ?? CLIENT_PROFILE_DEFAULTS.max_streams,
+                max_streams_per_session: c.max_streams_per_session ?? CLIENT_PROFILE_DEFAULTS.max_streams_per_session,
+            })),
         ];
 
-        if (users.length > trimmedUsers.length) {
+        if (clients.length > trimmedClients.length) {
             logger.warn('WEB: клиентов с Web Proxy больше лимита — лишние остались без WEB-профиля', {
-                limit, clients: users.length, skipped: users.length - trimmedUsers.length,
+                limit, clients: clients.length, skipped: clients.length - trimmedClients.length,
             });
         }
 
