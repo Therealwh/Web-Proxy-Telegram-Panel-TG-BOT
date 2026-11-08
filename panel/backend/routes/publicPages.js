@@ -318,8 +318,24 @@ router.get('/status', publicLimiter, (req, res) => {
 router.get('/miniapp', (req, res) => {
     const file = require('path').join(__dirname, '..', 'public', 'miniapp', 'index.html');
     res.setHeader('Cache-Control', 'no-store');
+    // Глобальный CSP панели (script-src 'self') убивает inline-скрипты и все
+    // onclick мини-аппа — приложение навсегда замирало на «загрузка…».
+    // Разрешаем unsafe-inline ТОЛЬКО здесь, как на /api/docs.
+    res.setHeader('Content-Security-Policy',
+        "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:");
     res.sendFile(file, (err) => {
         if (err && !res.headersSent) res.status(404).send('Мини-апп не найден');
+    });
+});
+
+// Официальный скрипт Telegram WebApp — самохран: telegram.org недоступен
+// с части провайдеров РФ, внешний скрипт из <head> блокировал загрузку.
+router.get('/miniapp/tgwebapp.js', (req, res) => {
+    const file = require('path').join(__dirname, '..', 'public', 'miniapp', 'telegram-web-app.js');
+    res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    res.sendFile(file, (err) => {
+        if (err && !res.headersSent) res.status(404).end();
     });
 });
 

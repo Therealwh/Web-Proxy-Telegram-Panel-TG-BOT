@@ -5,7 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
 <title>Личный кабинет</title>
-<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<!-- Официальный скрипт Telegram WebApp, САМОХОСТИНГ: telegram.org заблокирован
+     у части провайдеров РФ — внешний <head>-скрипт блокировал парсер, и всё
+     приложение висело в «загрузка…». Локальный файл грузится мгновенно. -->
+<script src="/miniapp/tgwebapp.js"></script>
 <style>
     :root {
         --bg: #0d1220;
@@ -144,7 +147,7 @@
     .tabbar button.active .ico { transform: translateY(-1px) scale(1.12); }
 
     /* ── Шторка ── */
-    .overlay { position: fixed; inset: 0; background: rgba(5,8,18,.62); z-index: 90;
+    .overlay { position: fixed; top: 0; right: 0; bottom: 0; left: 0; background: rgba(5,8,18,.62); z-index: 90;
                opacity: 0; pointer-events: none; transition: opacity .2s; }
     .overlay.open { opacity: 1; pointer-events: auto; }
     .sheet { position: fixed; left: 0; right: 0; bottom: 0; z-index: 100;
@@ -194,7 +197,7 @@
 <div class="wrap">
     <div id="booterr" style="display:none; background:rgba(255,92,92,.15); color:#ff9a9a; border:1px solid rgba(255,92,92,.4); border-radius:12px; padding:10px 12px; margin-bottom:10px; font-size:12.5px; word-break:break-word;"></div>
     <div class="header">
-        <div class="hello" id="hello">Личный кабинет<small id="helloSub">загрузка… v1.30.3</small></div>
+        <div class="hello" id="hello">Личный кабинет<small id="helloSub">загрузка… v1.30.4</small></div>
         <button class="balance-chip" id="balanceChip" onclick="openDeposit()">
             <b id="balanceVal">—</b><span>пополнить</span>
         </button>
@@ -320,6 +323,17 @@ function closeSheet() {
 }
 
 // ── Копирование ──
+// Значения (реквизиты, ссылки) НЕ вставляем в onclick-строки: апостроф в
+// реквизитах ломал бы обработчик. Делегирование по data-copy.
+document.addEventListener('click', function(e) {
+    var el = e.target;
+    while (el && el !== document && !el.getAttribute) el = el.parentNode;
+    if (!el || el === document) return;
+    var val = el.getAttribute('data-copy');
+    if (val !== null && val !== undefined && val !== '') {
+        copy(val, el.getAttribute('data-copy-label') || 'Скопировано');
+    }
+});
 function copy(text, what) {
     const done = () => { haptic('ok'); toast((what || 'Скопировано') + ' ✓', 'ok'); };
     if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -354,7 +368,11 @@ function showBootError(msg) {
 
 async function boot() {
     try { initTg(); } catch (e) { /* даже это не должно останавливать загрузку */ }
-    const initData = tg ? (tg.initData || '') : '';
+    if (!tg) {
+        showBootError('Скрипт Telegram не загрузился. Закройте приложение и откройте его из бота ещё раз.');
+        return;
+    }
+    const initData = tg.initData || '';
     if (!initData) {
         document.getElementById('hello').innerHTML = 'Откройте через бота<small>приложение работает внутри Telegram</small>';
         document.getElementById('page-proxies').innerHTML =
@@ -432,7 +450,7 @@ function renderProxies() {
             <div class="actions">
                 ${p.web_link ? `<a class="btn primary" href="${escAttr(p.web_link)}">🌐 Подключить Web</a>` : ''}
                 ${p.mtproto_link ? `<a class="btn" href="${escAttr(p.mtproto_link)}">🔌 MTProto</a>` : ''}
-                <button class="btn ghost" onclick="copy('${escAttr(p.mtproto_link || p.web_link || '')}','Ссылка')">📋</button>
+                <button class="btn ghost" data-copy="${escAttr(p.mtproto_link || p.web_link || '')}" data-copy-label="Ссылка">📋</button>
                 ${active ? `<button class="btn ok" onclick="openRenew(${p.id})">♻️ Продлить</button>` : ''}
             </div>
         </div>`;
@@ -487,10 +505,10 @@ function renderRef() {
             <div class="ref-stat"><b>${r.earned} ${DATA.currency_sign}</b><span>заработано</span></div>
         </div>
         <div class="sec-title">Твоя ссылка</div>
-        <div class="reflink" onclick="copy('${escAttr(r.link)}','Ссылка')"><b>${esc(r.link)}</b></div>
+        <div class="reflink" data-copy="${escAttr(r.link)}" data-copy-label="Ссылка"><b>${esc(r.link)}</b></div>
         <div class="actions">
             <button class="btn primary" onclick="shareRef()">📤 Поделиться</button>
-            <button class="btn" onclick="copy('${escAttr(r.link)}','Ссылка')">📋 Копировать</button>
+            <button class="btn" data-copy="${escAttr(r.link)}" data-copy-label="Ссылка">📋 Копировать</button>
         </div>
         <p class="note" style="margin-top:14px">Заработанное падает прямо на баланс — им можно продлевать прокси без оплаты картой.</p>`;
 }
@@ -624,7 +642,7 @@ function showRequisites(paymentId, priceText) {
     openSheet(`
         <h3>Оплата #${paymentId}</h3>
         <div class="sub">Переведите <b style="color:var(--text)">${esc(priceText)}</b> по реквизитам и нажмите «Я оплатил» — админ подтвердит, и доступ придёт автоматически.</div>
-        ${rows.map(([l, v]) => `<div class="req" onclick="copy('${escAttr(v)}','${esc(l)}')">
+        ${rows.map(([l, v]) => `<div class="req" data-copy="${escAttr(v)}" data-copy-label="${esc(l)}">
             <span class="lbl">${l}</span><span class="val">${esc(v)}</span></div>`).join('')}
         <button class="btn ok wide" onclick="markPaid(${paymentId})">✅ Я оплатил</button>
         <div class="note">Если что-то пойдёт не так — поддержка: ${esc(DATA.support)}</div>
@@ -642,6 +660,7 @@ async function markPaid(paymentId) {
 
 // ── Пополнение ──
 function openDeposit() {
+    if (!DATA) { toast('Ещё загружаюсь, секунду…'); return; }
     haptic('light');
     const presets = [100, 300, 500, 1000];
     openSheet(`
