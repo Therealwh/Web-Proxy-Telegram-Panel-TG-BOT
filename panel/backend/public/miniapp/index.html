@@ -197,7 +197,7 @@
 <div class="wrap">
     <div id="booterr" style="display:none; background:rgba(255,92,92,.15); color:#ff9a9a; border:1px solid rgba(255,92,92,.4); border-radius:12px; padding:10px 12px; margin-bottom:10px; font-size:12.5px; word-break:break-word;"></div>
     <div class="header">
-        <div class="hello" id="hello">Личный кабинет<small id="helloSub">загрузка… v1.30.4</small></div>
+        <div class="hello" id="hello">Личный кабинет<small id="helloSub">загрузка… v1.30.5</small></div>
         <button class="balance-chip" id="balanceChip" onclick="openDeposit()">
             <b id="balanceVal">—</b><span>пополнить</span>
         </button>
@@ -366,17 +366,39 @@ function showBootError(msg) {
     showTab('proxies');
 }
 
+// initData приходит и через tg.initData, и через location.hash (tgWebAppData) —
+// старые клиенты заполняют только хеш. Берём первое непустое.
+function extractInitData() {
+    if (tg && tg.initData) return tg.initData;
+    try {
+        const m = (location.hash || '').match(/tgWebAppData=([^&]+)/);
+        if (m) return decodeURIComponent(m[1]);
+    } catch (e) { /* нет хеша — не страшно */ }
+    return '';
+}
+
 async function boot() {
     try { initTg(); } catch (e) { /* даже это не должно останавливать загрузку */ }
     if (!tg) {
         showBootError('Скрипт Telegram не загрузился. Закройте приложение и откройте его из бота ещё раз.');
         return;
     }
-    const initData = tg.initData || '';
+    const initData = extractInitData();
     if (!initData) {
+        // Диагностика вместо тупика: видно, откуда открыто и дошёл ли вход
+        let env;
+        try {
+            env = 'платформа: ' + (tg.platform || 'неизвестна') +
+                  ' · клиент: ' + (tg.version || '?') +
+                  ' · данные входа в ссылке: ' + (/tgWebAppData=/.test(location.hash || '') ? 'есть' : 'нет');
+        } catch (e) { env = ''; }
         document.getElementById('hello').innerHTML = 'Откройте через бота<small>приложение работает внутри Telegram</small>';
         document.getElementById('page-proxies').innerHTML =
-            '<div class="empty"><div class="big">🤖</div><p>Это приложение открывается из нашего бота.<br>Найдите его в чате и нажмите «📱 Приложение».</p></div>';
+            '<div class="empty"><div class="big">🤖</div>' +
+            '<p>Это приложение открывается из нашего бота:<br>открой чат с ботом и нажми «📱 Приложение» внизу.</p>' +
+            '<button class="btn primary" onclick="boot()">↻ Проверить снова</button>' +
+            (env ? `<p class="note" style="margin-top:14px">${esc(env)}</p>` : '') +
+            '</div>';
         showTab('proxies');
         return;
     }
