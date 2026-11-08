@@ -90,6 +90,11 @@ export default function Nodes() {
                             </button>
                         } />
 
+            <div className="flex items-start gap-2.5 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-600 dark:text-amber-400">
+                <span>⚠️</span>
+                <span>{t('nodes.beta')}</span>
+            </div>
+
             <Card title={t('nodes.listTitle')}>
                 <div className="overflow-x-auto">
                     <table className="w-full text-sm min-w-[760px]">

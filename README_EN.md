@@ -78,6 +78,7 @@
 | 🧭 **Setup wizard** | A dashboard card listing unfinished steps — disappears on its own once everything is set |
 | 🩺 **System check** | One-click diagnostics: versions, services, resources, database integrity, backups, security |
 | 🔄 **Updates** | Auto-updates with live progress and rollback, domain change from the panel |
+| 🖧 **Multi-server** | Locations: servers in different countries. The bot asks for a location at purchase, clients can switch it themselves — a move keeps term, traffic and secret |
 | 💾 **Backups** | Automatic with retention, file export and restore, delivery to Telegram |
 | 🔔 **Notifications** | Telegram alerts: service down, DC degradation, low disk, new client |
 | 🎨 **Interface** | Dark and light themes, accent colours, RU/EN, live map |
@@ -93,6 +94,10 @@
 
 - **TGGATE panel**: https://github.com/Therealwh/Web-Proxy-Telegram-Panel-TG-BOT
 - **Telemt** (proxy server): https://github.com/telemt/telemt
+
+> ⚠️ **Multi-server (locations) is a new feature, currently in beta.**
+> Core scenarios are verified on live servers, but if you notice anything odd with nodes —
+> [open an Issue](https://github.com/Therealwh/Web-Proxy-Telegram-Panel-TG-BOT/issues) or reach us on Telegram: **@tggatetopsupport**.
 
 ## 📸 Screenshots
 

@@ -305,6 +305,7 @@ export default {
         fMaxHint: 'Empty — unlimited',
         fEnabled: 'Node enabled',
         howTitle: 'How to add a node',
+        beta: 'This feature is in beta: core scenarios are verified, but if anything looks off with nodes — please report to support (@tggatetopsupport).',
         how1: '1. Get a VPS in the target country and point a domain (e.g. de1.yourdomain.com) A-record to its IP.',
         how2: '2. Install Telemt there (as on this server), set the node domain in its telemt.toml, and open Control API (port 9091) to this panel IP only.',
         how3: '3. Add the node here — the bot will offer a location choice at purchase, and client cards get a Location button.',
