@@ -163,11 +163,12 @@ footer b{color:var(--yellow)}
 
 .touchpad{-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}
 .touchpad{position:fixed; left:0; right:0; bottom:0; display:none; justify-content:space-between; align-items:flex-end;
-  padding:16px 24px; z-index:60; pointer-events:none}
+  padding:12px 18px calc(12px + env(safe-area-inset-bottom)); z-index:60; pointer-events:none}
 @media (pointer:coarse){.touchpad{display:flex}}
-.dpad{display:grid; grid-template-columns:repeat(3,56px); grid-template-rows:repeat(3,56px); gap:5px; pointer-events:auto}
-.dbtn{background:rgba(28,32,50,.8); border:2px solid #3c425e; border-radius:12px; color:#cfd4ea; font-size:20px;
-  touch-action:none; user-select:none}
+.dpad{display:grid; grid-template-columns:repeat(3,58px); grid-template-rows:repeat(3,58px); gap:6px; pointer-events:auto}
+.dbtn{background:rgba(28,32,50,.86); border:2px solid #3c425e; border-radius:12px; color:#cfd4ea; font-size:20px;
+  touch-action:none; user-select:none; -webkit-user-select:none; -webkit-touch-callout:none;
+  pointer-events:auto; touch-action:none}
 .dbtn:active{background:var(--yellow); color:#181206; border-color:var(--yellow)}
 #btnFire{width:88px; height:88px; border-radius:50%; pointer-events:auto; touch-action:none; user-select:none;
   background:radial-gradient(circle at 35% 30%, #ff7a6c, #c2271b); border:3px solid #ff9a8e;
@@ -183,3 +184,38 @@ footer b{color:var(--yellow)}
   .ed-actions{flex-direction:row; flex-wrap:wrap; justify-content:center}
   .hint{display:none}
 }
+
+
+/* ── Мой рекорд и смена ника ── */
+.mybest{color:#9aa3c0; font-size:14px; margin:2px 0 14px}
+.mybest b{color:var(--yellow)}
+.nickbtn{background:rgba(28,32,50,.8); border:1px solid #3c425e; border-radius:8px; color:#cfd4ea;
+  font-family:inherit; font-size:12px; padding:3px 9px; margin-left:8px; cursor:pointer}
+.nickbtn:hover{border-color:var(--yellow); color:var(--yellow)}
+
+/* ── Гейт ника перед игрой ── */
+.nick-gate{position:fixed; inset:0; z-index:200; background:rgba(5,7,14,.86); backdrop-filter:blur(6px);
+  display:none; align-items:center; justify-content:center; padding:20px}
+.nick-gate.open{display:flex}
+.nick-card{background:#141828; border:2px solid #3c425e; border-radius:18px; padding:26px 24px;
+  max-width:400px; width:100%; text-align:center; box-shadow:0 20px 60px rgba(0,0,0,.6)}
+.nick-logo{font-size:44px; margin-bottom:8px}
+.nick-card h2{font-family:'Rubik Mono One','Arial Black',system-ui,sans-serif; color:var(--yellow);
+  font-size:17px; letter-spacing:.06em; margin-bottom:10px}
+.nick-card p{color:#9aa3c0; font-size:13.5px; line-height:1.5; margin-bottom:16px}
+#nickInput{width:100%; background:#0d1020; border:2px solid #3c425e; border-radius:12px; color:#eef1fa;
+  font-family:inherit; font-size:17px; font-weight:700; text-align:center; padding:13px 14px;
+  outline:none; letter-spacing:.04em}
+#nickInput:focus{border-color:var(--yellow)}
+.nick-err{color:#ff7a6c; font-size:12.5px; margin-top:8px}
+.nick-save{width:100%; margin-top:14px; background:linear-gradient(135deg, var(--yellow), #ffb52e); border:none;
+  border-radius:12px; padding:13px; color:#181206; font-family:'Rubik Mono One','Arial Black',system-ui,sans-serif;
+  font-size:14px; letter-spacing:.08em; cursor:pointer}
+.nick-save:active{transform:scale(.97)}
+#nickInput.shake{animation:shake .35s}
+@keyframes shake{0%,100%{transform:none}25%{transform:translateX(-7px)}75%{transform:translateX(7px)}}
+
+/* Подсветка своей строки в таблице рекордов */
+.scores li.me{background:rgba(255,213,79,.09); outline:1px solid rgba(255,213,79,.25); border-radius:8px}
+.scores li.me .nick{color:var(--yellow)}
+.scores .you{color:var(--yellow); font-weight:700; font-size:.9em}

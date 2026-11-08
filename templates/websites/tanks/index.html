@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>Танчики — играть онлайн бесплатно в браузере | Battle City ретро-аркада</title>
 <meta name="description" content="Танчики — бесплатная браузерная игра в стиле Battle City: 15 уровней, редактор карт, бонусы и таблица рекордов. Играть онлайн на компьютере и телефоне без установки и регистрации.">
 <meta name="keywords" content="танчики играть онлайн, battle city, денди, танки браузерная игра, ретро аркада, танчики 1990, бесплатно, без установки, 8 бит, ностальгия">
@@ -119,26 +119,6 @@
 </header>
 
 <main>
-
-
-<div class="drift t1" aria-hidden="true"></div>
-<div class="drift t2" aria-hidden="true"></div>
-
-<header>
-  <div class="logo">
-    <div id="logoTank"></div>
-    <div>
-      <h1>ТАНЧИКИ</h1>
-      <p class="sub">BATTLE CITY · DENDY EDITION</p>
-    </div>
-  </div>
-  <div class="chips">
-    <div class="chip score" id="chipScoreWrap">СЧЁТ <b id="chipScore">0</b></div>
-    <div class="chip hi">РЕКОРД <b id="chipHi">0</b></div>
-  </div>
-</header>
-
-<main>
   <section class="tv-wrap">
     <div class="tv">
       <div class="bezel-top"><span class="brand">DENDY · 8-BIT</span><span class="led"></span></div>
@@ -191,7 +171,7 @@
         <div class="krow"><kbd class="red wide">ПРОБЕЛ</kbd><em>огонь</em></div>
       </div>
       <div>
-        <div class="krow"><kbd class="wider">ENTER</kbd><em>старт / выбор</em><kbd>P</kbd><em>пауза</em><kbd>M</kbd><em>звук</em></div>
+        <div class="krow"><kbd class="wider">ENTER</kbd><em>старт / выбор</em><kbd>P</kbd><em>пауза</kbd><kbd>M</kbd><em>звук</em></div>
         <div class="krow"><kbd>E</kbd><em>выйти из теста карты</em><kbd>[</kbd><kbd>]</kbd><em>слоты в редакторе</em></div>
       </div>
     </div>
@@ -208,11 +188,11 @@
 
 <div class="touchpad">
   <div class="dpad">
-    <span></span><button class="dbtn" data-dir="0">▲</button><span></span>
-    <button class="dbtn" data-dir="3">◀</button><span></span><button class="dbtn" data-dir="2">▶</button>
-    <span></span><span></span><span></span>
+    <span></span><button class="dbtn" data-dir="0" aria-label="Вверх">▲</button><span></span>
+    <button class="dbtn" data-dir="3" aria-label="Влево">◀</button><span></span><button class="dbtn" data-dir="2" aria-label="Вправо">▶</button>
+    <span></span><button class="dbtn" data-dir="1" aria-label="Вниз">▼</button><span></span>
   </div>
-  <button id="btnFire">ОГОНЬ</button>
+  <button id="btnFire" aria-label="Огонь">ОГОНЬ</button>
 </div>
 
   <!-- SEO-контент для поисковиков: текст виден и людям, и краулеру -->
@@ -241,7 +221,7 @@
       <dt>Работает ли на телефоне?</dt>
       <dd>Да. На сенсорном экране появляются кнопки движения и огня.</dd>
       <dt>Нужна ли регистрация?</dt>
-      <dd>Нет. Чтобы попасть в таблицу рекордов, достаточно указать имя после игры.</dd>
+      <dd>Нет. При первом запуске достаточно ввести ник — он сохранится в браузере.</dd>
       <dt>Сколько уровней в игре?</dt>
       <dd>15 уровней, а в редакторе карт можно создавать свои без ограничений.</dd>
     </dl>
@@ -249,6 +229,7 @@
 
   <section class="card" id="scores">
     <h2>ТАБЛИЦА РЕКОРДОВ</h2>
+    <p class="mybest" id="myBest">Ваш рекорд: <b>0</b> <button id="btnNick" class="nickbtn" title="Сменить ник">✏️ ник</button></p>
     <ol id="scores-list" class="scores">
       <li class="empty">Загрузка рекордов…</li>
     </ol>
@@ -257,13 +238,17 @@
 
 <footer>Сделано на чистом <b>HTML5 Canvas</b> · 15 уровней + <b>редактор карт</b> с 8 слотами · береги орла! 🦅</footer>
 
-<div class="touchpad">
-  <div class="dpad">
-    <span></span><button class="dbtn" data-dir="0" aria-label="Вверх">▲</button><span></span>
-    <button class="dbtn" data-dir="3" aria-label="Влево">◀</button><span></span><button class="dbtn" data-dir="2" aria-label="Вправо">▶</button>
-    <span></span><span></span><span></span>
+<!-- Гейт: ввод ника перед игрой -->
+<div class="nick-gate" id="nickGate" aria-hidden="true">
+  <div class="nick-card">
+    <div class="nick-logo">🎮</div>
+    <h2>ПРЕДСТАВЬСЯ, ТАНКИСТ</h2>
+    <p>Ник появится в таблице рекордов и сохранится в этом браузере.</p>
+    <input id="nickInput" maxlength="16" autocomplete="off" spellcheck="false"
+           placeholder="Твой ник" inputmode="text">
+    <div class="nick-err" id="nickErr" hidden>Введите ник — хотя бы 2 символа</div>
+    <button id="nickSave" class="nick-save">▶ В БОЙ</button>
   </div>
-  <button id="btnFire" aria-label="Огонь">ОГОНЬ</button>
 </div>
 
 <script src="game.js"></script>

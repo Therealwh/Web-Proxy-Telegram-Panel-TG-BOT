@@ -379,6 +379,7 @@ cv.addEventListener('contextmenu',e=>e.preventDefault());
 cv.addEventListener('pointerdown',e=>{
   SND.init(); SND.resume();
   if(G.state==='title'){
+    if(!getNick()){showNickGate();return;}
     const p=canvasPos(e);
     if(p.y>232&&p.y<262)runMenu(0); else if(p.y>=262&&p.y<292)runMenu(1); else runMenu(G.menuIndex);
     return;
