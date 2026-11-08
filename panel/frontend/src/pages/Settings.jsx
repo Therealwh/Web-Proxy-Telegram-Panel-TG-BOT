@@ -7,7 +7,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Save,
     Globe, Bell, RefreshCcw, Palette, Database, ScrollText, Satellite, Radar,
-    Search, Check, Loader2, AlertCircle, SlidersHorizontal,
+    Search, Check, Loader2, AlertCircle, SlidersHorizontal, GitBranch,
 } from 'lucide-react';
 import { get, post, put } from '../api';
 import { toast, useThemeStore } from '../store';
@@ -90,6 +90,12 @@ const CATEGORIES = (t) => [
             { key: 'avail_target', label: t('settings.fAvailTarget'), hint: t('settings.fAvailTargetHint') },
             { key: 'avail_port', label: t('settings.fAvailPort'), hint: t('settings.fAvailPortHint'), type: 'number' },
             { key: 'avail_token', label: t('settings.fAvailToken'), hint: t('settings.fAvailTokenHint'), secret: true },
+        ],
+    },
+    {
+        id: 'updates', Icon: GitBranch, title: t('settings.catUpdates'),
+        fields: [
+            { key: 'github_api_token', label: t('settings.fGithubToken'), hint: t('settings.fGithubTokenHint'), secret: true },
         ],
     },
 ];

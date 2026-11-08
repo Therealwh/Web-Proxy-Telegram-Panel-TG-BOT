@@ -78,6 +78,9 @@ const DEFAULTS = {
     avail_target: null,                // цель (по умолчанию — домен панели)
     avail_port: null,                  // порт (по умолчанию — порт MTProto)
     avail_token: null,                 // токен Globalping (квота 500/час вместо 250)
+
+    // 🔄 Проверка версий (GitHub API)
+    github_api_token: null,            // токен GitHub: 5000 запросов/час вместо 60, стабильнее при сбоях
 };
 
 /** Читает все настройки, подставляя дефолты. */
@@ -103,6 +106,7 @@ router.get('/', (req, res) => {
     const settings = getAll();
     // Секреты отдаём частично (только признак «задано»)
     if (settings.tg_bot_token) settings.tg_bot_token = '••••••' + String(settings.tg_bot_token).slice(-4);
+    if (settings.github_api_token) settings.github_api_token = '••••••' + String(settings.github_api_token).slice(-4);
     if (settings.bot_settings) {
         settings.bot_settings = { ...settings.bot_settings };
         for (const secretKey of ['bot_token', 'cryptobot_token', 'yookassa_secret_key']) {
@@ -118,6 +122,7 @@ router.get('/', (req, res) => {
 router.put('/', (req, res, next) => {
     try {
         let maskDomainChanged = false;
+        let ghTokenChanged = false;
         const schema = z.record(z.unknown());
         const data = schema.parse(req.body);
 
@@ -128,6 +133,12 @@ router.put('/', (req, res, next) => {
 
         // Разрешаем менять только известные ключи; секрет «••••» не перезаписываем
         const allowed = new Set(Object.keys(DEFAULTS));
+
+        // Токен GitHub: пусто/пробелы → null (токен снят)
+        if (data.github_api_token !== undefined) {
+            const s = String(data.github_api_token ?? '').trim();
+            data.github_api_token = s || null;
+        }
 
         // Домены протоколов: пусто/пробел → null; иначе валидный FQDN в нижнем регистре
         const normalizeDomain = (v) => {
@@ -153,6 +164,10 @@ router.put('/', (req, res, next) => {
             for (const [key, value] of Object.entries(data)) {
                 if (!allowed.has(key)) continue;
                 if (key === 'tg_bot_token' && String(value).startsWith('••••')) continue;
+                if (key === 'github_api_token') {
+                    if (String(value).startsWith('••••')) continue;   // маску не сохраняем
+                    if (value !== getAll().github_api_token) ghTokenChanged = true;
+                }
                 upsert.run(key, JSON.stringify(value));
             }
         })();
@@ -166,8 +181,16 @@ router.put('/', (req, res, next) => {
                 .catch(() => { /* проверка не должна ломать сохранение */ });
         }
 
+        // Смена токена GitHub: сбрасываем кэш релизов, чтобы следующая
+        // проверка версий сразу ушла с новым токеном, а не из кэша.
+        if (ghTokenChanged) {
+            db.prepare('DELETE FROM settings WHERE key = ?').run('gh_cache');
+            require('../services/versionInfo').clearStatusCache();
+        }
+
         const all = getAll();
         if (all.tg_bot_token) all.tg_bot_token = '••••••' + String(all.tg_bot_token).slice(-4);
+        if (all.github_api_token) all.github_api_token = '••••••' + String(all.github_api_token).slice(-4);
         if (all.bot_settings?.bot_token) {
             all.bot_settings = { ...all.bot_settings };
             for (const sk of ['bot_token', 'cryptobot_token', 'yookassa_secret_key']) {

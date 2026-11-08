@@ -68,6 +68,22 @@ function getTelemtVersion() {
 }
 
 /**
+ * Токен GitHub API из настроек панели (Настройки → Обновления).
+ * Аутентифицированные запросы получают 5000 запросов/час вместо 60
+ * и не попадают под сбои GitHub для неавторизованных запросов.
+ * Токен никогда не попадает в логи.
+ */
+function getGithubToken() {
+    try {
+        const row = require('../db').prepare('SELECT value FROM settings WHERE key = ?').get('github_api_token');
+        const v = row ? JSON.parse(row.value) : null;
+        return (typeof v === 'string' && v.trim()) || null;
+    } catch {
+        return null;
+    }
+}
+
+/**
  * Список последних релизов репозитория с GitHub.
  * При сбое/лимите — отдаём последний успешный кэш из БД (до 24 ч).
  */
@@ -81,11 +97,19 @@ async function getReleases(apiUrl, limit = 10) {
     }
 
     try {
+        const headers = { 'User-Agent': 'TGGATE-Panel', Accept: 'application/vnd.github+json' };
+        const token = getGithubToken();
+        if (token) headers.Authorization = `Bearer ${token}`;
+
         const res = await fetch(`${apiUrl}?per_page=20`, {
-            headers: { 'User-Agent': 'TGGATE-Panel', Accept: 'application/vnd.github+json' },
+            headers,
             signal: AbortSignal.timeout(10000),
         });
-        if (!res.ok) throw new Error(`GitHub HTTP ${res.status}`);
+        if (!res.ok) {
+            throw new Error(res.status === 401
+                ? 'GitHub отклонил токен (HTTP 401) — проверьте его на github.com/settings/tokens'
+                : `GitHub HTTP ${res.status}`);
+        }
         const list = await res.json();
         const releases = (Array.isArray(list) ? list : []).map((r) => ({
             tag: String(r.tag_name || '').replace(/^v/, ''),
