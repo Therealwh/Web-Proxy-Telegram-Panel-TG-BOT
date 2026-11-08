@@ -7,7 +7,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Save,
     Globe, Bell, RefreshCcw, Palette, Database, ScrollText, Satellite, Radar,
-    Search, Check, Loader2, AlertCircle, SlidersHorizontal, GitBranch,
+    Search, Check, Loader2, AlertCircle, SlidersHorizontal, GitBranch, Users,
 } from 'lucide-react';
 import { get, post, put } from '../api';
 import { toast, useThemeStore } from '../store';
@@ -96,6 +96,14 @@ const CATEGORIES = (t) => [
         id: 'updates', Icon: GitBranch, title: t('settings.catUpdates'),
         fields: [
             { key: 'github_api_token', label: t('settings.fGithubToken'), hint: t('settings.fGithubTokenHint'), secret: true },
+        ],
+    },
+    {
+        id: 'referral', Icon: Users, title: t('settings.catReferral'),
+        fields: [
+            { key: 'referral_mode', label: t('settings.fRefMode'), hint: t('settings.fRefModeHint'), type: 'select',
+              options: [['percent', t('settings.refPercent')], ['days', t('settings.refDays')], ['off', t('settings.qrOff')]] },
+            { key: 'referral_percent', label: t('settings.fRefPercent'), hint: t('settings.fRefPercentHint'), type: 'number' },
         ],
     },
 ];

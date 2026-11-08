@@ -16,6 +16,7 @@ const path = require('path');
 const fs = require('fs');
 const db = require('../db');
 const { deductBalanceSpread } = require('../utils/balance');
+const referral = require('../utils/referral');
 const telemt = require('./telemtApi');
 const { clientLinks } = require('./links');
 const { getAll } = require('../routes/settings');
@@ -169,11 +170,16 @@ function isAdmin(ctx) {
 
 /** Reply-клавиатура снизу (постоянная). */
 function mainReplyKeyboard(ctx) {
+    const refOff = (getAll().referral_mode || 'percent') === 'off';
     const kb = new Keyboard().resized().persistent()
         .text('🚀 Тарифы', { style: 'success' }).row()
-        .text('🎁 Тест 3 часа').text('📱 Личный кабинет', { style: 'primary' }).row()
-        .text('🤝 Рефералы').text('🛟 Поддержка').row()
-        .text('📱 Как подключить').row();
+        .text('🎁 Тест 3 часа').text('📱 Личный кабинет', { style: 'primary' }).row();
+    if (refOff) {
+        kb.text('🛟 Поддержка').row();
+    } else {
+        kb.text('🤝 Рефералы').text('🛟 Поддержка').row();
+    }
+    kb.text('📱 Как подключить').row();
     if (isAdmin(ctx)) kb.text('👑 Админ-панель').row();
     return kb;
 }
@@ -452,9 +458,12 @@ function totalBalance(tgId) {
 
 /**
  * Выдаёт доступ покупателю по telegram_id (вебхуки оплаты, баланс, админка).
- * Каждая покупка создаёт НОВЫЙ прокси. Начисляет реферальный бонус.
+ * Каждая покупка создаёт НОВЫЙ прокси. Начисляет реферальное вознаграждение.
+ * @param {object} [opts] - { moneyIn: boolean } — платёж «живыми» деньгами
+ *   (шлюз/пополнение). Покупки с внутреннего баланса (moneyIn: false) в режиме
+ *   «% на баланс» повторно не вознаграждаются — % уже начислен при пополнении.
  */
-async function issueAccessFor(tgId, tariff, paymentId) {
+async function issueAccessFor(tgId, tariff, paymentId, opts = {}) {
     const settings = getAll();
     const expires = new Date(Date.now() + tariff.days * 86400000).toISOString();
 
@@ -539,8 +548,23 @@ if (links.mtproto_https) text += `🔌 <b>MTProto</b>:\n${links.mtproto_https}\n
         `💰 <b>Новая продажа!</b>\n📦 ${tariff.name} — ${tariff.price} ${currencySign(tariff.currency)}\n👤 ${username}\n📅 Доступ до ${fmtMSK(expires, false)}`
     ).catch(() => {});
 
-    payReferralBonus(client.id, tariff.days).catch((e) =>
-        logger.warn('Не удалось начислить реферальный бонус', { error: e.message }));
+    // Реферальное вознаграждение: «% на баланс» — только за живые деньги,
+    // «бонусные дни» (легаси) — как раньше, на любую покупку
+    const refMode = (getAll().referral_mode || 'percent');
+    const moneyIn = opts.moneyIn !== undefined ? !!opts.moneyIn : Boolean(paymentId);
+    if (refMode === 'days') {
+        payReferralBonus(client.id, tariff.days).catch((e) =>
+            logger.warn('Не удалось начислить реферальный бонус', { error: e.message }));
+    } else if (refMode === 'percent' && moneyIn) {
+        try {
+            referral.payReferral({
+                referredClientId: client.id, amount: tariff.price,
+                kind: 'purchase', currency: tariff.currency,
+            });
+        } catch (e) {
+            logger.warn('Не удалось начислить реферальный процент', { error: e.message });
+        }
+    }
 
     return client;
 }
@@ -854,16 +878,17 @@ async function start() {
         // иначе метка терялась у неподписанных новичков
         try {
             if (ctx.payload && String(ctx.payload).startsWith('ref_') && from && !from.is_bot) {
-                const refTgId = Number(String(ctx.payload).slice(4));
-                if (refTgId && refTgId !== from.id && !refPending.has(from.id)) {
-                    const referrer = db.prepare('SELECT id FROM clients WHERE telegram_id = ?').get(refTgId);
-                    if (referrer) {
-                        refPending.set(from.id, referrer.id);
+                const referrerId = referral.resolveRefPayload(ctx.payload);
+                if (referrerId && !refPending.has(from.id)) {
+                    // Самоприглашение (свой код/свой telegram_id) — отклоняем
+                    const self = db.prepare('SELECT telegram_id FROM clients WHERE id = ?').get(referrerId);
+                    if (self?.telegram_id !== from.id) {
+                        refPending.set(from.id, referrerId);
                         db.prepare(
                             'INSERT INTO referral_pending (telegram_id, referrer_id) VALUES (?, ?) ' +
                             'ON CONFLICT(telegram_id) DO UPDATE SET referrer_id = excluded.referrer_id'
-                        ).run(from.id, referrer.id);
-                        logger.info('Реферал: переход зафиксирован', { tgId: from.id, referrer: referrer.id });
+                        ).run(from.id, referrerId);
+                        logger.info('Реферал: переход зафиксирован', { tgId: from.id, referrer: referrerId });
                     }
                 }
             }
@@ -962,23 +987,24 @@ bot.on('message:text', async (ctx, next) => {
     // ═══ 2. /start и reply-клавиатура ═══
     bot.command('start', async (ctx) => {
         if (ctx.payload && ctx.payload.startsWith('ref_')) {
-            const refTgId = Number(ctx.payload.slice(4));
-            const referrer = db.prepare('SELECT id FROM clients WHERE telegram_id = ?').get(refTgId);
-            if (referrer && refTgId !== ctx.from.id) {
-                refPending.set(ctx.from.id, referrer.id);
+            const referrerId = referral.resolveRefPayload(ctx.payload);
+            const self = referrerId
+                ? db.prepare('SELECT telegram_id FROM clients WHERE id = ?').get(referrerId) : null;
+            if (referrerId && self?.telegram_id !== ctx.from.id) {
+                refPending.set(ctx.from.id, referrerId);
                 db.prepare(
                     'INSERT INTO referral_pending (telegram_id, referrer_id) VALUES (?, ?) ' +
                     'ON CONFLICT(telegram_id) DO UPDATE SET referrer_id = excluded.referrer_id'
-                ).run(ctx.from.id, referrer.id);
+                ).run(ctx.from.id, referrerId);
                 // Бэкфилл: прокси получен до перехода — проставляем сразу
                 const backfilled = db.prepare(
                     'UPDATE clients SET referrer_id = ? WHERE telegram_id = ? AND referrer_id IS NULL'
-                ).run(referrer.id, ctx.from.id);
+                ).run(referrerId, ctx.from.id);
                 if (backfilled.changes > 0) {
-                    logger.info('Реферал: referrer проставлен задним числом', { tgId: ctx.from.id, referrer: referrer.id });
+                    logger.info('Реферал: referrer проставлен задним числом', { tgId: ctx.from.id, referrer: referrerId });
                 }
-                logger.info('Реферал: переход по ссылке зафиксирован', { tgId: ctx.from.id, referrer: referrer.id });
-            } else if (refTgId === ctx.from.id) {
+                logger.info('Реферал: переход по ссылке зафиксирован', { tgId: ctx.from.id, referrer: referrerId });
+            } else if (referrerId && self?.telegram_id === ctx.from.id) {
                 logger.warn('Реферал: самоприглашение отклонено', { tgId: ctx.from.id });
             }
         }
@@ -1046,25 +1072,44 @@ bot.on('message:text', async (ctx, next) => {
     });
 
     bot.hears('🤝 Рефералы', async (ctx) => {
+        const settings = getAll();
+        const mode = settings.referral_mode || 'percent';
         let botUsername = '';
         try { botUsername = (await bot.api.getMe()).username; } catch { /* нет связи */ }
         const me = db.prepare('SELECT id FROM clients WHERE telegram_id = ?').get(ctx.from.id);
-        const converted = me
-            ? db.prepare('SELECT COUNT(*) AS c FROM clients WHERE referrer_id = ?').get(me.id).c
-            : 0;
-        const pendingRefs = me
-            ? db.prepare('SELECT COUNT(*) AS c FROM referral_pending WHERE referrer_id = ?').get(me.id).c
-            : 0;
-        const invited = converted + pendingRefs;
-        const link = botUsername ? `https://t.me/${botUsername}?start=ref_${ctx.from.id}` : 'появится позже';
+        if (!me) {
+            return ctx.reply(
+                '🤝 <b>Реферальная программа</b>\n\nСтанет доступна после получения прокси — возьмите тариф или бесплатный тест!',
+                { parse_mode: 'HTML' }
+            );
+        }
+        const code = referral.ensureReferralCode(me.id);
+        const st = referral.userStats(me.id);
+        const link = botUsername && code ? `https://t.me/${botUsername}?start=ref_${code}` : 'появится позже';
+
+        let rewardText;
+        let earnedLine = '\n';
+        if (mode === 'percent') {
+            const sign = settings.currency === 'RUB' ? '₽' : settings.currency === 'USD' ? '$' : settings.currency === 'EUR' ? '€' : settings.currency || '';
+            rewardText =
+                `Приглашайте друзей — получайте <b>${settings.referral_percent ?? 10}% с каждой их оплаты</b> прямо на баланс!\n` +
+                `Балансом можно продлевать прокси без оплаты картой.`;
+            earnedLine = `💵 Заработано: <b>${st.earned}${sign ? ' ' + sign : ''}</b>\n\n`;
+        } else if (mode === 'days') {
+            rewardText =
+                `Приглашайте друзей — получайте <b>бесплатные дни</b>:\n` +
+                `• Друг покупает 1 месяц → вам <b>+10 дней</b>\n` +
+                `• 2 месяца и больше → <b>+25% срока</b>`;
+        } else {
+            rewardText = 'Реферальная программа сейчас отключена, но ваша ссылка уже готова — вдруг включат 😉';
+        }
+
         await ctx.reply(
-            `🤝 <b>Реферальная программа</b>\n\n` +
-            `Приглашайте друзей — получайте <b>бесплатные дни</b>:\n` +
-            `• Друг покупает 1 месяц → вам <b>+10 дней</b>\n` +
-            `• 2 месяца → <b>+15 дней</b>\n` +
-            `• Чем длиннее тариф — тем больше бонус!\n\n` +
-            `👥 Приглашено: <b>${invited}</b>${pendingRefs > 0 ? ` (${converted} с прокси, ${pendingRefs} проходят тест)` : ''}\n\n` +
-            `🔗 <b>Ваша ссылка:</b>\n<code>${link}</code>`,
+            `🤝 <b>Реферальная программа</b>\n\n${rewardText}\n\n` +
+            `👥 Приглашено: <b>${st.invited + st.pending}</b>${st.pending > 0 ? ` (${st.invited} с прокси, ${st.pending} присматриваются)` : ''}\n` +
+            earnedLine +
+            `🔗 <b>Ваша ссылка:</b>\n<code>${link}</code>\n\n` +
+            `Друг переходит по ссылке — и он закрепляется за вами навсегда: вознаграждение капает с каждой его оплаты.`,
             { parse_mode: 'HTML', disable_web_page_preview: true }
         );
     });
@@ -1308,7 +1353,7 @@ bot.on('message:text', async (ctx, next) => {
             return ctx.answerCallbackQuery({ text: 'Недостаточно средств на балансе', show_alert: true });
         }
         try {
-            await issueAccessFor(ctx.from.id, tariff, paymentId);
+            await issueAccessFor(ctx.from.id, tariff, paymentId, { moneyIn: false });
         } catch (e) {
             // Возврат ровно затронутым строкам (а не всем клиентам по telegram_id)
             db.transaction((rows) => {

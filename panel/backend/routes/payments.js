@@ -89,6 +89,13 @@ async function completePayment(paymentId) {
                 const { notifyAdmin } = require('../services/notifier');
                 await notifyAdmin(getAll(), `🔄 <b>Прокси продлён</b>\n📦 ${client.username} — до ${fmt(newExpiry)}\n👤 tg${payment.telegram_id}`);
             } catch { /* уведомление не критично */ }
+            // Рефералка: % с продления шлюзом — рефереру на баланс
+            try {
+                require('../utils/referral').payReferral({
+                    referredClientId: client.id, amount: payment.amount,
+                    kind: 'renewal', currency: payment.currency,
+                });
+            } catch (e) { logger.warn('Рефералка: продление', { error: e.message }); }
             logger.info('Прокси продлён', { paymentId, username: client.username });
             return payment;
         }
@@ -117,6 +124,14 @@ async function completePayment(paymentId) {
             await notifyAdmin(getAll(), `💰 <b>Баланс пополнен</b>\n💵 +${payment.amount} ${payment.currency}\n👤 tg${payment.telegram_id}`);
         } catch { /* не критично */ }
         fireWebhook('payment.success', { payment_id: paymentId, amount: payment.amount, currency: payment.currency, kind: 'deposit' });
+        // Рефералка: % с пополнения — рефереру на баланс (даже если у новичка
+        // ещё нет своего прокси — реферер известен из referral_pending)
+        try {
+            require('../utils/referral').payReferral({
+                referredTgId: payment.telegram_id, amount: payment.amount,
+                kind: 'deposit', currency: payment.currency,
+            });
+        } catch (e) { logger.warn('Рефералка: пополнение', { error: e.message }); }
         logger.info('Баланс пополнен', { paymentId, amount: payment.amount });
         return payment;
     }
@@ -125,7 +140,7 @@ async function completePayment(paymentId) {
     if (payment.telegram_id && tariff) {
         const bot = require('../services/bot');
         try {
-            await bot.issueAccessFor(payment.telegram_id, tariff, paymentId);
+            await bot.issueAccessFor(payment.telegram_id, tariff, paymentId, { moneyIn: true });
         } catch (e) {
             backToPending(e);
             throw httpError(502, 'Не удалось выдать доступ — платёж возвращён в очередь, повторите попытку');

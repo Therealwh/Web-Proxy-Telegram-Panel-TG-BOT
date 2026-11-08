@@ -4,7 +4,7 @@ import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { HardDrive,
     LayoutDashboard, Users, BarChart3, ScrollText, Settings, QrCode, Globe,
     Globe2, KeyRound, Bot, RefreshCw, Code2, Moon, Sun, LogOut, Menu, X, Activity, Shield,
-    Webhook, ClipboardList, Stethoscope, SlidersHorizontal, FileText,
+    Webhook, ClipboardList, Stethoscope, SlidersHorizontal, FileText, Gift,
 } from 'lucide-react';
 import { useAuthStore, useThemeStore, useLangStore } from '../store';
 import { get, post, put } from '../api';
@@ -18,6 +18,7 @@ const NAV = [
     { to: '/', icon: LayoutDashboard, label: 'nav.dashboard' },
     { to: '/clients', icon: Users, label: 'nav.clients' },
     { to: '/sales', icon: BarChart3, label: 'nav.sales' },
+    { to: '/referral', icon: Gift, label: 'nav.referral' },
     { to: '/logs', icon: ScrollText, label: 'nav.logs' },
     { to: '/qr', icon: QrCode, label: 'nav.qr' },
     { to: '/website', icon: Globe, label: 'nav.website' },

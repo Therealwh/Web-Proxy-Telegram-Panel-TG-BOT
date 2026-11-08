@@ -109,54 +109,121 @@ router.get('/qrimg/:token([0-9a-f]{16})/:type.png', publicLimiter, async (req, r
 });
 
 // --- Публичная страница статуса ---
+// Пользовательские значения (IP из XFF подделывается!) — только через esc()
+const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+));
+
 router.get('/status', publicLimiter, (req, res) => {
-    // Аптайм за 30 дней по каждому сервису
-    const rows = db.prepare(
-        `SELECT service, COUNT(*) AS total, SUM(ok) AS ok_count
+    const pctColor = (p) => (p >= 99 ? '#10b981' : p >= 95 ? '#f59e0b' : '#ef4444');
+
+    // --- Аптайм сервисов за 30 дней ---
+    const svc30 = {};
+    for (const r of db.prepare(
+        `SELECT service, COUNT(*) AS total, SUM(ok) AS ok_count,
+                AVG(CASE WHEN ok = 1 AND latency_ms IS NOT NULL THEN latency_ms END) AS avg_ms
          FROM uptime_checks WHERE created_at >= datetime('now', '-30 days') GROUP BY service`
-    ).all();
+    ).all()) svc30[r.service] = r;
 
     // Текущее состояние: последняя проверка по каждому сервису
     const last = {};
-    for (const r of db.prepare(
-        'SELECT service, ok FROM uptime_checks ORDER BY id DESC LIMIT 12'
-    ).all()) {
+    for (const r of db.prepare('SELECT service, ok FROM uptime_checks ORDER BY id DESC LIMIT 24').all()) {
         if (!(r.service in last)) last[r.service] = r.ok;
     }
 
-    // Полоски аптайма по дням (30 дней, все сервисы вместе)
-    const daily = db.prepare(
-        `SELECT date(created_at) AS d, ROUND(100.0 * SUM(ok) / COUNT(*)) AS pct
+    // Полоски аптайма по дням — отдельно на каждый сервис
+    const daily = {};
+    for (const r of db.prepare(
+        `SELECT service, date(created_at) AS d, ROUND(100.0 * SUM(ok) / COUNT(*)) AS pct
          FROM uptime_checks WHERE created_at >= datetime('now', '-30 days')
-         GROUP BY d ORDER BY d`
+         GROUP BY service, d ORDER BY d`
+    ).all()) {
+        (daily[r.service] = daily[r.service] || []).push(r);
+    }
+
+    // Последний сбой любого сервиса → счётчик «без сбоев N дней»
+    const lastFail = db.prepare("SELECT created_at FROM uptime_checks WHERE ok = 0 ORDER BY id DESC LIMIT 1").get();
+    const daysClean = lastFail
+        ? Math.floor((Date.now() - new Date(lastFail.created_at + 'Z').getTime()) / 86400000)
+        : 30;
+
+    // Средний отклик Web Proxy за 24 часа
+    const webLatency24 = db.prepare(
+        `SELECT ROUND(AVG(latency_ms)) AS a FROM uptime_checks
+         WHERE service = 'web' AND ok = 1 AND latency_ms IS NOT NULL
+           AND created_at >= datetime('now', '-24 hours')`
+    ).get()?.a ?? null;
+
+    // --- Доступность из России (замеры Globalping) ---
+    const rfPoints = db.prepare(
+        `SELECT pct, created_at FROM availability_checks
+         WHERE created_at >= datetime('now', '-24 hours') AND pct IS NOT NULL
+         ORDER BY id DESC LIMIT 96`
     ).all();
-    const pctColor = (p) => (p >= 99 ? '#10b981' : p >= 95 ? '#f59e0b' : '#ef4444');
-    const pctText = (p) => (p >= 99 ? 'отлично' : p >= 95 ? 'нормально' : 'со сбоями');
-    const bars = daily.map((d) =>
-        `<div title="${d.d}: ${d.pct}%" style="flex:1;height:34px;border-radius:3px;background:${pctColor(d.pct)};min-width:3px"></div>`
-    ).join('');
+    const rfNow = rfPoints[0]?.pct ?? null;
+    const rf24 = db.prepare(
+        "SELECT ROUND(AVG(pct), 1) AS a FROM availability_checks WHERE created_at >= datetime('now', '-24 hours') AND pct IS NOT NULL"
+    ).get()?.a ?? null;
+    const rf30 = db.prepare(
+        "SELECT ROUND(AVG(pct), 1) AS a FROM availability_checks WHERE created_at >= datetime('now', '-30 days') AND pct IS NOT NULL"
+    ).get()?.a ?? null;
+
+    const overallOk = ['web', 'mtproto'].every((s) => last[s] === 1)
+        && (rfNow === null || rfNow >= 50);
+    const headline = overallOk
+        ? '<span style="color:#10b981">🟢 Все системы работают</span>'
+        : '<span style="color:#ef4444">🔴 Наблюдаются сбои</span>';
+
+    const rowBars = (service) => {
+        const list = daily[service] || [];
+        if (!list.length) return '<span style="color:#475569;font-size:0.8rem">Данные собираются…</span>';
+        return `<div class="bars">${list.map((d) =>
+            `<div title="${esc(d.d)}: ${d.pct}%" style="flex:1;height:26px;border-radius:2px;background:${pctColor(d.pct)};min-width:2px"></div>`
+        ).join('')}</div>`;
+    };
 
     const serviceRow = (service, label) => {
-        const row = rows.find((r) => r.service === service);
+        const row = svc30[service];
         const now = last[service];
-        const up = now === 1;
         let right = '<span style="color:#64748b">нет данных</span>';
         if (row && row.total > 0) {
             const pct = Math.round((row.ok_count / row.total) * 100);
-            right = `<span style="color:${pctColor(pct)};font-weight:600">${pct}%</span> <span style="color:#64748b">аптайм 30 дней</span>`;
+            const ms = row.avg_ms ? ` · ${Math.round(row.avg_ms)} мс` : '';
+            right = `<span style="color:${pctColor(pct)};font-weight:600">${pct}%</span> <span style="color:#64748b">за 30 дней${ms}</span>`;
         }
-        const dot = now === undefined ? '#64748b' : up ? '#10b981' : '#ef4444';
-        const state = now === undefined ? '…' : up ? '<span style="color:#10b981">Работает</span>' : '<span style="color:#ef4444">Сбой</span>';
-        return `<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 0;border-bottom:1px solid #1e293b">
-            <div style="display:flex;align-items:center;gap:10px"><span style="width:10px;height:10px;border-radius:50%;background:${dot};display:inline-block"></span><b>${label}</b></div>
-            <div style="display:flex;align-items:center;gap:10px;font-size:0.9rem">${state}<span style="color:#475569">·</span>${right}</div>
+        const dot = now === undefined ? '#64748b' : now === 1 ? '#10b981' : '#ef4444';
+        const state = now === undefined ? '<span style="color:#64748b">…</span>'
+            : now === 1 ? '<span style="color:#10b981">Работает</span>'
+            : '<span style="color:#ef4444">Сбой</span>';
+        return `<div style="padding:12px 0;border-bottom:1px solid #1e293b">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+                <div style="display:flex;align-items:center;gap:10px"><span style="width:10px;height:10px;border-radius:50%;background:${dot};display:inline-block"></span><b>${label}</b></div>
+                <div style="display:flex;align-items:center;gap:10px;font-size:0.88rem">${state}<span style="color:#334155">·</span>${right}</div>
+            </div>
+            <div style="margin:8px 0 2px">${rowBars(service)}</div>
         </div>`;
     };
 
-    const allOk = ['web', 'mtproto'].every((s) => last[s] === 1) || Object.keys(last).length === 0;
-    const headline = allOk
-        ? '<span style="color:#10b981">🟢 Все системы работают</span>'
-        : '<span style="color:#ef4444">🔴 Наблюдаются сбои</span>';
+    // Плитки-показатели над карточками
+    const stat = (label, value, color = '#e2e8f0') =>
+        `<div style="background:#101a2c;border:1px solid #1e293b;border-radius:14px;padding:14px 10px;text-align:center">
+            <div style="font-size:1.15rem;font-weight:700;color:${color}">${value}</div>
+            <div style="color:#64748b;font-size:0.72rem;margin-top:4px;text-transform:uppercase;letter-spacing:0.05em">${label}</div>
+        </div>`;
+
+    const up30 = ['web', 'mtproto'].map((s) => {
+        const r = svc30[s];
+        return r && r.total ? Math.round((r.ok_count / r.total) * 100) : null;
+    }).filter((v) => v !== null);
+    const up30avg = up30.length ? Math.round(up30.reduce((a, b) => a + b, 0) / up30.length) : null;
+
+    // Замеры доступности из РФ: от старых к свежим
+    const rfBars = rfPoints.length
+        ? `<div class="bars">${rfPoints.slice().reverse().map((p) =>
+            `<div title="${esc(p.created_at)}: ${p.pct}%" style="flex:1;height:34px;border-radius:2px;background:${pctColor(p.pct)};min-width:2px"></div>`
+        ).join('')}</div>
+        <div style="display:flex;justify-content:space-between;color:#475569;font-size:0.72rem;margin-top:6px"><span>24 часа назад</span><span>сейчас</span></div>`
+        : '<span style="color:#64748b;font-size:0.85rem">Мониторинг доступности из России не активирован — включите его в настройках панели.</span>';
 
     // Информация о посетителе
     const ip = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.ip || '—';
@@ -193,40 +260,52 @@ router.get('/status', publicLimiter, (req, res) => {
                background: linear-gradient(160deg, #0b1220, #0f172a 60%, #131c2e);
                color: #e2e8f0; display: flex; align-items: center; justify-content: center; padding: 24px 16px; }
         .wrap { width: 100%; max-width: 640px; }
-        .hero { text-align: center; margin-bottom: 28px; }
+        .hero { text-align: center; margin-bottom: 22px; }
         .hero h1 { font-size: 1.6rem; margin-bottom: 6px; }
         .hero p { color: #64748b; font-size: 0.85rem; }
-        .card { background: #101a2c; border: 1px solid #1e293b; border-radius: 16px; padding: 22px; margin-bottom: 18px; }
+        .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 18px; }
+        @media (max-width: 560px) { .stats { grid-template-columns: repeat(2, 1fr); } }
+        .card { background: #101a2c; border: 1px solid #1e293b; border-radius: 16px; padding: 20px 22px; margin-bottom: 16px; }
         .card h3 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.08em; color: #64748b; margin-bottom: 8px; }
-        .bars { display: flex; gap: 3px; align-items: flex-end; margin-top: 10px; }
+        .bars { display: flex; gap: 2px; align-items: flex-end; }
         .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 18px; font-size: 0.95rem; }
         .grid div { color: #94a3b8; } .grid b { color: #e2e8f0; font-weight: 600; }
         code.ip { background: #0b1220; padding: 3px 10px; border-radius: 6px; user-select: all; font-size: 0.9rem; }
-        .foot { text-align: center; color: #475569; font-size: 0.78rem; margin-top: 16px; }
+        .foot { text-align: center; color: #475569; font-size: 0.78rem; margin-top: 14px; }
     </style>
 </head>
 <body><div class="wrap">
     <div class="hero">
         <h1>${headline}</h1>
-        <p>Проверяется автоматически каждые 5 минут · обновлено: ${updated}</p>
+        <p>Проверяется автоматически каждые 5 минут · обновлено: ${esc(updated)}</p>
+    </div>
+
+    <div class="stats">
+        ${stat('Аптайм 30 дней', up30avg !== null ? up30avg + '%' : '—', up30avg !== null ? pctColor(up30avg) : '#e2e8f0')}
+        ${stat('Отклик Web', webLatency24 ? webLatency24 + ' мс' : '—')}
+        ${stat('Доступность из РФ (24ч)', rf24 !== null ? rf24 + '%' : '—', rf24 !== null ? pctColor(rf24) : '#e2e8f0')}
+        ${stat('Без сбоев', daysClean > 0 ? daysClean + ' дн.' : '30+')}
     </div>
 
     <div class="card">
-        <h3>Сервисы</h3>
+        <h3>Сервисы · аптайм за 30 дней</h3>
         ${serviceRow('web', '🌐 Web Proxy')}
         ${serviceRow('mtproto', '🔌 MTProto')}
-        ${serviceRow('api', '⚙️ Инфраструктура')}
-        <h3 style="margin-top:18px">Аптайм за 30 дней</h3>
-        <div class="bars">${bars || '<span style="color:#64748b;font-size:0.85rem">Данные собираются…</span>'}</div>
+        ${serviceRow('api', '⚙️ Панель и управление')}
+    </div>
+
+    <div class="card">
+        <h3>Доступность из России${rf30 !== null ? ` · среднее за 30 дней: ${rf30}%` : ''}</h3>
+        ${rfBars}
     </div>
 
     <div class="card">
         <h3>Ваше подключение</h3>
         <div class="grid">
-            <div>IP-адрес</div><div><code class="ip">${ip}</code></div>
-            <div>Страна</div><div><b>${country}</b></div>
-            <div>Устройство</div><div><b>${os}</b></div>
-            <div>Браузер</div><div><b>${browser}</b></div>
+            <div>IP-адрес</div><div><code class="ip">${esc(ip)}</code></div>
+            <div>Страна</div><div><b>${esc(country)}</b></div>
+            <div>Устройство</div><div><b>${esc(os)}</b></div>
+            <div>Браузер</div><div><b>${esc(browser)}</b></div>
         </div>
     </div>
 
