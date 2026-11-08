@@ -1,7 +1,10 @@
 -- Миграция 024: реферальная программа v2
 -- 1) Персональный код-инвайт у каждого клиента (ссылка вида ?start=ref_<код>;
---    старые ссылки ref_<telegram_id> продолжают работать)
-ALTER TABLE clients ADD COLUMN referral_code TEXT UNIQUE;
+--    старые ссылки ref_<telegram_id> продолжают работать).
+--    ВНИМАНИЕ: SQLite не умеет ADD COLUMN ... UNIQUE — уникальность через индекс
+--    (несколько NULL индекс спокойно пропускает — код выдаётся лениво).
+ALTER TABLE clients ADD COLUMN referral_code TEXT;
+CREATE UNIQUE INDEX idx_clients_referral_code ON clients(referral_code);
 
 -- 2) Журнал реферальных начислений (% с платежей приглашённых на баланс реферера)
 CREATE TABLE referral_earnings (
