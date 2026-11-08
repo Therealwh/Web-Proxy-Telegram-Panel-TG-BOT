@@ -26,6 +26,7 @@ function HealthLine({ health }) {
 export default function Nodes() {
     const [data, setData] = useState(null);
     const [modal, setModal] = useState(null); // {mode:'add'|'edit', form}
+    const [install, setInstall] = useState(null); // {form, token}
     const [busy, setBusy] = useState(false);
     const t = useT();
 
@@ -85,9 +86,14 @@ export default function Nodes() {
             <PageHeader icon={<Server size={20} />} title={t('nodes.title')}
                         subtitle={t('nodes.subtitle')}
                         actions={
-                            <button className="btn primary !py-2" onClick={() => setModal({ mode: 'add', form: { ...EMPTY } })}>
-                                <Plus size={16} className="inline mr-1" />{t('nodes.add')}
-                            </button>
+                            <div className="flex gap-2">
+                                <button className="btn !py-2" onClick={() => setInstall({ form: { ...EMPTY }, token: null })}>
+                                    ⚡ {t('nodes.autoBtn')}
+                                </button>
+                                <button className="btn primary !py-2" onClick={() => setModal({ mode: 'add', form: { ...EMPTY } })}>
+                                    <Plus size={16} className="inline mr-1" />{t('nodes.add')}
+                                </button>
+                            </div>
                         } />
 
             <div className="flex items-start gap-2.5 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-600 dark:text-amber-400">
@@ -146,6 +152,51 @@ export default function Nodes() {
                     <p>{t('nodes.how3')}</p>
                 </div>
             </Card>
+
+            <Modal open={!!install} onClose={() => setInstall(null)} title={t('nodes.autoTitle')} wide>
+                {install && (
+                    <div className="space-y-3">
+                        {!install.token ? (
+                            <>
+                                <div className="grid sm:grid-cols-2 gap-3">
+                                    <Field label={t('nodes.fName')}><input className="input" value={install.form.name} onChange={(e) => setInstall({ ...install, form: { ...install.form, name: e.target.value } })} placeholder="Германия" /></Field>
+                                    <Field label={t('nodes.fEmoji')}><input className="input" value={install.form.emoji || ''} onChange={(e) => setInstall({ ...install, form: { ...install.form, emoji: e.target.value } })} placeholder="🇩🇪" /></Field>
+                                    <Field label={t('nodes.fDomain')}><input className="input" value={install.form.domain} onChange={(e) => setInstall({ ...install, form: { ...install.form, domain: e.target.value } })} placeholder="de1.example.com" /></Field>
+                                    <Field label={t('nodes.fMask')}><input className="input" value={install.form.mask_domain || ''} onChange={(e) => setInstall({ ...install, form: { ...install.form, mask_domain: e.target.value } })} placeholder="www.cloudflare.com" /></Field>
+                                    <Field label={t('nodes.fPort')} hint={t('nodes.fPortHint')}><input className="input" type="number" value={install.form.mtproto_port || ''} onChange={(e) => setInstall({ ...install, form: { ...install.form, mtproto_port: e.target.value } })} /></Field>
+                                    <Field label={t('nodes.fMax')} hint={t('nodes.fMaxHint')}><input className="input" type="number" value={install.form.max_clients || ''} onChange={(e) => setInstall({ ...install, form: { ...install.form, max_clients: e.target.value } })} /></Field>
+                                </div>
+                                <button className="btn primary wide" disabled={busy} onClick={async () => {
+                                    setBusy(true);
+                                    try {
+                                        const f = install.form;
+                                        const r = await post('/nodes/install-token', {
+                                            name: f.name.trim(), emoji: f.emoji || null,
+                                            domain: f.domain.trim().toLowerCase(),
+                                            mask_domain: f.mask_domain ? f.mask_domain.trim().toLowerCase() : null,
+                                            mtproto_port: f.mtproto_port ? Number(f.mtproto_port) : null,
+                                            max_clients: f.max_clients ? Number(f.max_clients) : null,
+                                        });
+                                        setInstall({ ...install, token: r.token });
+                                        load();
+                                    } catch (e) { toast(e.message, 'bad'); } finally { setBusy(false); }
+                                }}>⚡ {t('nodes.autoGen')}</button>
+                            </>
+                        ) : (
+                            <>
+                                <p className="text-sm text-slate-500">{t('nodes.autoHint')}</p>
+                                <pre id="installCmd" className="rounded-xl bg-slate-100 dark:bg-slate-900 p-3 text-xs overflow-x-auto whitespace-pre-wrap break-all select-all">{`curl -fsSL "https://${window.location.host}/node-install.sh?token=${install.token}" | PANEL=https://${window.location.host} bash -s`}</pre>
+                                <button className="btn primary wide" onClick={() => {
+                                    const el = document.getElementById('installCmd');
+                                    if (el && navigator.clipboard) navigator.clipboard.writeText(el.textContent).catch(() => {});
+                                    toast(t('nodes.copied'), 'ok');
+                                }}>{t('nodes.autoCopy')}</button>
+                                <p className="text-xs text-slate-400">{t('nodes.autoWait')}</p>
+                            </>
+                        )}
+                    </div>
+                )}
+            </Modal>
 
             <Modal open={!!modal} onClose={() => setModal(null)} title={modal?.mode === 'add' ? t('nodes.add') : t('nodes.edit')} wide>
                 {modal && (

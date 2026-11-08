@@ -28,8 +28,58 @@ function rowToApi(n) {
     return { ...n, api_token: maskToken(n.api_token), clients: count, health };
 }
 
+// ===========================================================================
+// ПУБЛИЧНЫЕ (защищены одноразовым токеном установки): /register, /install-params
+// ===========================================================================
+
+/** Параметры установки для скрипта на новом сервере. */
+router.get('/install-params', (req, res) => {
+    const row = db.prepare(
+        "SELECT * FROM node_installs WHERE token = ? AND used_at IS NULL AND expires_at > datetime('now')"
+    ).get(String(req.query.token || ''));
+    if (!row) return res.status(404).json({ error: 'Токен не найден или истёк' });
+    res.json({
+        domain: row.domain,
+        mask_domain: row.mask_domain,
+        mtproto_port: row.mtproto_port || 8443,
+        panel_domain: row.panel_domain,
+    });
+});
+
+/** Регистрация узла установочным скриптом (одноразовый токен). */
+router.post('/register', express.json(), async (req, res, next) => {
+    try {
+        const token = String(req.body?.install_token || '');
+        const apiToken = String(req.body?.api_token || '');
+        if (!/^[0-9a-f]{64}$/.test(token)) throw httpError(400, 'Некорректный токен');
+        if (!/^[A-Za-z0-9._-]{16,256}$/.test(apiToken)) throw httpError(400, 'Некорректный api_token узла');
+        const row = db.prepare(
+            "SELECT * FROM node_installs WHERE token = ? AND used_at IS NULL AND expires_at > datetime('now')"
+        ).get(token);
+        if (!row) throw httpError(404, 'Токен не найден или истёк');
+
+        // IP узла: X-Forwarded-For ставит Caddy перед панелью
+        const xff = String(req.headers['x-forwarded-for'] || '');
+        const nodeIp = (xff.split(',')[0].trim() || req.ip || '').replace(/^::ffff:/, '');
+
+        const controlUrl = `http://${nodeIp}:9091`;
+        const info = db.prepare(
+            `INSERT INTO nodes (name, emoji, domain, mask_domain, control_url, api_token, mtproto_port, max_clients, enabled)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)`
+        ).run(row.name, row.emoji || '🌍', row.domain, row.mask_domain, controlUrl,
+              apiToken, row.mtproto_port, row.max_clients);
+        db.prepare("UPDATE node_installs SET used_at = datetime('now') WHERE token = ?").run(token);
+        nodes.invalidateCache(info.lastInsertRowid);
+        const health = await nodes.checkAndStoreHealth(info.lastInsertRowid).catch(() => null);
+        res.json({ ok: true, node_id: info.lastInsertRowid, health });
+    } catch (err) { next(err); }
+});
+
+// --- Приватная часть (ниже — JWT) ---
+router.use(requireAuth);
+
 // --- Список узлов + локальный движок ---
-router.get('/', requireAuth, async (req, res, next) => {
+router.get('/', async (req, res, next) => {
     try {
         const list = nodes.listNodes().map(rowToApi);
         // Локальный движок главной панели — всегда узел №0
@@ -44,6 +94,31 @@ router.get('/', requireAuth, async (req, res, next) => {
             nodes: list,
             local: { id: null, name: 'Основной (этот сервер)', domain: getAll().mtproto_domain || null, clients: nodes.clientCount(null), health: localHealth, enabled: 1 },
         });
+    } catch (err) { next(err); }
+});
+
+// --- Создать одноразовую команду установки узла ---
+router.post('/install-token', async (req, res, next) => {
+    try {
+        const schema = z.object({
+            name: z.string().min(1).max(48),
+            emoji: z.string().max(8).nullable().optional(),
+            domain: z.string().regex(DOMAIN_RE, 'Домен: вида de1.example.com'),
+            mask_domain: z.string().regex(DOMAIN_RE).nullable().optional(),
+            mtproto_port: z.number().int().min(1).max(65535).nullable().optional(),
+            max_clients: z.number().int().min(1).max(1000000).nullable().optional(),
+        });
+        const d = schema.parse(req.body);
+        const token = require('crypto').randomBytes(32).toString('hex');
+        const expires = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+        db.prepare(
+            `INSERT INTO node_installs (token, name, emoji, domain, mask_domain, mtproto_port, max_clients, panel_domain, expires_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        ).run(token, d.name, d.emoji || '🌍', d.domain, d.mask_domain || null, d.mtproto_port || null,
+              d.max_clients || null, String(config.domain || ''));
+        // Чистим протухшие
+        db.prepare("DELETE FROM node_installs WHERE used_at IS NOT NULL OR expires_at < datetime('now')").run();
+        res.status(201).json({ ok: true, token, expires_at: expires });
     } catch (err) { next(err); }
 });
 
@@ -69,7 +144,7 @@ function normalize(data) {
 }
 
 // --- Добавить узел ---
-router.post('/', requireAuth, audit(db), async (req, res, next) => {
+router.post('/', audit(db), async (req, res, next) => {
     try {
         const data = normalize(nodeSchema.parse(req.body));
         const info = db.prepare(
@@ -84,7 +159,7 @@ router.post('/', requireAuth, audit(db), async (req, res, next) => {
 });
 
 // --- Изменить узел ---
-router.patch('/:id', requireAuth, audit(db), async (req, res, next) => {
+router.patch('/:id', audit(db), async (req, res, next) => {
     try {
         const node = nodes.getNode(Number(req.params.id));
         if (!node) throw httpError(404, 'Узел не найден');
@@ -119,7 +194,7 @@ router.patch('/:id', requireAuth, audit(db), async (req, res, next) => {
 
 // --- Удалить узел: только когда на нём нет клиентов (иначе ссылки
 //     клиентов молча переключились бы на домен, где их нет) ---
-router.delete('/:id', requireAuth, audit(db), async (req, res, next) => {
+router.delete('/:id', audit(db), async (req, res, next) => {
     try {
         const node = nodes.getNode(Number(req.params.id));
         if (!node) throw httpError(404, 'Узел не найден');
@@ -134,7 +209,7 @@ router.delete('/:id', requireAuth, audit(db), async (req, res, next) => {
 });
 
 // --- Проверить здоровье узла ---
-router.post('/:id/health', requireAuth, async (req, res, next) => {
+router.post('/:id/health', async (req, res, next) => {
     try {
         const health = await nodes.checkAndStoreHealth(Number(req.params.id));
         if (!health) throw httpError(404, 'Узел не найден');

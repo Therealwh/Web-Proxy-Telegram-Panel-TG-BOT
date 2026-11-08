@@ -170,6 +170,8 @@ app.get('/api/docs', (req, res) => {
 
 // Публичные страницы: /qr/:id и /status
 app.use('/', publicPagesRouter);
+// Публичный автоустановщик узла (защищён одноразовым токеном)
+app.use('/', require('./routes/nodeInstall'));
 
 // 404 для неизвестных API
 app.use('/api', notFound);
