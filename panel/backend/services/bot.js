@@ -582,9 +582,6 @@ async function issueAccessFor(tgId, tariff, paymentId, opts = {}) {
         `📦 <b>${proxyTitle(username)}</b> <code>${username}</code>\n📅 Действует до: <b>${fmtMSK(expires, false)}</b>\n` +
         (nodeId ? (() => { const nd = nodesService.getNode(nodeId); return nd ? `🌍 Локация: <b>${nd.emoji || '🌍'} ${nd.name}</b>\n` : ''; })() : '') + `\n` +
         `Подключайся кнопками ниже — Telegram сам предложит добавить прокси.\n\n`;
-    if (links.web_https) {
-        text += `⚠️ <b>Важно:</b> Web Proxy на iPhone (iOS) пока может не подключаться — на Apple-устройствах используйте MTProto-ссылку.\n\n`;
-    }
 
     // Веб-кабинет: просмотр и продление без бота (ссылка постоянная)
     try {
@@ -1217,8 +1214,7 @@ bot.on('message:text', async (ctx, next) => {
                 `1️⃣ В «📱 Личном кабинете» нажмите «🌐 Подключить ВЕБ прокси» или «🔌 Подключить MTProto» — Telegram сам предложит добавить прокси.\n\n` +
                 `2️⃣ Вручную: Настройки → Продвинутые → Тип соединения → «Использовать свой прокси» → Добавьте сервер, порт и секрет из кабинета.`,
             ios: `📱 <b>iPhone (iOS)</b>\n\n` +
-                `⚠️ Web Proxy на iOS может не работать — используйте ссылку <b>MTProto</b> из кабинета.\n\n` +
-                `1️⃣ В «📱 Личном кабинете» нажмите «🔌 Подключить MTProto».\n\n` +
+                `1️⃣ В «👤 Личном кабинете» нажмите «🌐 Подключить Web Proxy» или «🔌 Подключить MTProto» — Telegram сам предложит добавить прокси.\n\n` +
                 `2️⃣ Вручную: Настройки → Данные и хранилище → Прокси → Добавить прокси → вставьте сервер, порт и секрет.`,
             android: `🤖 <b>Android</b>\n\n` +
                 `1️⃣ В «📱 Личном кабинете» нажмите ссылку подключения — Telegram предложит добавить прокси.\n\n` +
@@ -1364,7 +1360,7 @@ bot.on('message:text', async (ctx, next) => {
         await showPurchaseMethods(ctx, tariff, nodeId);
     });
 
-    // Покупка: web-only тариф — сначала предупреждение про iOS
+    // Покупка тарифа: локация (если их несколько) → способ оплаты
     bot.callbackQuery(/^buy:(\d+)$/, async (ctx) => {
         const tariff = db.prepare('SELECT * FROM tariffs WHERE id = ? AND enabled = 1').get(Number(ctx.match[1]));
         if (!tariff) return ctx.answerCallbackQuery('Тариф недоступен');
@@ -1377,36 +1373,13 @@ bot.on('message:text', async (ctx, next) => {
                 kb.text(`${loc.emoji} ${loc.name}`, `loc:${tariff.id}:${loc.id ?? 0}`).row();
             }
             kb.text('⬅️ К тарифам', 'tariffs');
-            // Предупреждение про iOS переносим на экран локации, чтобы не пропускать его
-            const iosWarn = tariff.protocols === 'web'
-                ? '\n\n⚠️ <b>Внимание:</b> Web Proxy пока <b>не поддерживается на iPhone (iOS)</b> — для iPhone выбирайте тариф с MTProto.'
-                : '';
             return showScreen(ctx, {
-                text: '🌍 <b>Выберите локацию</b>\n\nПинг и скорость зависят от близости сервера — выбирайте ближайшую к вам.' + iosWarn,
+                text: '🌍 <b>Выберите локацию</b>\n\nПинг и скорость зависят от близости сервера — выбирайте ближайшую к вам.',
                 kb,
             });
         }
 
-        if (tariff.protocols === 'web') {
-            const kb = new InlineKeyboard()
-                .text('✅ Да, понимаю, продолжить', `buyok:${tariff.id}`).row()
-                .text('⬅️ Выбрать другой тариф', 'tariffs');
-            return ctx.reply(
-                `${tariffDescription(tariff)}\n\n` +
-                `⚠️ <b>Внимание:</b> Web Proxy пока <b>не поддерживается на iPhone (iOS)</b>.\n` +
-                `Если у вас iPhone — выберите тариф с MTProto.\n\nПродолжить?`,
-                { parse_mode: 'HTML', reply_markup: kb }
-            );
-        }
         return showPurchaseMethods(ctx, tariff, null);
-    });
-
-    // Подтверждение покупки web-only тарифа
-    bot.callbackQuery(/^buyok:(\d+)$/, async (ctx) => {
-        const tariff = db.prepare('SELECT * FROM tariffs WHERE id = ? AND enabled = 1').get(Number(ctx.match[1]));
-        if (!tariff) return ctx.answerCallbackQuery('Тариф недоступен');
-        await ctx.answerCallbackQuery();
-        return showPurchaseMethods(ctx, tariff);
     });
 
     /** Экран выбора способа оплаты для покупки тарифа. */
