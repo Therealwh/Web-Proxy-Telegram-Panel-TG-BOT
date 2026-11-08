@@ -314,6 +314,15 @@ router.get('/status', publicLimiter, (req, res) => {
 </html>`);
 });
 
+// --- Telegram Mini App (открывается из бота; авторизация через initData) ---
+router.get('/miniapp', (req, res) => {
+    const file = require('path').join(__dirname, '..', 'public', 'miniapp', 'index.html');
+    res.setHeader('Cache-Control', 'no-store');
+    res.sendFile(file, (err) => {
+        if (err && !res.headersSent) res.status(404).send('Мини-апп не найден');
+    });
+});
+
 // --- Веб-кабинет: просмотр и продление без бота (по QR-токену) ---
 router.get('/p/:token([0-9a-f]{16})', publicLimiter, (req, res) => {
     const client = getClientByToken(req.params.token);

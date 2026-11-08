@@ -89,13 +89,16 @@ async function completePayment(paymentId) {
                 const { notifyAdmin } = require('../services/notifier');
                 await notifyAdmin(getAll(), `🔄 <b>Прокси продлён</b>\n📦 ${client.username} — до ${fmt(newExpiry)}\n👤 tg${payment.telegram_id}`);
             } catch { /* уведомление не критично */ }
-            // Рефералка: % с продления шлюзом — рефереру на баланс
-            try {
-                require('../utils/referral').payReferral({
-                    referredClientId: client.id, amount: payment.amount,
-                    kind: 'renewal', currency: payment.currency,
-                });
-            } catch (e) { logger.warn('Рефералка: продление', { error: e.message }); }
+            // Рефералка: % с продления шлюзом — рефереру на баланс.
+            // Продления с внутреннего баланса («живых» денег нет) не вознаграждаются.
+            if (payment.provider !== 'balance') {
+                try {
+                    require('../utils/referral').payReferral({
+                        referredClientId: client.id, amount: payment.amount,
+                        kind: 'renewal', currency: payment.currency,
+                    });
+                } catch (e) { logger.warn('Рефералка: продление', { error: e.message }); }
+            }
             logger.info('Прокси продлён', { paymentId, username: client.username });
             return payment;
         }

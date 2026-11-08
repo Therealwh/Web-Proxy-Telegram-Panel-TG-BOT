@@ -130,6 +130,8 @@ app.use('/api/zapret2', requireAuth, csrfProtection, audit(db), zapret2Router.ro
 app.use('/api/geo', requireAuth, geoRouter);
 app.use('/api/engine', requireAuth, require('./routes/engineTuning'));
 app.use('/api/referral', requireAuth, require('./routes/referral'));
+// Мини-апп: авторизация Telegram initData внутри роутера (POST /auth публичный)
+app.use('/api/miniapp', require('./routes/miniapp'));
 app.use('/api/webhooks', requireAuth, csrfProtection, audit(db), webhooksModule.router);
 app.use('/api/audit', requireAuth, auditRouter);
 app.use('/api/onboarding', requireAuth, onboardingRouter);

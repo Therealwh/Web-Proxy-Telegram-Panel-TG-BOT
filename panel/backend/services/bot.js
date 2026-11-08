@@ -179,6 +179,15 @@ function mainReplyKeyboard(ctx) {
     } else {
         kb.text('🤝 Рефералы').text('🛟 Поддержка').row();
     }
+    // Мини-апп: кнопка открывает веб-приложение прямо в Telegram.
+    // Домен должен быть настоящим — с localhost Telegram отклонит кнопку.
+    try {
+        const cfg = require('../config');
+        const miniappUrl = `https://${cfg.domain}/miniapp`;
+        if (/^https:\/\/[a-z0-9.-]+\.[a-z]{2,}/i.test(miniappUrl)) {
+            kb.webApp('📱 Приложение', miniappUrl).row();
+        }
+    } catch { /* без конфига — без кнопки */ }
     kb.text('📱 Как подключить').row();
     if (isAdmin(ctx)) kb.text('👑 Админ-панель').row();
     return kb;
@@ -1779,6 +1788,19 @@ if (links.mtproto_https) text += `🔌 <b>MTProto</b>:\n${links.mtproto_https}\n
     bot.start({ drop_pending_updates: true }).catch((err) => {
         logger.error('TG-бот упал', { error: err.message });
     });
+
+    // Кнопка меню бота → мини-апп (личный кабинет в один тап).
+    // Не критично: при недоступном домене Telegram отклонит — просто лог.
+    try {
+        const cfg = require('../config');
+        const miniappUrl = `https://${cfg.domain}/miniapp`;
+        if (/^https:\/\/[a-z0-9.-]+\.[a-z]{2,}/i.test(miniappUrl)) {
+            await bot.api.setChatMenuButton({
+                menu_button: { type: 'web_app', text: '📱 Приложение', web_app: { url: miniappUrl } },
+            }).catch((e) => logger.warn('Мини-апп: кнопка меню не установлена', { error: e.message }));
+        }
+    } catch { /* не критично */ }
+
     logger.info('TG-бот продаж запущен');
 }
 
