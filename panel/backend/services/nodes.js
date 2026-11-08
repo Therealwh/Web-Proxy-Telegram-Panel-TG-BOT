@@ -92,17 +92,17 @@ async function checkAndStoreHealth(nodeId) {
  */
 async function availableLocations() {
     const locations = [{ id: null, name: 'Основной', emoji: '🏠', domain: null }];
-    for (const node of listNodes({ enabledOnly: true })) {
-        if (node.max_clients && clientCount(node.id) >= node.max_clients) continue;
+    const candidates = listNodes({ enabledOnly: true })
+        .filter((node) => !(node.max_clients && clientCount(node.id) >= node.max_clients));
+    // Здоровье проверяем параллельно — мёртвый узел не тормозит остальные
+    const results = await Promise.all(candidates.map(async (node) => {
         const health = await probeHealth(node);
         db.prepare('UPDATE nodes SET last_health = ? WHERE id = ?').run(JSON.stringify(health), node.id);
+        return { node, health };
+    }));
+    for (const { node, health } of results) {
         if (health.ok) {
-            locations.push({
-                id: node.id,
-                name: node.name,
-                emoji: node.emoji || '🌍',
-                domain: node.domain,
-            });
+            locations.push({ id: node.id, name: node.name, emoji: node.emoji || '🌍', domain: node.domain });
         } else {
             logger.warn('Узел недоступен — не предлагаю в локациях', { node: node.name, error: health.error });
         }
@@ -132,11 +132,17 @@ async function moveClient(client, targetNodeId) {
         return db.prepare('SELECT * FROM clients WHERE id = ?').get(client.id);
     }
 
-    // Создаём на целевом узле с ТЕМ ЖЕ секретом — ссылки меняют только домен
+    // Подчищаем возможный дубликат на целевом узле (после неудачного переноса)
+    await targetApi.deleteUser(client.username).catch(() => {});
+
+    // Создаём на целевом узле с ТЕМ ЖЕ секретом — ссылки меняют только домен.
+    // Бессрочный клиент (expires_at NULL): движок требует срок — ставим далёкое
+    // будущее, в базе бессрочность сохраняется.
     await targetApi.createUser({
         username: client.username,
         secret: client.secret,
-        expiration_rfc3339: client.expires_at || undefined,
+        expiration_rfc3339: client.expires_at || '2099-12-31T00:00:00Z',
+        ...(client.ad_tag ? { user_ad_tag: client.ad_tag } : {}),
         ...(client.quota_bytes ? { data_quota_bytes: client.quota_bytes } : {}),
         ...(client.max_ips ? { max_unique_ips: client.max_ips } : {}),
         ...(client.rate_down_bps ? { rate_limit_down_bps: client.rate_down_bps } : {}),
@@ -147,10 +153,12 @@ async function moveClient(client, targetNodeId) {
     db.prepare('UPDATE clients SET node_id = ? WHERE id = ?').run(targetId, client.id);
     const updated = db.prepare('SELECT * FROM clients WHERE id = ?').get(client.id);
 
-    // Удаляем со старого узла после успешного создания
+    // Удаляем со старого узла после успешного создания. Неудача удаления —
+    // ERROR: пользователь остаётся активным на исходном узле (двойной трафик),
+    // админу нужно удалить его вручную на исходном узле.
     await sourceApi.deleteUser(client.username).catch((e) =>
-        logger.warn('Перенос: не удалось удалить пользователя на исходном узле', {
-            username: client.username, error: e.message,
+        logger.error('ПЕРЕНОС: пользователь не удалён на исходном узле — удалите вручную', {
+            username: client.username, from: client.node_id, error: e.message,
         }));
 
     logger.info('Клиент перенесён на другой узел', {

@@ -162,6 +162,10 @@ router.post('/', async (req, res, next) => {
         if (exists) throw httpError(409, 'Клиент с таким именем уже существует');
 
         // Создаём пользователя в Telemt — источник истины по секрету
+        if (data.node_id) {
+            const nd = nodes.getNode(data.node_id);
+            if (!nd || !nd.enabled) throw httpError(400, 'Узел не найден или выключен');
+        }
         const created = await nodes.getApiForNodeId(data.node_id || null).createUser(toTelemtUser(data));
         const secret = created.secret;
 
@@ -213,15 +217,16 @@ router.post('/bulk-create', async (req, res, next) => {
                 db.prepare(
                     `INSERT INTO clients
                      (username, secret, quota_bytes, expires_at, max_ips, rate_down_bps,
-                      rate_up_bps, ad_tag, web_enabled, mtproto_enabled)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+                      rate_up_bps, ad_tag, web_enabled, mtproto_enabled, node_id)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
                 ).run(
                     username, created.secret,
                     defaults.quota_bytes ?? null, defaults.expires_at ?? null,
                     defaults.max_ips ?? null, defaults.rate_down_bps ?? null,
                     defaults.rate_up_bps ?? null, defaults.ad_tag ?? null,
                     defaults.web_enabled === false ? 0 : 1,
-                    defaults.mtproto_enabled === false ? 0 : 1
+                    defaults.mtproto_enabled === false ? 0 : 1,
+                    defaults.node_id ?? null
                 );
                 results.created.push(username);
             } catch (err) {

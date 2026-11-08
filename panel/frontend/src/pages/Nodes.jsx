@@ -42,7 +42,7 @@ export default function Nodes() {
                 domain: f.domain.trim().toLowerCase(),
                 mask_domain: f.mask_domain ? f.mask_domain.trim().toLowerCase() : null,
                 control_url: f.control_url.trim(),
-                api_token: f.api_token,
+                api_token: f.api_token || undefined,
                 mtproto_port: f.mtproto_port ? Number(f.mtproto_port) : null,
                 max_clients: f.max_clients ? Number(f.max_clients) : null,
                 enabled: !!f.enabled,

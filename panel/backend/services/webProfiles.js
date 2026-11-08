@@ -96,9 +96,7 @@ async function syncWebProfiles(excludeUsername = null) {
     for (const nd of nodes.listNodes({ enabledOnly: true })) {
         targets.push({ id: nd.id, api: nodes.getApiForNodeId(nd.id), host: nd.domain, nodeName: nd.name });
     }
-    for (const t of targets) {
-        await syncNodeProfiles(t, excludeUsername);
-    }
+    await Promise.allSettled(targets.map((t) => syncNodeProfiles(t, excludeUsername)));
 }
 
 /** Синхронизация профилей одного узла. */

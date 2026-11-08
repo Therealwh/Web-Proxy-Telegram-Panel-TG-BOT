@@ -1356,11 +1356,11 @@ bot.on('message:text', async (ctx, next) => {
     bot.callbackQuery(/^loc:(\d+):(\d+)$/, async (ctx) => {
         const tariff = db.prepare('SELECT * FROM tariffs WHERE id = ? AND enabled = 1').get(Number(ctx.match[1]));
         if (!tariff) return ctx.answerCallbackQuery('Тариф недоступен');
-        await ctx.answerCallbackQuery();
         const nodeId = Number(ctx.match[2]) || null;
         if (nodeId && !nodesService.getNode(nodeId)) {
             return ctx.answerCallbackQuery({ text: 'Локация недоступна — выберите другую', show_alert: true });
         }
+        await ctx.answerCallbackQuery();
         await showPurchaseMethods(ctx, tariff, nodeId);
     });
 
@@ -1368,21 +1368,24 @@ bot.on('message:text', async (ctx, next) => {
     bot.callbackQuery(/^buy:(\d+)$/, async (ctx) => {
         const tariff = db.prepare('SELECT * FROM tariffs WHERE id = ? AND enabled = 1').get(Number(ctx.match[1]));
         if (!tariff) return ctx.answerCallbackQuery('Тариф недоступен');
+        await ctx.answerCallbackQuery(); // отвечаем сразу — health-пробы узлов могут занять секунды
         // Несколько локаций — предлагаем выбор (одна — сразу к оплате)
         const locations = await nodesService.availableLocations();
         if (locations.length > 1) {
-            await ctx.answerCallbackQuery();
             const kb = new InlineKeyboard();
             for (const loc of locations) {
                 kb.text(`${loc.emoji} ${loc.name}`, `loc:${tariff.id}:${loc.id ?? 0}`).row();
             }
             kb.text('⬅️ К тарифам', 'tariffs');
+            // Предупреждение про iOS переносим на экран локации, чтобы не пропускать его
+            const iosWarn = tariff.protocols === 'web'
+                ? '\n\n⚠️ <b>Внимание:</b> Web Proxy пока <b>не поддерживается на iPhone (iOS)</b> — для iPhone выбирайте тариф с MTProto.'
+                : '';
             return showScreen(ctx, {
-                text: '🌍 <b>Выберите локацию</b>\n\nПинг и скорость зависят от близости сервера — выбирайте ближайшую к вам.',
+                text: '🌍 <b>Выберите локацию</b>\n\nПинг и скорость зависят от близости сервера — выбирайте ближайшую к вам.' + iosWarn,
                 kb,
             });
         }
-        if (!tariff) return ctx.answerCallbackQuery('Тариф недоступен');
 
         if (tariff.protocols === 'web') {
             const kb = new InlineKeyboard()
@@ -1395,8 +1398,7 @@ bot.on('message:text', async (ctx, next) => {
                 { parse_mode: 'HTML', reply_markup: kb }
             );
         }
-        await ctx.answerCallbackQuery();
-        return showPurchaseMethods(ctx, tariff);
+        return showPurchaseMethods(ctx, tariff, null);
     });
 
     // Подтверждение покупки web-only тарифа

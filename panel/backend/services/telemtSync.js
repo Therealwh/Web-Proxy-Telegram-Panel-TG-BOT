@@ -36,7 +36,7 @@ async function processQueue() {
     if (rows.length === 0) return;
 
     for (const row of rows) {
-        const client = db.prepare('SELECT username FROM clients WHERE id = ?').get(row.client_id);
+        const client = db.prepare('SELECT username, node_id FROM clients WHERE id = ?').get(row.client_id);
         const patch = JSON.parse(row.patch_json);
         try {
             await nodes.getApiForClient(client || {}).patchUser(client?.username, patch);

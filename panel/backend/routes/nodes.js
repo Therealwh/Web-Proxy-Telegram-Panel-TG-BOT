@@ -89,7 +89,19 @@ router.patch('/:id', requireAuth, audit(db), async (req, res, next) => {
     try {
         const node = nodes.getNode(Number(req.params.id));
         if (!node) throw httpError(404, 'Узел не найден');
-        const data = normalize(nodeSchema.partial().parse(req.body));
+        const data = nodeSchema.partial().parse(req.body);
+        // enabled меняется ТОЛЬКО когда пришёл в запросе (иначе частичный
+        // PATCH имени молча включал бы выключенный узел)
+        if (data.enabled !== undefined) data.enabled = data.enabled ? 1 : 0;
+        else delete data.enabled;
+        if (data.enabled === 0) {
+            const active = nodes.clientCount(node.id);
+            if (active > 0) {
+                throw httpError(400, `На узле ${active} активных клиентов — сначала смените им локацию`);
+            }
+        }
+        if (data.domain !== undefined) data.domain = String(data.domain).toLowerCase();
+        if (data.mask_domain !== undefined && data.mask_domain !== null) data.mask_domain = String(data.mask_domain).toLowerCase();
 
         // Токен с маской «••••» не перезаписываем
         if (typeof data.api_token === 'string' && data.api_token.startsWith('••••')) delete data.api_token;
@@ -106,15 +118,19 @@ router.patch('/:id', requireAuth, audit(db), async (req, res, next) => {
     } catch (err) { next(err); }
 });
 
-// --- Удалить узел (клиенты узла возвращаются на локальный движок) ---
-router.delete('/:id', requireAuth, audit(db), (req, res, next) => {
+// --- Удалить узел: только когда на нём нет клиентов (иначе ссылки
+//     клиентов молча переключились бы на домен, где их нет) ---
+router.delete('/:id', requireAuth, audit(db), async (req, res, next) => {
     try {
         const node = nodes.getNode(Number(req.params.id));
         if (!node) throw httpError(404, 'Узел не найден');
-        const moved = db.prepare('UPDATE clients SET node_id = NULL WHERE node_id = ?').run(node.id);
+        const total = nodes.clientCount(node.id);
+        if (total > 0) {
+            throw httpError(400, `На узле ${total} клиентов — сначала перенесите их на другую локацию`);
+        }
         db.prepare('DELETE FROM nodes WHERE id = ?').run(node.id);
         nodes.invalidateCache(node.id);
-        res.json({ ok: true, clients_moved_back: moved.changes });
+        res.json({ ok: true, clients_moved_back: 0 });
     } catch (err) { next(err); }
 });
 
