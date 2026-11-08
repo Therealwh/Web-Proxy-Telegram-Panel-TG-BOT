@@ -197,13 +197,13 @@
 <div class="wrap">
     <div id="booterr" style="display:none; background:rgba(255,92,92,.15); color:#ff9a9a; border:1px solid rgba(255,92,92,.4); border-radius:12px; padding:10px 12px; margin-bottom:10px; font-size:12.5px; word-break:break-word;"></div>
     <div class="header">
-        <div class="hello" id="hello">Личный кабинет<small id="helloSub">загрузка… v1.30.5</small></div>
+        <div class="hello" id="hello">Личный кабинет<small id="helloSub">загрузка… v1.30.7</small></div>
         <button class="balance-chip" id="balanceChip" onclick="openDeposit()">
             <b id="balanceVal">—</b><span>пополнить</span>
         </button>
     </div>
 
-    <div class="page" id="page-proxies"></div>
+    <div class="page active" id="page-proxies"></div>
     <div class="page" id="page-shop"></div>
     <div class="page" id="page-ref"></div>
 </div>
@@ -404,6 +404,11 @@ async function boot() {
     }
     try {
         document.getElementById('helloSub').textContent = 'подключение…';
+        // Скелетоны во всех вкладках: не пустота, а видимый процесс загрузки
+        ['proxies', 'shop', 'ref'].forEach((p) => {
+            document.getElementById('page-' + p).innerHTML =
+                '<div class="skel"></div><div class="skel"></div><div class="skel"></div>';
+        });
         const authRes = await fetchWithTimeout('/api/miniapp/auth', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ initData }),
