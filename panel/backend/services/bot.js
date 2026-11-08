@@ -117,14 +117,50 @@ function starsPrice(tariff, settings) {
  * Формат времени по Москве с точностью до секунды.
  * Пример: 20.09.26 15:34:39 МСК
  */
-function fmtMSK(date) {
-    return new Date(date).toLocaleString('ru-RU', {
+function fmtMSK(date, withSeconds = true) {
+    const opts = {
         timeZone: 'Europe/Moscow',
         day: '2-digit', month: '2-digit', year: '2-digit',
-        hour: '2-digit', minute: '2-digit', second: '2-digit',
-    }) + ' МСК';
+        hour: '2-digit', minute: '2-digit',
+    };
+    if (withSeconds) opts.second = '2-digit';
+    return new Date(date).toLocaleString('ru-RU', opts) + ' МСК';
 }
 
+/** Дружелюбное имя прокси: tg123456789x2 → «Мой прокси №2» (код остаётся для поддержки). */
+function proxyTitle(username) {
+    const m = /x(\d+)$/.exec(String(username || ''));
+    return m ? `Мой прокси №${m[1]}` : String(username);
+}
+
+/** Текстовый бар заполнения (10 ячеек) — для трафика. */
+function usageBar(pct) {
+    const filled = Math.round(Math.max(0, Math.min(100, pct)) / 10);
+    return '█'.repeat(filled) + '░'.repeat(10 - filled);
+}
+
+/** Кнопки подключения по ссылкам — для карточки прокси и сообщений о покупке/тесте. */
+function connectKeyboard(client) {
+    const links = clientLinks(client);
+    const kb = new InlineKeyboard();
+    if (links.web_https) kb.url('🌐 Подключить Web Proxy', links.web_https).row();
+    if (links.mtproto_https) kb.url('🔌 Подключить MTProto', links.mtproto_https);
+    if (links.mtproto_faketls_https) kb.url('🛡 MTProto Fake TLS (обход DPI)', links.mtproto_faketls_https);
+    kb.row();
+    return kb;
+}
+
+/** Показ экрана кабинета: правим текущее сообщение (чат не превращается в свиток),
+ *  при неудаче — отправляем новое. «message is not modified» молча игнорируем. */
+async function showScreen(ctx, view) {
+    const extra = { parse_mode: 'HTML', reply_markup: view.kb, disable_web_page_preview: true };
+    try {
+        await ctx.editMessageText(view.text, extra);
+    } catch (e) {
+        if (String(e.message || '').includes('message is not modified')) return;
+        try { await ctx.reply(view.text, extra); } catch { /* сообщение не изменилось и т.п. */ }
+    }
+}
 /** Клавиатура с тарифами: кнопки открывают описание (info), плюс кастомные кнопки из панели. */
 function tariffsKeyboard() {
     const settings = getBotSettings();
@@ -133,7 +169,7 @@ function tariffsKeyboard() {
     for (const t of tariffs) {
         kb.text(`${t.name} — ${t.price} ${currencySign(t.currency)}`, `info:${t.id}`).row();
     }
-    kb.text('📱 Мой доступ', 'my').row();
+    kb.text('👤 Мои прокси', 'my').row();
     kb.text('💬 Поддержка', 'support').row();
     if (settings.status_url) kb.url('🟢 Статус сервиса', settings.status_url).row();
     for (const b of settings.custom_buttons || []) {
@@ -157,7 +193,8 @@ function tariffDescription(t) {
         `📦 <b>${t.name}</b>\n\n` +
         `⏱ Срок: <b>${t.days} дн.</b>\n` +
         `${proto}\n${ips}\n${quota}\n` +
-        `💵 Цена: <b>${t.price} ${currencySign(t.currency)}</b>`
+        `💵 Цена: <b>${t.price} ${currencySign(t.currency)}</b>` +
+        (Number(t.days) > 0 ? ` <i>≈ ${(t.price / t.days).toFixed(1)} ${currencySign(t.currency)}/день</i>` : '')
     );
 }
 
@@ -173,7 +210,7 @@ function mainReplyKeyboard(ctx) {
     const refOff = (getAll().referral_mode || 'percent') === 'off';
     const kb = new Keyboard().resized().persistent()
         .text('🚀 Тарифы', { style: 'success' }).row()
-        .text('🎁 Тест 3 часа').text('📱 Личный кабинет', { style: 'primary' }).row();
+        .text('🎁 Тест 3 часа').text('👤 Личный кабинет', { style: 'primary' }).row();
     if (refOff) {
         kb.text('🛟 Поддержка').row();
     } else {
@@ -351,12 +388,12 @@ const selected = clients.find((c) => c.id === selectedId) || null;
             }
         } catch { /* Telemt недоступен */ }
 
-        const kb = new InlineKeyboard();
-        const links = clientLinks(selected);
+        const kb = connectKeyboard(selected);
         const until = selected.expires_at ? fmtMSK(selected.expires_at, false) : '∞';
         const statusIcon = selected.status === 'active' ? '🟢 Активен' : selected.status === 'blocked' ? '🔴 Заблокирован' : '⚠️ Истёк';
         let text =
-            `📱 <b>${selected.username}</b> · ${statusIcon}\n` +
+            `📦 <b>${proxyTitle(selected.username)}</b> · ${statusIcon}\n` +
+            `<code>${selected.username}</code>\n` +
             `📅 Действует до: <b>${until}</b>\n` +
             expiryBarLine(selected) +
             `💰 Баланс: <b>${balance.toFixed(2)}</b>\n`;
@@ -379,7 +416,8 @@ const selected = clients.find((c) => c.id === selectedId) || null;
         if (limit > 0) {
             const left = Math.max(0, limit - used);
             const pct = Math.min(100, Math.round((used / limit) * 100));
-            text += `📊 <b>Трафик:</b> ${fmtGB(used)} из ${fmtGB(limit)} (${pct}%), осталось ${fmtGB(left)}\n`;
+            text += `📊 <b>Трафик:</b> ${usageBar(pct)} ${pct}%\n` +
+                `&nbsp;&nbsp;&nbsp;${fmtGB(used)} из ${fmtGB(limit)} · осталось ${fmtGB(left)}\n`;
             if (pct >= 90) text += '⚠️ Трафик почти израсходован — продлите или докупите пакет.\n';
         }
 
@@ -390,27 +428,18 @@ const selected = clients.find((c) => c.id === selectedId) || null;
             text += '\n⚠️ Срок закончился. Продлите прокси, чтобы вернуть связь.\n';
         }
 
-        if (links.web_https) kb.url('🌐 Подключить Web Proxy', links.web_https).row();
-        if (links.mtproto_https) kb.url('🔌 Подключить MTProto', links.mtproto_https);
-        // Fake TLS выдаётся только после проверки домена маскировки; если она
-        // не пройдена, клиент видит обычный MTProto и ничего не ломается.
-        if (links.mtproto_faketls_https) {
-            kb.url('🛡 MTProto Fake TLS (обход DPI)', links.mtproto_faketls_https);
-        }
-        // Кнопка-ссылки Telegram не всегда удобна: часть клиентов не открывает
-        // tg:// автоматически, а скопировать текст из такого сообщения нельзя.
-        // Поэтому рядом всегда есть копия ссылок обычным текстом.
-        kb.row();
+        // Кнопки подключения уже в kb (connectKeyboard). Рядом — текст ссылок
+        // и QR: часть клиентов не открывает tg:// по нажатию, а копировать
+        // из кнопки-ссылки нельзя.
         kb.text('📋 Ссылки текстом', `links:${selected.id}`);
+        kb.text('📷 QR-код', `qr:${selected.id}`).row();
         kb.text('💳 Пополнить', 'topup');
         kb.text('♻️ Продлить', `renew:${selected.id}`);
         if (settings.auto_renew_enabled) {
             kb.text(selected.auto_renew ? '♻️ Автопродление: ✅' : '♻️ Автопродление: ❌', `autorenew:${selected.id}`);
         }
         styleButtons(kb, [
-            ['Подключить Web Proxy', 'success'],
-            ['Подключить MTProto', 'primary'],
-            ['Пополнить', 'danger'],
+            ['Пополнить', 'primary'],
             ['Продлить', 'success'],
             ['Автопродление: ✅', 'success'],
             ['Автопродление: ❌', 'danger'],
@@ -424,10 +453,9 @@ const selected = clients.find((c) => c.id === selectedId) || null;
             for (const o of others) {
                 const st = o.status === 'active' ? '🟢' : '🔴';
                 const proto = (o.web_enabled ? 'WEB' : '') + (o.mtproto_enabled ? '+MTProto' : '') || 'WEB';
-                kb.text(`${st} ${o.username} · ${proto} · ${o.expires_at ? shortDate(o.expires_at) : '∞'}`, `sel:${o.id}`).row();
+                kb.text(`${st} ${proxyTitle(o.username)} · ${proto} · ${o.expires_at ? shortDate(o.expires_at) : '∞'}`, `sel:${o.id}`).row();
             }
         }
-        styleButtons(kb, [['Продлить', 'primary'], ['Автопродление', 'primary']]);
         return { text, kb, disable_web_page_preview: true };
     }
 
@@ -438,7 +466,7 @@ const selected = clients.find((c) => c.id === selectedId) || null;
     for (const c of clients) {
         const proto = (c.web_enabled ? 'WEB' : '') + (c.mtproto_enabled ? ' + MTProto' : '') || 'WEB';
         const icon = c.status === 'active' ? '🟢' : '🔴';
-        kb.text(`${icon} ${c.username} · ${proto} · до ${c.expires_at ? shortDate(c.expires_at) : '∞'}`, `sel:${c.id}`).row();
+        kb.text(`${icon} ${proxyTitle(c.username)} · ${proto} · до ${c.expires_at ? shortDate(c.expires_at) : '∞'}`, `sel:${c.id}`).row();
     }
     kb.text('💳 Пополнить счёт', 'topup').row();
     kb.text('🚀 Тарифы', 'tariffs');
@@ -525,12 +553,8 @@ async function issueAccessFor(tgId, tariff, paymentId, opts = {}) {
     const links = clientLinks(client);
     let text =
         `🎉 <b>Оплата прошла! Прокси готов</b>\n\n` +
-        `📦 Прокси: <b>${username}</b>\n📅 Действует до: <b>${fmtMSK(expires)}</b>\n\n`;
-    if (links.web_https) text += `🌐 <b>Web Proxy</b> (нажми — подключится сам):\n${links.web_https}\n\n`;
-if (links.mtproto_https) text += `🔌 <b>MTProto</b>:\n${links.mtproto_https}\n\n`;
-            if (links.mtproto_faketls_https) {
-                text += `🛡 <b>MTProto Fake TLS</b> (если обычный не подключается):\n${links.mtproto_faketls_https}\n\n`;
-            }
+        `📦 <b>${proxyTitle(username)}</b> <code>${username}</code>\n📅 Действует до: <b>${fmtMSK(expires, false)}</b>\n\n` +
+        `Подключайся кнопками ниже — Telegram сам предложит добавить прокси.\n\n`;
     if (links.web_https) {
         text += `⚠️ <b>Важно:</b> Web Proxy на iPhone (iOS) пока может не подключаться — на Apple-устройствах используйте MTProto-ссылку.\n\n`;
     }
@@ -548,8 +572,12 @@ if (links.mtproto_https) text += `🔌 <b>MTProto</b>:\n${links.mtproto_https}\n
     text += `💡 Управление прокси — в разделе «📱 Личный кабинет».`;
 
     if (bot) {
-        await bot.api.sendMessage(tgId, text, { parse_mode: 'HTML', disable_web_page_preview: true })
-            .catch((e) => logger.warn('Не удалось отправить ссылки покупателю', { tgId, error: e.message }));
+        let connectKb = null;
+        try { connectKb = connectKeyboard(client); } catch { connectKb = null; }
+        await bot.api.sendMessage(tgId, text, {
+            parse_mode: 'HTML', disable_web_page_preview: true,
+            reply_markup: connectKb || undefined,
+        }).catch((e) => logger.warn('Не удалось отправить ссылки покупателю', { tgId, error: e.message }));
     }
 
     const notifier = require('./notifier');
@@ -601,7 +629,7 @@ async function payReferralBonus(clientId, purchasedDays) {
         await bot.api.sendMessage(
             referrer.telegram_id,
             `🎁 <b>Бонус за реферала!</b>\n\nДруг купил прокси на ${purchasedDays} дн. — вам <b>+${bonus} дней</b>.\n\n${referrer.username}: до ${fmtMSK(newExpiry, false)}`,
-            { parse_mode: 'HTML' }
+            { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('👤 Мои прокси', 'my') }
         ).catch(() => {});
     }
 }
@@ -611,8 +639,8 @@ async function notifyDeposit(tgId, amount) {
     if (!bot) return;
     await bot.api.sendMessage(
         tgId,
-        `💰 <b>Баланс пополнен на ${amount}!</b>\nПродлить прокси можно в «📱 Личный кабинет».`,
-        { parse_mode: 'HTML' }
+        `💰 <b>Баланс пополнен на ${amount} ${currencySign(getBotSettings().currency)}!</b>\nПродлить прокси можно в «👤 Личном кабинете».`,
+        { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('👤 Мои прокси', 'my') }
     ).catch(() => {});
 }
 
@@ -1035,22 +1063,24 @@ bot.on('message:text', async (ctx, next) => {
         ctx.reply('👇 <b>Выберите тариф:</b>', { parse_mode: 'HTML', reply_markup: tariffsKeyboard() })
     );
 
-    bot.hears('📱 Личный кабинет', async (ctx) => {
+    bot.hears(['👤 Личный кабинет', '📱 Личный кабинет'], async (ctx) => {
         const view = await cabinetView(ctx);
         await ctx.reply(view.text, { parse_mode: 'HTML', reply_markup: view.kb, disable_web_page_preview: true });
     });
 
-    // «⬅️ Назад» из экранов кабинета
+    // «⬅️ Назад» из экранов кабинета — правим сообщение на месте
     bot.callbackQuery('cabinet', async (ctx) => {
         await ctx.answerCallbackQuery();
         const view = await cabinetView(ctx);
-        await ctx.reply(view.text, { parse_mode: 'HTML', reply_markup: view.kb, disable_web_page_preview: true });
+        await showScreen(ctx, view);
     });
 
     bot.callbackQuery(/^sel:(\d+)$/, async (ctx) => {
         await ctx.answerCallbackQuery();
+        // Карточка тянет устройства/сессии из Telemt — показываем «печатает…»
+        await ctx.api.sendChatAction(ctx.chat.id, 'typing').catch(() => {});
         const view = await cabinetView(ctx, Number(ctx.match[1]));
-        await ctx.reply(view.text, { parse_mode: 'HTML', reply_markup: view.kb, disable_web_page_preview: true });
+        await showScreen(ctx, view);
     });
 
     // Ссылки обычным текстом: их можно скопировать и вставить руками.
@@ -1130,15 +1160,24 @@ bot.on('message:text', async (ctx, next) => {
     });
 
     // ═══ Инструкции подключения: выбор платформы → шаги ═══
-    bot.hears('📱 Как подключить', async (ctx) => {
+    function connectScreen() {
         const kb = new InlineKeyboard()
             .text('🖥 Windows', 'guide:win').text('🍎 macOS', 'guide:mac').row()
-            .text('📱 iOS (iPhone)', 'guide:ios').text('🤖 Android', 'guide:android');
-        await ctx.reply(
-            '📱 <b>Как подключить прокси</b>\n\nСамый простой способ — нажать на ссылку подключения ' +
-            'в «📱 Личном кабинете»: Telegram сам предложит добавить прокси.\n\nВыберите вашу платформу для подробной инструкции:',
-            { parse_mode: 'HTML', reply_markup: kb }
-        );
+            .text('📱 iOS (iPhone)', 'guide:ios').text('🤖 Android', 'guide:android').row()
+            .text('👤 Открыть кабинет', 'my');
+        return {
+            text: '📖 <b>Как подключить прокси</b>\n\nСамый простой способ — нажать на кнопку подключения ' +
+                'в «👤 Личном кабинете»: Telegram сам предложит добавить прокси.\n\nВыберите вашу платформу для подробной инструкции:',
+            kb,
+        };
+    }
+    bot.hears(['📖 Как подключить', '📱 Как подключить'], async (ctx) => {
+        const v = connectScreen();
+        await ctx.reply(v.text, { parse_mode: 'HTML', reply_markup: v.kb });
+    });
+    bot.callbackQuery('connect', async (ctx) => {
+        await ctx.answerCallbackQuery();
+        await showScreen(ctx, connectScreen());
     });
 
     bot.callbackQuery(/^guide:(win|mac|ios|android)$/, async (ctx) => {
@@ -1159,8 +1198,12 @@ bot.on('message:text', async (ctx, next) => {
                 `2️⃣ Вручную: Настройки → Данные и память → Настройки прокси → Добавить прокси → вставьте данные из кабинета.`,
         };
         const platform = ctx.match[1];
+        const guideKb = new InlineKeyboard()
+            .text('👤 Открыть кабинет', 'my').row()
+            .url('🛟 Написать в поддержку', 'https://t.me/' + SUPPORT_USERNAME.slice(1)).row()
+            .text('⬅️ К платформам', 'connect');
         await sendAsset(ctx.chat.id, `guide_${platform}`, `guide-${platform}.png`, guides[platform], {
-            parse_mode: 'HTML', disable_web_page_preview: true,
+            parse_mode: 'HTML', disable_web_page_preview: true, reply_markup: guideKb,
         });
     });
 
@@ -1197,9 +1240,7 @@ bot.on('message:text', async (ctx, next) => {
                 { parse_mode: 'HTML', reply_markup: kb }
             );
         }
-        await ctx.reply('♻️ <b>Выберите тариф продления:</b>', {
-            parse_mode: 'HTML', reply_markup: renewKeyboard(clientId),
-        });
+        await showScreen(ctx, { text: '♻️ <b>Выберите тариф продления:</b>', kb: renewKeyboard(clientId) });
     });
 
     bot.callbackQuery(/^renewmode:(\d+):(web|mtproto|both)$/, async (ctx) => {
@@ -1210,9 +1251,7 @@ bot.on('message:text', async (ctx, next) => {
             return ctx.answerCallbackQuery({ text: 'Нет тарифов этого типа — выберите другой вариант', show_alert: true });
         }
         await ctx.answerCallbackQuery();
-        await ctx.reply('♻️ <b>Выберите тариф продления:</b>', {
-            parse_mode: 'HTML', reply_markup: renewKeyboard(clientId, mode),
-        });
+        await showScreen(ctx, { text: '♻️ <b>Выберите тариф продления:</b>', kb: renewKeyboard(clientId, mode) });
     });
 
     // Переключатель автопродления с баланса (для конкретного прокси)
@@ -1224,8 +1263,9 @@ bot.on('message:text', async (ctx, next) => {
         const next = client.auto_renew ? 0 : 1;
         db.prepare('UPDATE clients SET auto_renew = ? WHERE id = ?').run(next, client.id);
         await ctx.answerCallbackQuery(next ? '✅ Автопродление включено' : 'Автопродление выключено');
-        const view = await cabinetView(ctx);
-        await ctx.reply(view.text, { parse_mode: 'HTML', reply_markup: view.kb, disable_web_page_preview: true });
+        // Возвращаем пользователя на ТУ ЖЕ карточку, а не в список прокси
+        const view = await cabinetView(ctx, client.id);
+        await showScreen(ctx, view);
     });
 
     bot.callbackQuery(/^renewpay:(\d+):(\d+)(?::(web|mtproto|both))?$/, async (ctx) => {
@@ -1241,8 +1281,11 @@ bot.on('message:text', async (ctx, next) => {
             .text(`500 ${sign}`, 'deposit:500').text(`1000 ${sign}`, 'deposit:1000').row()
             .text('✏️ Своя сумма', 'deposit:custom');
         try { for (const row of kb.inline_keyboard) for (const btn of row) if (btn.callback_data?.startsWith('deposit:')) btn.style = 'primary'; } catch { /* ignore */ }
-        await ctx.reply('💳 <b>Пополнение счёта</b>\n\nВыберите сумму:', {
-            parse_mode: 'HTML', reply_markup: kb,
+        await showScreen(ctx, {
+            text: `💳 <b>Пополнение счёта</b>\n` +
+                `💰 Текущий баланс: <b>${totalBalance(ctx.from.id).toFixed(2)} ${sign}</b>\n\n` +
+                `Балансом можно продлевать прокси в один тап — без карты.\n\n👇 <b>Выберите сумму:</b>`,
+            kb,
         });
     });
 
@@ -1279,7 +1322,7 @@ bot.on('message:text', async (ctx, next) => {
         const kb = new InlineKeyboard()
             .text(`✅ Купить — ${t.price} ${currencySign(t.currency)}`, `buy:${t.id}`).row()
             .text('⬅️ К тарифам', 'tariffs');
-        await ctx.reply(tariffDescription(t), { parse_mode: 'HTML', reply_markup: kb });
+        await showScreen(ctx, { text: tariffDescription(t), kb });
     });
 
     // Покупка: web-only тариф — сначала предупреждение про iOS
@@ -1337,7 +1380,8 @@ bot.on('message:text', async (ctx, next) => {
         if (stars) kb.text(`⭐ Оплатить звёздами (${stars} ⭐)`, `starspay:${paymentId}`).row();
 
         // Карта админа — всегда доступна
-        kb.text('🏦 Карта админа (СБП)', `manualpay:${paymentId}`);
+        kb.text('🏦 Карта админа (СБП)', `manualpay:${paymentId}`).row();
+        kb.text('⬅️ К тарифам', 'tariffs');
 
         await ctx.reply(
             `${tariffDescription(tariff)}\n\n🧾 Заказ #${paymentId}\n\n💳 <b>Выберите способ оплаты:</b>`,
@@ -1490,7 +1534,7 @@ bot.on('message:text', async (ctx, next) => {
 
     // ═══ 5. Тест 3 часа, мой доступ, поддержка ═══
 
-    bot.hears('🎁 Тест 3 часа', async (ctx) => {
+    async function issueTestAccess(ctx) {
         const tgId = ctx.from.id;
         const existing = db.prepare(
             "SELECT username FROM clients WHERE telegram_id = ? AND status = 'active'"
@@ -1503,7 +1547,9 @@ bot.on('message:text', async (ctx, next) => {
         }
         const oldTest = db.prepare('SELECT id FROM clients WHERE username LIKE ?').get(`test${tgId}%`);
         if (oldTest) {
-            return ctx.reply('😕 Бесплатный тест даётся один раз. Выберите тариф: /start');
+            return ctx.reply('😕 Бесплатный тест даётся один раз — выберите тариф:', {
+                reply_markup: new InlineKeyboard().text('🚀 К тарифам', 'tariffs'),
+            });
         }
 
         const expires = new Date(Date.now() + 3 * 3600 * 1000).toISOString();
@@ -1521,27 +1567,52 @@ bot.on('message:text', async (ctx, next) => {
             refPending.delete(tgId);
             db.prepare('DELETE FROM referral_pending WHERE telegram_id = ?').run(tgId);
             const client = db.prepare('SELECT * FROM clients WHERE username = ?').get(`test${tgId}`);
-            const links = clientLinks(client);
-
-            let text = `🎁 <b>Тестовый доступ на 3 часа активирован!</b>\n\n⏰ Действует до: <b>${fmtMSK(expires)}</b>\n\n`;
-            if (links.web_https) text += `🌐 <b>Web Proxy</b> (нажми — подключится сам):\n${links.web_https}\n\n`;
-if (links.mtproto_https) text += `🔌 <b>MTProto</b>:\n${links.mtproto_https}\n\n`;
-    if (links.mtproto_faketls_https) {
-        text += `🛡 <b>MTProto Fake TLS</b> (если обычный не подключается):\n${links.mtproto_faketls_https}\n\n`;
-    }
-            text += `❤️ Понравилось? Продлите в личном кабинете!`;
-            await ctx.reply(text, { parse_mode: 'HTML', disable_web_page_preview: true });
+            let text = `🎁 <b>Тестовый доступ на 3 часа активирован!</b>\n\n⏰ Действует до: <b>${fmtMSK(expires)}</b>\n\n` +
+                `Подключайся кнопками ниже — Telegram сам предложит добавить прокси.\n\n` +
+                `❤️ Понравилось? Продлите в личном кабинете!`;
+            let testKb = null;
+            try { testKb = connectKeyboard(client); } catch { testKb = null; }
+            await ctx.reply(text, { parse_mode: 'HTML', disable_web_page_preview: true, reply_markup: testKb || undefined });
             require('./notifier').notifyAdmin(getAll(), `🎁 Тест выдан: test${tgId}`).catch(() => {});
         } catch (e) {
             logger.error('Ошибка выдачи теста', { error: e.message, tgId });
             await ctx.reply('⚠️ Не удалось выдать тест. Попробуйте позже.');
+        }
+    }
+
+    // Кнопка «Тест 3 часа» из пустого кабинета и из reply-клавиатуры
+    bot.hears('🎁 Тест 3 часа', (ctx) => issueTestAccess(ctx));
+    bot.callbackQuery('test3', async (ctx) => {
+        await ctx.answerCallbackQuery();
+        await issueTestAccess(ctx);
+    });
+
+    // QR-код ссылки подключения: купил с ноутбука — навёл камеру телефона
+    bot.callbackQuery(/^qr:(\d+)$/, async (ctx) => {
+        const client = db.prepare('SELECT * FROM clients WHERE id = ? AND telegram_id = ?')
+            .get(Number(ctx.match[1]), ctx.from.id);
+        if (!client) return ctx.answerCallbackQuery({ text: 'Прокси не найден', show_alert: true });
+        await ctx.answerCallbackQuery();
+        const links = clientLinks(client);
+        const link = links.mtproto_https || links.web_https;
+        if (!link) return ctx.answerCallbackQuery({ text: 'Нет ссылки для QR', show_alert: true });
+        try {
+            const QRCode = require('qrcode');
+            const png = await QRCode.toBuffer(link, { width: 512, margin: 2 });
+            await ctx.replyWithPhoto(new InputFile(png), {
+                caption: '📷 <b>Наведите камеру телефона на код</b> — Telegram сам предложит подключить прокси.',
+                parse_mode: 'HTML',
+            });
+        } catch (e) {
+            logger.warn('QR: не удалось сгенерировать', { error: e.message });
+            await ctx.reply('⚠️ Не удалось сделать QR — используйте ссылки из кабинета.', { parse_mode: 'HTML' });
         }
     });
 
     bot.callbackQuery('my', async (ctx) => {
         const view = await cabinetView(ctx);
         await ctx.answerCallbackQuery();
-        await ctx.reply(view.text, { parse_mode: 'HTML', reply_markup: view.kb, disable_web_page_preview: true });
+        await showScreen(ctx, view);
     });
 
     bot.callbackQuery('support', async (ctx) => {
@@ -1625,8 +1696,15 @@ if (links.mtproto_https) text += `🔌 <b>MTProto</b>:\n${links.mtproto_https}\n
         if (stars) kb.text(`⭐ Оплатить звёздами (${stars} ⭐)`, `starspay:${result.lastInsertRowid}`).row();
         kb.text('🏦 Карта админа (СБП)', `manualpay:${result.lastInsertRowid}`);
 
+        const lacks = Math.max(0, tariff.price - balance).toFixed(2);
+        const cSign = currencySign(tariff.currency);
+        kb.row();
+        kb.text('💳 Пополнить баланс', 'topup');
+        styleButtons(kb, [['Пополнить баланс', 'primary']]);
         await ctx.reply(
-            `🧾 <b>Счёт #${result.lastInsertRowid}</b>\n💰 Баланса не хватило (${balance.toFixed(2)})\n\n💳 <b>Выберите способ оплаты — продление пройдёт автоматически:</b>`,
+            `🧾 <b>Счёт #${result.lastInsertRowid}</b>\n` +
+            `💰 На балансе: <b>${balance.toFixed(2)} ${cSign}</b> — не хватает <b>${lacks} ${cSign}</b>\n\n` +
+            `💳 <b>Оплатите счёт — продление пройдёт автоматически</b> (или пополните баланс):`,
             { parse_mode: 'HTML', reply_markup: kb }
         );
     }
