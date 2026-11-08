@@ -358,6 +358,29 @@ function showTab(name) {
 }
 
 // ── Загрузка ──
+// Вход по разовому коду из бота (/appcode) — работает на любом клиенте
+async function loginByCode() {
+    const input = document.getElementById('codeInput');
+    const code = (input && input.value ? input.value : '').trim();
+    if (!/^\d{6}$/.test(code)) { toast('Введите 6-значный код из бота — команда /appcode', 'bad'); return; }
+    document.getElementById('helloSub').textContent = 'вход по коду…';
+    try {
+        const authRes = await fetchWithTimeout('/api/miniapp/auth', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ code }),
+        });
+        const auth = await authRes.json().catch(() => ({}));
+        if (!authRes.ok || !auth.token) throw new Error(auth.error || 'Не удалось войти (' + authRes.status + ')');
+        TOKEN = auth.token;
+        const hello = document.getElementById('hello');
+        if (hello.childNodes[0]) hello.childNodes[0].textContent = 'Личный кабинет';
+        haptic('ok');
+        await refresh(true);
+    } catch (e) {
+        showBootError(e.message || 'Не удалось войти');
+    }
+}
+
 function showBootError(msg) {
     document.getElementById('helloSub').textContent = 'ошибка';
     document.getElementById('page-proxies').innerHTML =
@@ -385,18 +408,22 @@ async function boot() {
     }
     const initData = extractInitData();
     if (!initData) {
-        // Диагностика вместо тупика: видно, откуда открыто и дошёл ли вход
+        // Диагностика вместо тупика: видно, откуда открыто и что в хеше
         let env;
         try {
+            const hashKeys = (location.hash || '').replace(/^#/, '').split('&')
+                .map(p => p.split('=')[0]).filter(Boolean).join(',') || 'пусто';
             env = 'платформа: ' + (tg.platform || 'неизвестна') +
-                  ' · клиент: ' + (tg.version || '?') +
-                  ' · данные входа в ссылке: ' + (/tgWebAppData=/.test(location.hash || '') ? 'есть' : 'нет');
+                  ' · Bot API: ' + (tg.version || '?') +
+                  ' · хеш: ' + hashKeys;
         } catch (e) { env = ''; }
-        document.getElementById('hello').innerHTML = 'Откройте через бота<small>приложение работает внутри Telegram</small>';
+        document.getElementById('hello').innerHTML = 'Откройте через бота<small>или войдите по коду — работает всегда</small>';
         document.getElementById('page-proxies').innerHTML =
             '<div class="empty"><div class="big">🤖</div>' +
-            '<p>Это приложение открывается из нашего бота:<br>открой чат с ботом и нажми «📱 Приложение» внизу.</p>' +
-            '<button class="btn primary" onclick="boot()">↻ Проверить снова</button>' +
+            '<p>Напиши боту команду <b>/appcode</b> — он пришлёт код входа.<br>Введи его здесь:</p>' +
+            '<input class="amount-input" id="codeInput" inputmode="numeric" maxlength="6" placeholder="6-значный код" style="text-align:center;letter-spacing:.3em">' +
+            '<button class="btn primary wide" onclick="loginByCode()">🔑 Войти по коду</button>' +
+            '<button class="btn ghost wide" style="margin-top:8px" onclick="boot()">↻ Проверить снова</button>' +
             (env ? `<p class="note" style="margin-top:14px">${esc(env)}</p>` : '') +
             '</div>';
         showTab('proxies');

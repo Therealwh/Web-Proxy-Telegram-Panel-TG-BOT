@@ -127,6 +127,17 @@ function fmtMSK(date, withSeconds = true) {
     return new Date(date).toLocaleString('ru-RU', opts) + ' МСК';
 }
 
+/** Адрес мини-аппа (или null — домен не настроен/не настоящий). */
+function miniAppUrl() {
+    try {
+        const cfg = require('../config');
+        const url = `https://${cfg.domain}/miniapp`;
+        return /^https:\/\/[a-z0-9.-]+\.[a-z]{2,}/i.test(url) ? url : null;
+    } catch {
+        return null;
+    }
+}
+
 /** Дружелюбное имя прокси: tg123456789x2 → «Мой прокси №2» (код остаётся для поддержки). */
 function proxyTitle(username) {
     const m = /x(\d+)$/.exec(String(username || ''));
@@ -171,6 +182,8 @@ function tariffsKeyboard() {
     }
     kb.text('👤 Мои прокси', 'my').row();
     kb.text('💬 Поддержка', 'support').row();
+    const miniUrl = miniAppUrl();
+    if (miniUrl) kb.webApp('📱 Приложение', miniUrl).row();
     if (settings.status_url) kb.url('🟢 Статус сервиса', settings.status_url).row();
     for (const b of settings.custom_buttons || []) {
         if (b.enabled !== false && b.name && b.url) kb.url(b.name.slice(0, 64), b.url).row();
@@ -217,14 +230,8 @@ function mainReplyKeyboard(ctx) {
         kb.text('🤝 Рефералы').text('🛟 Поддержка').row();
     }
     // Мини-апп: кнопка открывает веб-приложение прямо в Telegram.
-    // Домен должен быть настоящим — с localhost Telegram отклонит кнопку.
-    try {
-        const cfg = require('../config');
-        const miniappUrl = `https://${cfg.domain}/miniapp`;
-        if (/^https:\/\/[a-z0-9.-]+\.[a-z]{2,}/i.test(miniappUrl)) {
-            kb.webApp('📱 Приложение', miniappUrl).row();
-        }
-    } catch { /* без конфига — без кнопки */ }
+    const miniappUrl = miniAppUrl();
+    if (miniappUrl) kb.webApp('📱 Приложение', miniappUrl).row();
     kb.text('📱 Как подключить').row();
     if (isAdmin(ctx)) kb.text('👑 Админ-панель').row();
     return kb;
@@ -341,7 +348,9 @@ async function cabinetView(ctx, selectedId = null) {
 
     if (clients.length === 0) {
         const kb = new InlineKeyboard().text('🚀 Выбрать тариф', 'tariffs').row()
-            .text('🎁 Тест 3 часа', 'test3');
+            .text('🎁 Тест 3 часа', 'test3').row();
+        const miniUrl = miniAppUrl();
+        if (miniUrl) kb.webApp('📱 Открыть приложение', miniUrl);
         return { text: '📱 <b>Личный кабинет</b>\n\nУ вас пока нет прокси.\nВыберите тариф или возьмите бесплатный тест!', kb };
     }
 
@@ -445,6 +454,8 @@ const selected = clients.find((c) => c.id === selectedId) || null;
             ['Автопродление: ❌', 'danger'],
         ]);
         kb.row();
+        const miniUrlCard = miniAppUrl();
+        if (miniUrlCard) kb.webApp('📱 Приложение', miniUrlCard);
         kb.text('⬅️ Все мои прокси', 'my');
         // Переключение между прокси — список всегда внизу карточки
         const others = clients.filter((cl) => cl.id !== selected.id).slice(0, 10);
@@ -1585,6 +1596,22 @@ bot.on('message:text', async (ctx, next) => {
     bot.callbackQuery('test3', async (ctx) => {
         await ctx.answerCallbackQuery();
         await issueTestAccess(ctx);
+    });
+
+    // Код входа в мини-апп: для клиентов, где initData не доходит.
+    // Пользователь вводит код в приложении — сессия выдаётся без initData.
+    bot.command('appcode', async (ctx) => {
+        const code = String(require('crypto').randomInt(100000, 1000000));
+        const expires = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+        db.prepare('DELETE FROM miniapp_login_codes WHERE telegram_id = ?').run(ctx.from.id);
+        db.prepare('INSERT INTO miniapp_login_codes (code, telegram_id, expires_at) VALUES (?, ?, ?)')
+            .run(code, ctx.from.id, expires);
+        await ctx.reply(
+            `🔑 <b>Код входа в приложение:</b> <code>${code}</code>\n\n` +
+            `Открой «📱 Приложение», нажми «Войти по коду» и введи его.\n` +
+            `⏰ Действует 10 минут, код разовый.`,
+            { parse_mode: 'HTML' }
+        );
     });
 
     // QR-код ссылки подключения: купил с ноутбука — навёл камеру телефона

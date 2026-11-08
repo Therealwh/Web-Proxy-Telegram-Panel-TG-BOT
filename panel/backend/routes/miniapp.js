@@ -46,23 +46,53 @@ function currencySign(currency) {
 // Авторизация: initData → JWT мини-аппа
 // ===========================================================================
 
+/**
+ * Разовый код входа: для клиентов, где Telegram не передаёт initData.
+ * Код выдаёт бот командой /appcode, живёт 10 минут, сгорает при входе.
+ */
+function consumeLoginCode(code) {
+    const row = db.prepare('SELECT telegram_id, expires_at FROM miniapp_login_codes WHERE code = ?').get(code);
+    if (!row) return null;
+    db.prepare('DELETE FROM miniapp_login_codes WHERE code = ?').run(code);
+    if (new Date(row.expires_at + 'Z') < new Date()) return null;
+    return row.telegram_id;
+}
+
 router.post('/auth', authLimiter, (req, res) => {
     const bs = botSettings();
     if (!bs.bot_token) {
         return res.status(503).json({ error: 'Бот не настроен — мини-апп недоступен' });
     }
-    const user = validateInitData(String(req.body?.initData || ''), bs.bot_token);
-    if (!user) {
-        return res.status(401).json({ error: 'Подпись Telegram не сошлась. Откройте приложение через бота.' });
+    const initData = String(req.body?.initData || '');
+    const code = String(req.body?.code || '').trim();
+
+    let tgId = null;
+    let firstName = '';
+    if (initData) {
+        const user = validateInitData(initData, bs.bot_token);
+        if (!user) {
+            return res.status(401).json({ error: 'Подпись Telegram не сошлась. Откройте приложение через бота.' });
+        }
+        tgId = user.id;
+        firstName = user.first_name || '';
+    } else if (/^\d{6}$/.test(code)) {
+        tgId = consumeLoginCode(code);
+        if (!tgId) {
+            return res.status(401).json({ error: 'Код не найден или истёк — запросите новый командой /appcode в боте' });
+        }
+        firstName = (db.prepare('SELECT first_name FROM bot_users WHERE telegram_id = ?').get(tgId) || {}).first_name || '';
+    } else {
+        return res.status(401).json({ error: 'Откройте приложение через бота или войдите по коду из /appcode' });
     }
+
     const token = jwt.sign(
-        { tg: user.id, scope: 'miniapp' },
+        { tg: tgId, scope: 'miniapp' },
         config.jwtSecret,
         { expiresIn: TOKEN_TTL_SEC }
     );
     res.json({
         token,
-        user: { id: user.id, first_name: user.first_name || '', username: user.username || '' },
+        user: { id: tgId, first_name: firstName, username: '' },
     });
 });
 
