@@ -10,11 +10,20 @@
     with a sales bot, analytics, auto-renewal and auto-updates.
   </p>
   <p align="center">
-    <a href="https://github.com/Therealwh/Web-Proxy-Telegram-Panel-TG-BOT/releases/latest"><img src="https://img.shields.io/github/v/release/Therealwh/Web-Proxy-Telegram-Panel-TG-BOT?style=flat-square&label=version" alt="Release"></a>
-    <a href="LICENSE"><img src="https://img.shields.io/github/license/Therealwh/Web-Proxy-Telegram-Panel-TG-BOT?style=flat-square" alt="License"></a>
+    <a href="https://github.com/Therealwh/Web-Proxy-Telegram-Panel-TG-BOT/releases/latest"><img src="https://img.shields.io/github/v/release/Therealwh/Web-Proxy-Telegram-Panel-TG-BOT?style=flat-square&label=version&color=2ea043" alt="Version"></a>
+    <a href="https://github.com/Therealwh/Web-Proxy-Telegram-Panel-TG-BOT/stargazers"><img src="https://img.shields.io/github/stars/Therealwh/Web-Proxy-Telegram-Panel-TG-BOT?style=flat-square&color=dfb317" alt="Stars"></a>
+    <a href="https://github.com/Therealwh/Web-Proxy-Telegram-Panel-TG-BOT/network/members"><img src="https://img.shields.io/github/forks/Therealwh/Web-Proxy-Telegram-Panel-TG-BOT?style=flat-square&color=4c9ffe" alt="Forks"></a>
+    <a href="https://github.com/Therealwh/Web-Proxy-Telegram-Panel-TG-BOT/issues"><img src="https://img.shields.io/github/issues/Therealwh/Web-Proxy-Telegram-Panel-TG-BOT?style=flat-square&color=fe7d37" alt="Issues"></a>
     <a href="https://github.com/Therealwh/Web-Proxy-Telegram-Panel-TG-BOT/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/Therealwh/Web-Proxy-Telegram-Panel-TG-BOT/ci.yml?style=flat-square&label=CI" alt="CI"></a>
-    <img src="https://img.shields.io/badge/Ubuntu-22.04%20%7C%2024.04-orange?style=flat-square" alt="Platform">
-    <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="MIT">
+  </p>
+  <p align="center">
+    <img src="https://img.shields.io/badge/node-%E2%89%A520-339933?style=flat-square&logo=node.js&logoColor=white" alt="Node ≥ 20">
+    <img src="https://img.shields.io/badge/Telegram%20Bot%20API-9.x-26A5E4?style=flat-square&logo=telegram&logoColor=white" alt="Telegram Bot API">
+    <img src="https://img.shields.io/badge/Ubuntu-22.04%20%7C%2024.04-E95420?style=flat-square&logo=ubuntu&logoColor=white" alt="Ubuntu">
+    <a href="LICENSE"><img src="https://img.shields.io/github/license/Therealwh/Web-Proxy-Telegram-Panel-TG-BOT?style=flat-square&color=8b5cf6" alt="MIT License"></a>
+  </p>
+  <p align="center">
+    <sub>🤖 Sales bot · 📱 Mini App · 🤝 Referrals · 💳 5 payment methods · 🛡 Web Proxy + MTProto · 📊 Analytics</sub>
   </p>
 </p>
 

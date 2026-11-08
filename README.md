@@ -10,11 +10,20 @@
     с ботом продаж, аналитикой, автопродлением и автообновлениями.
   </p>
   <p align="center">
-    <a href="https://github.com/Therealwh/Web-Proxy-Telegram-Panel-TG-BOT/releases/latest"><img src="https://img.shields.io/github/v/release/Therealwh/Web-Proxy-Telegram-Panel-TG-BOT?style=flat-square&label=%D0%B2%D0%B5%D1%80%D1%81%D0%B8%D1%8F" alt="Release"></a>
-    <a href="LICENSE"><img src="https://img.shields.io/github/license/Therealwh/Web-Proxy-Telegram-Panel-TG-BOT?style=flat-square" alt="License"></a>
+    <a href="https://github.com/Therealwh/Web-Proxy-Telegram-Panel-TG-BOT/releases/latest"><img src="https://img.shields.io/github/v/release/Therealwh/Web-Proxy-Telegram-Panel-TG-BOT?style=flat-square&label=%D0%B2%D0%B5%D1%80%D1%81%D0%B8%D1%8F&color=2ea043" alt="Версия"></a>
+    <a href="https://github.com/Therealwh/Web-Proxy-Telegram-Panel-TG-BOT/stargazers"><img src="https://img.shields.io/github/stars/Therealwh/Web-Proxy-Telegram-Panel-TG-BOT?style=flat-square&color=dfb317" alt="Stars"></a>
+    <a href="https://github.com/Therealwh/Web-Proxy-Telegram-Panel-TG-BOT/network/members"><img src="https://img.shields.io/github/forks/Therealwh/Web-Proxy-Telegram-Panel-TG-BOT?style=flat-square&color=4c9ffe" alt="Forks"></a>
+    <a href="https://github.com/Therealwh/Web-Proxy-Telegram-Panel-TG-BOT/issues"><img src="https://img.shields.io/github/issues/Therealwh/Web-Proxy-Telegram-Panel-TG-BOT?style=flat-square&color=fe7d37" alt="Issues"></a>
     <a href="https://github.com/Therealwh/Web-Proxy-Telegram-Panel-TG-BOT/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/Therealwh/Web-Proxy-Telegram-Panel-TG-BOT/ci.yml?style=flat-square&label=CI" alt="CI"></a>
-    <img src="https://img.shields.io/badge/Ubuntu-22.04%20%7C%2024.04-orange?style=flat-square" alt="Platform">
-    <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="MIT">
+  </p>
+  <p align="center">
+    <img src="https://img.shields.io/badge/node-%E2%89%A520-339933?style=flat-square&logo=node.js&logoColor=white" alt="Node ≥ 20">
+    <img src="https://img.shields.io/badge/Telegram%20Bot%20API-9.x-26A5E4?style=flat-square&logo=telegram&logoColor=white" alt="Telegram Bot API">
+    <img src="https://img.shields.io/badge/Ubuntu-22.04%20%7C%2024.04-E95420?style=flat-square&logo=ubuntu&logoColor=white" alt="Ubuntu">
+    <a href="LICENSE"><img src="https://img.shields.io/github/license/Therealwh/Web-Proxy-Telegram-Panel-TG-BOT?style=flat-square&color=8b5cf6" alt="MIT License"></a>
+  </p>
+  <p align="center">
+    <sub>🤖 Бот продаж · 📱 Mini App · 🤝 Рефералка · 💳 5 способов оплаты · 🛡 Web Proxy + MTProto · 📊 Аналитика</sub>
   </p>
 </p>
 
@@ -47,7 +56,7 @@
 
 | | |
 |---|---|
-| 🤖 **Бот продаж** | Тарифы, 5 способов оплаты (баланс, CryptoBot, ЮKassa, ⭐ Stars, карта), кабинет с кнопками подключения, автопродление, рефералка, бесплатный тест |
+| 🤖 **Бот продаж** | Тарифы, 5 способов оплаты (баланс, CryptoBot, ЮKassa, ⭐ Stars, карта), кабинет с кнопками подключения и QR-кодами, автопродление, **рефералка — процент с платежей на баланс**, бесплатный тест |
 | 📊 **Аналитика** | Выручка по дням, топ тарифов, конверсия теста, новые клиенты, воронка |
 | 🪪 **Пользователи бота** | Все, кто писал боту (не только покупатели): выдача прокси, пополнение баланса, рассылка — прямо из панели |
 
@@ -70,7 +79,7 @@
 | 🩺 **Проверка системы** | Диагностика по кнопке: версии, сервисы, ресурсы, целостность БД, бэкапы, безопасность |
 | 🔄 **Обновления** | Автообновления с живым прогрессом и откатом, смена домена из панели |
 | 💾 **Бэкапы** | Автоматические, с retention, экспорт и восстановление в файл, отправка в Telegram |
-| 🔔 **Уведомления** | Алерты в Telegram: падение сервисов, деградация DC, кончившийся диск, новый клиент |
+| 🔔 **Уведомления** | Алерты в Telegram: падение сервисов, деградация DC, кончившийся диск, новый клиент, продление и пополнение |
 | 🎨 **Интерфейс** | Тёмная и светлая темы, акцентные цвета, RU/EN, живая карта |
 
 ### Интеграции
@@ -80,7 +89,9 @@
 | 🔌 **Публичный API** | API-ключи с уровнями прав, Swagger UI, 13 эндпоинтов |
 | 🪝 **Вебхуки** | 8 событий с подписью HMAC-SHA256, управление из панели, кнопка «Тест», статус доставки |
 | 📄 **Сайт-заглушка** | Файловый менеджер, шаблоны, SEO — домен выглядит как обычный сайт |
-| 📱 **Веб-кабинет клиента** | Продление и оплата прямо в браузере, даже если клиент удалил бота |
+| 🟢 **Статус-страница** | Публичная `/status`: аптайм 30 дней, доступность из России, полоски по дням |
+| 📱 **Telegram Mini App** | Полноценный кабинет внутри Telegram: прокси, покупка и продление, рефералка с кнопкой «Поделиться» — вход без пароля по подписи Telegram |
+| 🌐 **Веб-кабинет клиента** | Продление и оплата прямо в браузере, даже если клиент удалил бота |
 
 - **Панель TGGATE**: https://github.com/Therealwh/Web-Proxy-Telegram-Panel-TG-BOT
 - **Telemt** (прокси-сервер): https://github.com/telemt/telemt
