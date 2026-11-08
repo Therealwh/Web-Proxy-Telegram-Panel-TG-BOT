@@ -247,6 +247,41 @@ run_robust "npm run build" "${INSTALL_DIR}/panel/frontend" run build
 # npm от root создаёт root-owned файлы — возвращаем владение панели
 chown -R tggate:tggate "${INSTALL_DIR}/panel" 2>/dev/null || true
 
+# ---------------------------------------------------------------------------
+# Самовосстановление nginx: на установках, обновлённых со старых версий,
+# белый список публичных страниц панели может не знать про /miniapp и /p —
+# тогда мини-апп и веб-кабинет открывают сайт-заглушку Telemt. Правим точечно
+# и только если найден СТАРЫЙ паттерн; при ошибке nginx -t — откат правки.
+# ---------------------------------------------------------------------------
+fix_nginx_public_pages() {
+    local conf="/etc/nginx/sites-enabled/tggate.conf"
+    [ -f "$conf" ] || conf="/etc/nginx/sites-available/tggate.conf"
+    [ -f "$conf" ] || return 0
+    grep -q 'location ~ \^/(qr|qrimg|status) {' "$conf" || return 0
+
+    info "nginx: добавляю /miniapp и /p в публичные страницы панели..."
+    cp "$conf" "${conf}.bak-public-pages"
+    # Правим python-ом: паттерн содержит | — sed с ним ломается
+    python3 - "$conf" << 'PYIN'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+old = "location ~ ^/(qr|qrimg|status) {"
+new = "location ~ ^/(qr|qrimg|status|p|miniapp)(/|$) {"
+if old in s:
+    open(p, 'w').write(s.replace(old, new, 1))
+    print("[update] nginx: location обновлён")
+PYIN
+    if nginx -t 2>/dev/null; then
+        systemctl reload nginx 2>/dev/null || true
+        info "nginx: конфиг перезагружен"
+    else
+        info "nginx -t не прошёл — откатываю правку"
+        cp "${conf}.bak-public-pages" "$conf"
+    fi
+}
+fix_nginx_public_pages
+
 info "Готово! Перезапускаю панель..."
 
 # ---------------------------------------------------------------------------
