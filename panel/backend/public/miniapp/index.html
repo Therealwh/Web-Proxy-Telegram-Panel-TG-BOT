@@ -222,11 +222,16 @@ let DATA = null;      // overview
 let TARIFFS = null;
 let pendingSheet = null; // {type:'purchase'|'renew'|'deposit', ...}
 
-// ── Telegram: тема, раскладка, тактиль ──
+// ── Telegram: тема, раскладка, тактиль (каждый вызов защищён — старые клиенты
+//    бросают исключения на новых методах, и это не должно ломать загрузку) ──
+function tgSafe(fn) { try { return fn(); } catch (e) { return undefined; } }
 function initTg() {
     if (!tg) return;
-    try { tg.ready(); tg.expand(); tg.setHeaderColor('bg_color'); } catch (e) {}
-    if (tg.themeParams && tg.themeParams.bg_color) {
+    tgSafe(() => tg.ready());
+    tgSafe(() => tg.expand());
+    tgSafe(() => tg.setHeaderColor('bg_color'));
+    tgSafe(() => {
+        if (!tg.themeParams || !tg.themeParams.bg_color) return;
         const t = tg.themeParams, light = tg.colorScheme === 'light';
         if (light) document.body.classList.add('light');
         const root = document.documentElement.style;
@@ -236,7 +241,7 @@ function initTg() {
         if (t.hint_color) root.setProperty('--muted', t.hint_color);
         if (t.link_color) root.setProperty('--accent', t.link_color);
         if (t.button_color) root.setProperty('--accent', t.button_color);
-    }
+    });
 }
 function haptic(kind) {
     try {
@@ -247,12 +252,29 @@ function haptic(kind) {
 }
 
 // ── API ──
+// Любой запрос живёт не дольше 10 секунд: сеть в вебвью может пропасть —
+// без таймаута приложение висело бы в «загрузке…» вечно.
+async function fetchWithTimeout(url, opts = {}, timeoutMs = 10000) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+    try {
+        return await fetch(url, { ...opts, signal: ctrl.signal });
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
 async function api(path, opts = {}) {
-    const res = await fetch('/api/miniapp' + path, {
-        method: opts.method || 'GET',
-        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + TOKEN },
-        body: opts.body ? JSON.stringify(opts.body) : undefined,
-    });
+    let res;
+    try {
+        res = await fetchWithTimeout('/api/miniapp' + path, {
+            method: opts.method || 'GET',
+            headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + TOKEN },
+            body: opts.body ? JSON.stringify(opts.body) : undefined,
+        });
+    } catch (e) {
+        throw new Error('Нет связи с сервером — проверь интернет и повтори');
+    }
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
         if (res.status === 401 && !path.startsWith('/auth')) { throw new Error('Сессия истекла — переоткройте приложение'); }
@@ -308,8 +330,16 @@ function showTab(name) {
 }
 
 // ── Загрузка ──
+function showBootError(msg) {
+    document.getElementById('helloSub').textContent = 'ошибка';
+    document.getElementById('page-proxies').innerHTML =
+        `<div class="empty"><div class="big">😴</div><p>${esc(msg)}</p>
+         <button class="btn primary" onclick="boot()">↻ Повторить</button></div>`;
+    showTab('proxies');
+}
+
 async function boot() {
-    initTg();
+    try { initTg(); } catch (e) { /* даже это не должно останавливать загрузку */ }
     const initData = tg ? (tg.initData || '') : '';
     if (!initData) {
         document.getElementById('hello').innerHTML = 'Откройте через бота<small>приложение работает внутри Telegram</small>';
@@ -319,24 +349,25 @@ async function boot() {
         return;
     }
     try {
-        const auth = await fetch('/api/miniapp/auth', {
+        document.getElementById('helloSub').textContent = 'подключение…';
+        const authRes = await fetchWithTimeout('/api/miniapp/auth', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ initData }),
-        }).then(r => r.json());
-        if (!auth.token) throw new Error(auth.error || 'Не удалось войти');
+        });
+        const auth = await authRes.json().catch(() => ({}));
+        if (!authRes.ok || !auth.token) throw new Error(auth.error || 'Не удалось войти (' + authRes.status + ')');
         TOKEN = auth.token;
-        if (auth.user.first_name) document.getElementById('hello').childNodes[0].textContent = `Привет, ${auth.user.first_name}!`;
+        if (auth.user && auth.user.first_name) {
+            const hello = document.getElementById('hello');
+            if (hello.childNodes[0]) hello.childNodes[0].textContent = `Привет, ${auth.user.first_name}!`;
+        }
         await refresh(true);
     } catch (e) {
-        document.getElementById('helloSub').textContent = 'ошибка входа';
-        document.getElementById('page-proxies').innerHTML =
-            `<div class="empty"><div class="big">🔒</div><p>${e.message}</p></div>`;
-        showTab('proxies');
+        showBootError(e.message || 'Не удалось загрузиться');
     }
 }
 
 async function refresh(first) {
-    if (!first) document.querySelectorAll('.page .skel').forEach(() => {});
     document.getElementById('helloSub').textContent = 'обновляю…';
     try {
         [DATA, TARIFFS] = await Promise.all([api('/overview'), api('/tariffs')]);
