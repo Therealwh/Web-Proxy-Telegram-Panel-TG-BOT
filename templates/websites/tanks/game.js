@@ -18,6 +18,38 @@ const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const lsGet=k=>{try{return localStorage.getItem(k);}catch(e){return null;}};
 const lsSet=(k,v)=>{try{localStorage.setItem(k,v);}catch(e){}};
 
+/* ── Ник танкиста: обязателен перед игрой, хранится в браузере ── */
+function getNick(){ return (lsGet('tanki.nick')||'').trim(); }
+function normalizeNickClient(v){
+  return String(v||'').replace(/[^\p{L}\p{N}\s_.!?\-]/gu,'').trim().replace(/\s+/g,' ').slice(0,16);
+}
+function showNickGate(){
+  const g=document.getElementById('nickGate'); if(!g)return;
+  g.classList.add('open');
+  try{ g.setAttribute('aria-hidden','false'); }catch(e){}
+  const inp=document.getElementById('nickInput');
+  if(inp){ inp.value=getNick(); setTimeout(()=>{ try{inp.focus();}catch(e){} },150); }
+}
+function hideNickGate(){
+  const g=document.getElementById('nickGate'); if(!g)return;
+  g.classList.remove('open');
+  try{ g.setAttribute('aria-hidden','true'); }catch(e){}
+}
+function saveNickFromInput(){
+  const inp=document.getElementById('nickInput');
+  const v=normalizeNickClient(inp?inp.value:'');
+  if(v.length<2){
+    const err=document.getElementById('nickErr'); if(err)err.hidden=false;
+    if(inp){ inp.classList.remove('shake-x'); void inp.offsetWidth; inp.classList.add('shake-x'); }
+    return;
+  }
+  lsSet('tanki.nick',v);
+  const err=document.getElementById('nickErr'); if(err)err.hidden=true;
+  hideNickGate();
+  try{ SND.init(); SND.resume(); }catch(e){}
+  updateMyBest();
+}
+
 /* ═══════════════ ЗВУК ═══════════════ */
 const SND={ctx:null,gain:null,muted:lsGet('tanki.mute')==='1',moveNodes:null,moveOn:false,
   init(){ if(this.ctx) return; try{
@@ -421,7 +453,10 @@ window.addEventListener('keydown',e=>{
 
   if(G.state==='title'){
     if(['ArrowUp','ArrowDown','KeyW','KeyS'].includes(e.code)){G.menuIndex^=1;sfx.tick();return;}
-    if(e.code==='Enter'||e.code==='Space')runMenu(G.menuIndex);
+    if(e.code==='Enter'||e.code==='Space'){
+      if(!getNick()){showNickGate();return;}
+      runMenu(G.menuIndex);
+    }
     return;
   }
   if(G.state==='editor'){
@@ -473,7 +508,10 @@ document.querySelectorAll('.dbtn').forEach(b=>{
 });
 const btnFire=document.getElementById('btnFire');
 const fireDown=e=>{e.preventDefault();SND.init();SND.resume();
-  if(G.state==='title'){runMenu(G.menuIndex);return;} keys.touchFire=true;};
+  if(G.state==='title'){
+    if(!getNick()){showNickGate();return;}
+    runMenu(G.menuIndex);return;
+  } keys.touchFire=true;};
 const fireUp=e=>{e.preventDefault();keys.touchFire=false;};
 btnFire.addEventListener('pointerdown',fireDown);
 btnFire.addEventListener('touchstart',fireDown,{passive:false});
@@ -983,11 +1021,15 @@ async function loadScores(){
     const data=await res.json();
     const list=document.getElementById('scores-list');
     if(!list)return;
-    if(!data.scores||data.scores.length===0){scoresMsg('Таблица рекордов пуста — будьте первым!');return;}
-    list.innerHTML=data.scores.map((s,i)=>
-      `<li><span class="pos">${i+1}.</span>`+
-      `<span class="nick">${escapeHtml(s.nickname)}</span>`+
-      `<span class="sc">${s.score}</span></li>`).join('');
+    if(!data.scores||data.scores.length===0){scoresMsg('Таблица рекордов пуста — будьте первым!');updateMyBest();return;}
+    const me=getNick().toLowerCase();
+    list.innerHTML=data.scores.map((s,i)=>{
+      const mine=me&&s.nickname&&s.nickname.toLowerCase()===me;
+      return `<li${mine?' class="me"':''}><span class="pos">${i+1}.</span>`+
+      `<span class="nick">${escapeHtml(s.nickname)}${mine?' <b class="you">— это вы</b>':''}</span>`+
+      `<span class="sc">${s.score}</span></li>`;
+    }).join('');
+    updateMyBest();
   }catch(e){ scoresMsg('Рекорды загружаются после старта панели'); }
 }
 /* Сервер принимает не чаще одного результата в 30 секунд (защита от
@@ -1004,8 +1046,8 @@ async function submitScore(){
   if(wait>0){ submitQueued=true; setTimeout(submitScore, wait+50); return; }
   submitInFlight=true;
   try{
-    let nick=lsGet('tanki.nick');
-    if(!nick){nick='Танкист-'+randInt(100,999);lsSet('tanki.nick',nick);}
+    const nick=getNick();
+    if(!nick){submitQueued=false;return;} // без ника не отправляем (гейт его требует)
     const res=await fetch(API,{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({nickname:nick,score:G.score,level:G.level})});
     if(res.ok){ lastSubmitAt=Date.now(); loadScores(); }
@@ -1021,7 +1063,24 @@ async function submitScore(){
 /* Таблица рекордов загружается сразу при открытии страницы.
  * Раньше она заполнялась только после отправки своего результата:
  * пока игрок не проиграл, раздел висел с надписью «Загрузка…». */
-if (document.getElementById('scores-list')) loadScores();
+/* Свой рекорд над таблицей (обновляется после игры и загрузки) */
+function updateMyBest(){
+  const el=document.getElementById('myBest');
+  if(el) el.innerHTML=`Ваш рекорд: <b>${+lsGet('tanki.hi')||0}</b> <button id="btnNick" class="nickbtn" title="Сменить ник">✏️ ${escapeHtml(getNick())||'ник'}</button>`;
+}
+
+if (document.getElementById('scores-list')) {
+  loadScores();
+  updateMyBest();
+  const myBestEl=document.getElementById('myBest');
+  if(myBestEl) myBestEl.addEventListener('click',(e)=>{ if(e.target&&e.target.id==='btnNick') showNickGate(); });
+  const saveBtn=document.getElementById('nickSave');
+  if(saveBtn) saveBtn.addEventListener('click',saveNickFromInput);
+  const nickInp=document.getElementById('nickInput');
+  if(nickInp) nickInp.addEventListener('keydown',(e)=>{ if(e.key==='Enter')saveNickFromInput(); });
+  // Первый визит без ника — гейт сразу
+  if(!getNick()) showNickGate();
+}
 
 const TIPS=[
   'Каждый 4-й, 11-й и 18-й вражеский танк везёт бонус — он мигает красным.',

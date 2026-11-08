@@ -54,8 +54,11 @@ function boot() {
             elements.set(id, {
                 id, style: {}, value: '', textContent: '', innerHTML: '', className: '',
                 width: 300, height: 150,
-                addEventListener() {}, appendChild() {}, removeChild() {},
-                blur() {}, classList: { add() {}, remove() {}, toggle() {} },
+                _listeners: {},
+                addEventListener(t, f) { this._listeners[t] = f; }, appendChild() {}, removeChild() {},
+                blur() {},
+                click() { const f = this._listeners && this._listeners.click; if (f) f({ preventDefault() {} }); },
+                classList: { _s: new Set(), add(c) { this._s.add(c); }, remove(c) { this._s.delete(c); }, contains(c) { return this._s.has(c); }, toggle() {} },
                 getContext: undefined,
                 getBoundingClientRect: () => ({ left: 0, top: 0, width: 416, height: 416 }),
                 setPointerCapture() {},
@@ -127,6 +130,8 @@ function boot() {
 
     return {
         errors, pump, keydown, canvasState, contexts,
+        win: { localStorage: sandbox.localStorage },
+        document: sandbox.document,
         frames: () => frames,
         press: (code) => { if (keydown) keydown({ code, preventDefault() {}, repeat: false }); },
     };
@@ -146,6 +151,7 @@ describe('новая игра запускается под жёстким CSP',
 
     test('после старта идёт игровой процесс', () => {
         const g = boot();
+        g.win.localStorage.setItem('tanki.nick', 'Тестер'); // гейт: без ника старт закрыт
         g.pump(20);
         g.press('Enter');       // «НАЧАТЬ ИГРУ»
         g.pump(200);            // интро + игровой кадры
@@ -153,8 +159,28 @@ describe('новая игра запускается под жёстким CSP',
         assert.ok(g.frames() > 200, `кадров мало: ${g.frames()}`);
     });
 
+    test('без ника игра не стартует — открывается гейт ввода ника', () => {
+        const g = boot();
+        g.pump(10);
+        g.press('Enter');       // нет ника → гейт вместо старта
+        g.pump(10);
+        assert.deepEqual(g.errors, [], `ошибки: ${g.errors.join(' | ')}`);
+        const gate = g.document.getElementById('nickGate');
+        assert.ok(gate && gate.classList.contains('open'), 'гейт ника должен открыться');
+        // Вводим ник и сохраняем — гейт закрывается
+        const inp = g.document.getElementById('nickInput');
+        inp.value = 'Тестер';
+        g.document.getElementById('nickSave').click();
+        assert.ok(!gate.classList.contains('open'), 'после сохранения ника гейт закрыт');
+        g.press('Enter');       // теперь стартует
+        g.pump(120);
+        assert.deepEqual(g.errors, [], `ошибки после входа: ${g.errors.join(' | ')}`);
+        assert.ok(g.frames() > 60, `кадров мало: ${g.frames()}`);
+    });
+
     test('движение и стрельба не ломают игру', () => {
         const g = boot();
+        g.win.localStorage.setItem('tanki.nick', 'Тестер');
         g.pump(20);
         g.press('Enter');
         g.pump(160);
