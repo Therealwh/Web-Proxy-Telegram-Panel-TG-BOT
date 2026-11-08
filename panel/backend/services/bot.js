@@ -481,9 +481,11 @@ const selected = clients.find((c) => c.id === selectedId) || null;
         const icon = c.status === 'active' ? '🟢' : '🔴';
         kb.text(`${icon} ${proxyTitle(c.username)} · ${proto} · до ${c.expires_at ? shortDate(c.expires_at) : '∞'}`, `sel:${c.id}`).row();
     }
+    const miniUrlList = miniAppUrl();
+    if (miniUrlList) kb.webApp('📱 Приложение', miniUrlList).row();
     kb.text('💳 Пополнить счёт', 'topup').row();
     kb.text('🚀 Тарифы', 'tariffs');
-    styleButtons(kb, [['Пополнить счёт', 'danger']]);
+    styleButtons(kb, [['Пополнить счёт', 'primary']]);
     return { text, kb };
 }
 
@@ -1898,7 +1900,8 @@ bot.on('message:text', async (ctx, next) => {
 
     // Возвращаем кнопку меню бота (☰ с командами): setChatMenuButton(web_app)
     // из v1.30.x подменил её на «Приложение» и выглядело как «пропало меню».
-    // Мини-апп и так доступен кнопкой «📱 Приложение» в reply-клавиатуре.
+    // Мини-апп доступен inline-кнопками в тарифах и кабинете (reply-клавиатура
+    // не передаёт initData — документированное поведение Telegram).
     try {
         await bot.api.setChatMenuButton({ menu_button: { type: 'commands' } })
             .catch((e) => logger.warn('Меню бота: не удалось вернуть ☰', { error: e.message }));
