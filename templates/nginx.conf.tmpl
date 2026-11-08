@@ -95,8 +95,9 @@ server {
         proxy_read_timeout 3600s;
     }
 
-    # --- Публичные страницы панели: QR-страницы, QR-изображения и статус ---
-    location ~ ^/(qr|qrimg|status) {
+    # --- Публичные страницы панели: QR, статус, веб-кабинет и мини-апп ---
+    # (/|$) в конце — чтобы /p не перехватил /panel-api (regex сильнее prefix-locations)
+    location ~ ^/(qr|qrimg|status|p|miniapp)(/|$) {
         proxy_pass http://tggate_panel;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
