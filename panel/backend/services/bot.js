@@ -158,7 +158,7 @@ async function showScreen(ctx, view) {
         await ctx.editMessageText(view.text, extra);
     } catch (e) {
         if (String(e.message || '').includes('message is not modified')) return;
-        try { await ctx.reply(view.text, extra); } catch { /* сообщение не изменилось и т.п. */ }
+        try { await ctx.reply(view.text, extra); } catch (e2) { logger.warn('showScreen: fallback не отправлен', { error: e2.message }); }
     }
 }
 /** Клавиатура с тарифами: кнопки открывают описание (info), плюс кастомные кнопки из панели. */
@@ -417,7 +417,7 @@ const selected = clients.find((c) => c.id === selectedId) || null;
             const left = Math.max(0, limit - used);
             const pct = Math.min(100, Math.round((used / limit) * 100));
             text += `📊 <b>Трафик:</b> ${usageBar(pct)} ${pct}%\n` +
-                `&nbsp;&nbsp;&nbsp;${fmtGB(used)} из ${fmtGB(limit)} · осталось ${fmtGB(left)}\n`;
+                `&#160;&#160;&#160;${fmtGB(used)} из ${fmtGB(limit)} · осталось ${fmtGB(left)}\n`;
             if (pct >= 90) text += '⚠️ Трафик почти израсходован — продлите или докупите пакет.\n';
         }
 
@@ -569,7 +569,7 @@ async function issueAccessFor(tgId, tariff, paymentId, opts = {}) {
 
     if (settings.status_url) text += `🟢 Статус сервиса: ${settings.status_url}\n`;
 
-    text += `💡 Управление прокси — в разделе «📱 Личный кабинет».`;
+    text += `💡 Управление прокси — в разделе «👤 Личный кабинет».`;
 
     if (bot) {
         let connectKb = null;
@@ -1622,7 +1622,7 @@ bot.on('message:text', async (ctx, next) => {
 
     bot.callbackQuery('tariffs', async (ctx) => {
         await ctx.answerCallbackQuery();
-        await ctx.reply('👇 <b>Выберите тариф:</b>', { parse_mode: 'HTML', reply_markup: tariffsKeyboard() });
+        await showScreen(ctx, { text: '👇 <b>Выберите тариф:</b>', kb: tariffsKeyboard() });
     });
 
     // ═══ 6. Продление: баланс или платёжка ═══
