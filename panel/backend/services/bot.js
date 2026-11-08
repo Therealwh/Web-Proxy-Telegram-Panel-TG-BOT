@@ -229,9 +229,11 @@ function mainReplyKeyboard(ctx) {
     } else {
         kb.text('🤝 Рефералы').text('🛟 Поддержка').row();
     }
-    // Мини-апп: кнопка открывает веб-приложение прямо в Telegram.
-    const miniappUrl = miniAppUrl();
-    if (miniappUrl) kb.webApp('📱 Приложение', miniappUrl).row();
+    // Мини-апп из reply-клавиатуры НЕ открываем: по документации Telegram
+    // web_app-кнопка нижней клавиатуры всегда отдаёт ПУСТОЙ initData —
+    // приложение не может понять, кто открыл. Правильные места запуска —
+    // inline web_app кнопки (тарифы/кабинет), они вход передают.
+    // Запасной вход — код из /appcode.
     kb.text('📱 Как подключить').row();
     if (isAdmin(ctx)) kb.text('👑 Админ-панель').row();
     return kb;
