@@ -18,6 +18,7 @@
 
 const db = require('../db');
 const telemt = require('./telemtApi');
+const nodes = require('./nodes');
 const config = require('../config');
 const logger = require('../utils/logger');
 
@@ -69,6 +70,8 @@ const WEB_LIMITS_TUNED = {
 
 /** Кэш последнего применённого списка, чтобы не слать лишние PATCH. */
 let lastSyncedJson = null;
+/** Пер-узловой кэш: узел (id) → JSON последнего применённого списка. */
+const lastSyncedByNode = new Map();
 
 /** Сохранённый в панели лимит профилей (или дефолт движка). */
 function configuredLimit() {
@@ -87,23 +90,37 @@ function configuredLimit() {
  * ошибки логируются: клиент продолжит работать по MTProto.
  */
 async function syncWebProfiles(excludeUsername = null) {
+    // Синхронизируем локальный движок и каждый включённый узел:
+    // у узла свой конфиг, свой vhost (по домену узла) и свои клиенты.
+    const targets = [{ id: null, api: telemt, host: config.domain }];
+    for (const nd of nodes.listNodes({ enabledOnly: true })) {
+        targets.push({ id: nd.id, api: nodes.getApiForNodeId(nd.id), host: nd.domain, nodeName: nd.name });
+    }
+    for (const t of targets) {
+        await syncNodeProfiles(t, excludeUsername);
+    }
+}
+
+/** Синхронизация профилей одного узла. */
+async function syncNodeProfiles({ id, api, host, nodeName }, excludeUsername = null) {
+    const label = nodeName ? `узел ${nodeName}` : 'локальный движок';
     try {
-        // Клиенты с включённым Web Proxy (+ пер-клиентские лимиты, NULL = дефолт)
+        // Клиенты узла с включённым Web Proxy (+ пер-клиентские лимиты, NULL = дефолт)
         const clients = db.prepare(
             `SELECT username, max_sessions, max_streams, max_streams_per_session
-             FROM clients WHERE web_enabled = 1 AND username != ? ORDER BY id`
-        ).all(excludeUsername || '');
+             FROM clients WHERE web_enabled = 1 AND username != ? AND node_id ${id ? '= ?' : 'IS NULL'} ORDER BY id`
+        ).all(...(id ? [excludeUsername || '', id] : [excludeUsername || '']));
 
         // Лимит из настроек панели: применяем в движок, если отличается
         const limit = configuredLimit();
         let currentLimit = null;
-        const cfg = await telemt.getConfig();
+        const cfg = await api.getConfig();
         const vhosts = cfg?.web?.vhosts;
         if (!Array.isArray(vhosts) || vhosts.length === 0) {
-            logger.warn('WEB: в конфиге Telemt нет vhosts — профили не синхронизированы');
+            logger.warn(`WEB (${label}): в конфиге Telemt нет vhosts — профили не синхронизированы`);
             return;
         }
-        const idx = vhosts.findIndex((v) => v.host === config.domain);
+        const idx = vhosts.findIndex((v) => v.host === host);
         const target = idx >= 0 ? idx : 0;
         currentLimit = cfg?.web?.limits?.max_profiles;
 
@@ -133,32 +150,33 @@ async function syncWebProfiles(excludeUsername = null) {
         // Лимит меняем только когда он отличается: лишний PATCH = reload
         if (Number.isInteger(currentLimit) && currentLimit !== limit) {
             try {
-                await telemt.patchConfig({
+                await api.patchConfig({
         web: { limits: { ...WEB_LIMITS_TUNED, max_profiles: limit } },
     }, false);
-                logger.info('WEB: лимит профилей применён в движок', { limit });
+                logger.info(`WEB (${label}): лимит профилей применён в движок`, { limit });
             } catch (e) {
-                logger.warn('WEB: не удалось применить лимит профилей', { limit, error: e.message });
+                logger.warn(`WEB (${label}): не удалось применить лимит профилей`, { limit, error: e.message });
             }
         }
 
-        // Сравниваем без лишних PATCH
+        // Сравниваем без лишних PATCH (кэш пер-узловой)
         const currentJson = JSON.stringify(profiles);
         const wantedJson = JSON.stringify(wanted);
         if (currentJson === wantedJson) return;
 
         vhosts[target].profiles = wanted;
-        await telemt.patchConfig({ web: { vhosts } });
-        lastSyncedJson = wantedJson;
-        logger.info('WEB-профили синхронизированы', { profiles: wanted.length, limit });
+        await api.patchConfig({ web: { vhosts } });
+        lastSyncedByNode.set(id ?? 'l', wantedJson);
+        logger.info(`WEB-профили синхронизированы (${label})`, { profiles: wanted.length, limit });
     } catch (err) {
-        logger.warn('Не удалось синхронизировать WEB-профили', { error: err.message });
+        logger.warn(`Не удалось синхронизировать WEB-профили (${label})`, { error: err.message });
     }
 }
 
 /** Сброс кэша (например, после ручной правки конфига). */
 function invalidateCache() {
     lastSyncedJson = null;
+    lastSyncedByNode.clear();
 }
 
 module.exports = { syncWebProfiles, invalidateCache, configuredLimit, DEFAULT_LIMIT, WEB_LIMITS_TUNED };

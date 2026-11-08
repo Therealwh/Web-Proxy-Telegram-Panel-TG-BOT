@@ -7,6 +7,7 @@
 
 const db = require('../db');
 const telemt = require('./telemtApi');
+const nodes = require('./nodes');
 const notifier = require('./notifier');
 const { getAll } = require('../routes/settings');
 const logger = require('../utils/logger');
@@ -38,7 +39,7 @@ async function processQueue() {
         const client = db.prepare('SELECT username FROM clients WHERE id = ?').get(row.client_id);
         const patch = JSON.parse(row.patch_json);
         try {
-            await telemt.patchUser(client?.username, patch);
+            await nodes.getApiForClient(client || {}).patchUser(client?.username, patch);
             db.prepare('DELETE FROM telemt_sync_queue WHERE id = ?').run(row.id);
             logger.info('Telemt sync: патч применён после ретрая', { clientId: row.client_id, attempts: row.attempts + 1 });
         } catch (err) {

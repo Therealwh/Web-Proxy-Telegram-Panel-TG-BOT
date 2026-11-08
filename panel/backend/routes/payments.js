@@ -9,6 +9,7 @@ const crypto = require('crypto');
 const { z } = require('zod');
 const db = require('../db');
 const telemt = require('../services/telemtApi');
+const nodes = require('../services/nodes');
 const { requireAuth } = require('../middleware/auth');
 const { httpError } = require('../middleware/errorHandler');
 const { fireWebhook } = require('../services/webhooks');
@@ -59,7 +60,7 @@ async function completePayment(paymentId) {
             if (tariff.max_ips) patch.max_unique_ips = tariff.max_ips;
             if (tariff.quota_gb) patch.data_quota_bytes = Math.round(tariff.quota_gb * 1024 ** 3);
             try {
-                await telemt.patchUser(client.username, patch);
+                await nodes.getApiForClient(client).patchUser(client.username, patch);
             } catch (e) {
                 backToPending(e);
                 throw httpError(502, 'Не удалось обновить срок в Telemt — платёж возвращён в очередь, повторите попытку');

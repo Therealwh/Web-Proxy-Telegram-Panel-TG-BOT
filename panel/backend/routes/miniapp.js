@@ -135,6 +135,7 @@ router.get('/overview', async (req, res, next) => {
 
         const proxies = clients.map((c) => {
             const links = clientLinks(c);
+            const nodeRow = c.node_id ? db.prepare('SELECT name, emoji FROM nodes WHERE id = ?').get(c.node_id) : null;
             const daysLeft = c.expires_at
                 ? Math.max(0, Math.ceil((new Date(c.expires_at) - Date.now()) / 86400000))
                 : null;
@@ -147,6 +148,7 @@ router.get('/overview', async (req, res, next) => {
                 balance: c.balance,
                 web_enabled: !!c.web_enabled,
                 mtproto_enabled: !!c.mtproto_enabled,
+                location: nodeRow ? `${nodeRow.emoji || '🌍'} ${nodeRow.name}` : null,
                 web_link: links.web_https || null,
                 mtproto_link: links.mtproto_https || null,
                 faketls_link: links.mtproto_faketls_https || null,

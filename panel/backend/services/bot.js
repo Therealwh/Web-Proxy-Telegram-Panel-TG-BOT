@@ -17,6 +17,7 @@ const fs = require('fs');
 const db = require('../db');
 const { deductBalanceSpread } = require('../utils/balance');
 const referral = require('../utils/referral');
+const nodesService = require('./nodes');
 const telemt = require('./telemtApi');
 const { clientLinks } = require('./links');
 const { getAll } = require('../routes/settings');
@@ -402,11 +403,13 @@ const selected = clients.find((c) => c.id === selectedId) || null;
         const kb = connectKeyboard(selected);
         const until = selected.expires_at ? fmtMSK(selected.expires_at, false) : '∞';
         const statusIcon = selected.status === 'active' ? '🟢 Активен' : selected.status === 'blocked' ? '🔴 Заблокирован' : '⚠️ Истёк';
+        const locRow = selected.node_id ? (() => { const nd = nodesService.getNode(selected.node_id); return nd ? `${nd.emoji || '🌍'} ${nd.name}` : '🌍'; })() : '🏠 Основная';
         let text =
             `📦 <b>${proxyTitle(selected.username)}</b> · ${statusIcon}\n` +
             `<code>${selected.username}</code>\n` +
             `📅 Действует до: <b>${until}</b>\n` +
             expiryBarLine(selected) +
+            `🌍 Локация: <b>${locRow}</b>\n` +
             `💰 Баланс: <b>${balance.toFixed(2)}</b>\n`;
         if (selected.status === 'active') {
             const ips = activeMap.get(selected.username) || [];
@@ -444,6 +447,7 @@ const selected = clients.find((c) => c.id === selectedId) || null;
         // из кнопки-ссылки нельзя.
         kb.text('📋 Ссылки текстом', `links:${selected.id}`);
         kb.text('📷 QR-код', `qr:${selected.id}`).row();
+        kb.text('🌍 Локация', `nodeloc:${selected.id}`);
         kb.text('💳 Пополнить', 'topup');
         kb.text('♻️ Продлить', `renew:${selected.id}`);
         if (settings.auto_renew_enabled) {
@@ -525,7 +529,13 @@ async function issueAccessFor(tgId, tariff, paymentId, opts = {}) {
         || db.prepare('SELECT referrer_id FROM referral_pending WHERE telegram_id = ?').get(tgId)?.referrer_id
         || null;
 
-    const created = await telemt.createUser({
+    // Локация: из платежа (выбор при покупке) или опцией вызова; NULL = локальный
+    const payRow = paymentId
+        ? db.prepare('SELECT node_id FROM payments WHERE id = ?').get(paymentId) : null;
+    const nodeId = opts.nodeId !== undefined ? opts.nodeId : (payRow?.node_id || null);
+    const nodeApi = nodesService.getApiForNodeId(nodeId);
+
+    const created = await nodeApi.createUser({
         username,
         expiration_rfc3339: expires,
         ...(tariff.max_ips ? { max_unique_ips: tariff.max_ips } : {}),
@@ -534,15 +544,16 @@ async function issueAccessFor(tgId, tariff, paymentId, opts = {}) {
         ...(tariff.rate_up_mbps ? { rate_limit_up_bps: Math.round(tariff.rate_up_mbps * 1e6) } : {}),
     });
     const result = db.prepare(
-        `INSERT INTO clients (username, secret, expires_at, telegram_id, web_enabled, mtproto_enabled, referrer_id, max_ips, quota_bytes)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO clients (username, secret, expires_at, telegram_id, web_enabled, mtproto_enabled, referrer_id, max_ips, quota_bytes, node_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
         username, created.secret, expires, tgId,
         ['web', 'both'].includes(tariff.protocols) ? 1 : 0,
         ['mtproto', 'both'].includes(tariff.protocols) ? 1 : 0,
         referrerId,
         tariff.max_ips ?? null,
-        tariff.quota_gb ? Math.round(tariff.quota_gb * 1024 ** 3) : null
+        tariff.quota_gb ? Math.round(tariff.quota_gb * 1024 ** 3) : null,
+        nodeId
     );
     const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(result.lastInsertRowid);
     refPending.delete(tgId);
@@ -568,7 +579,8 @@ async function issueAccessFor(tgId, tariff, paymentId, opts = {}) {
     const links = clientLinks(client);
     let text =
         `🎉 <b>Оплата прошла! Прокси готов</b>\n\n` +
-        `📦 <b>${proxyTitle(username)}</b> <code>${username}</code>\n📅 Действует до: <b>${fmtMSK(expires, false)}</b>\n\n` +
+        `📦 <b>${proxyTitle(username)}</b> <code>${username}</code>\n📅 Действует до: <b>${fmtMSK(expires, false)}</b>\n` +
+        (nodeId ? (() => { const nd = nodesService.getNode(nodeId); return nd ? `🌍 Локация: <b>${nd.emoji || '🌍'} ${nd.name}</b>\n` : ''; })() : '') + `\n` +
         `Подключайся кнопками ниже — Telegram сам предложит добавить прокси.\n\n`;
     if (links.web_https) {
         text += `⚠️ <b>Важно:</b> Web Proxy на iPhone (iOS) пока может не подключаться — на Apple-устройствах используйте MTProto-ссылку.\n\n`;
@@ -636,7 +648,7 @@ async function payReferralBonus(clientId, purchasedDays) {
     const base = referrer.expires_at && new Date(referrer.expires_at) > new Date()
         ? new Date(referrer.expires_at) : new Date();
     const newExpiry = new Date(base.getTime() + bonus * 86400000).toISOString();
-    await telemt.patchUser(referrer.username, { expiration_rfc3339: newExpiry }).catch(() => {});
+    await nodesService.getApiForClient(referrer).patchUser(referrer.username, { expiration_rfc3339: newExpiry }).catch(() => {});
     db.prepare("UPDATE clients SET expires_at = ?, status = 'active' WHERE id = ?")
         .run(newExpiry, referrer.id);
 
@@ -1340,9 +1352,36 @@ bot.on('message:text', async (ctx, next) => {
         await showScreen(ctx, { text: tariffDescription(t), kb });
     });
 
+    // Локация выбрана → экран способа оплаты (платёж запоминает локацию)
+    bot.callbackQuery(/^loc:(\d+):(\d+)$/, async (ctx) => {
+        const tariff = db.prepare('SELECT * FROM tariffs WHERE id = ? AND enabled = 1').get(Number(ctx.match[1]));
+        if (!tariff) return ctx.answerCallbackQuery('Тариф недоступен');
+        await ctx.answerCallbackQuery();
+        const nodeId = Number(ctx.match[2]) || null;
+        if (nodeId && !nodesService.getNode(nodeId)) {
+            return ctx.answerCallbackQuery({ text: 'Локация недоступна — выберите другую', show_alert: true });
+        }
+        await showPurchaseMethods(ctx, tariff, nodeId);
+    });
+
     // Покупка: web-only тариф — сначала предупреждение про iOS
     bot.callbackQuery(/^buy:(\d+)$/, async (ctx) => {
         const tariff = db.prepare('SELECT * FROM tariffs WHERE id = ? AND enabled = 1').get(Number(ctx.match[1]));
+        if (!tariff) return ctx.answerCallbackQuery('Тариф недоступен');
+        // Несколько локаций — предлагаем выбор (одна — сразу к оплате)
+        const locations = await nodesService.availableLocations();
+        if (locations.length > 1) {
+            await ctx.answerCallbackQuery();
+            const kb = new InlineKeyboard();
+            for (const loc of locations) {
+                kb.text(`${loc.emoji} ${loc.name}`, `loc:${tariff.id}:${loc.id ?? 0}`).row();
+            }
+            kb.text('⬅️ К тарифам', 'tariffs');
+            return showScreen(ctx, {
+                text: '🌍 <b>Выберите локацию</b>\n\nПинг и скорость зависят от близости сервера — выбирайте ближайшую к вам.',
+                kb,
+            });
+        }
         if (!tariff) return ctx.answerCallbackQuery('Тариф недоступен');
 
         if (tariff.protocols === 'web') {
@@ -1369,14 +1408,14 @@ bot.on('message:text', async (ctx, next) => {
     });
 
     /** Экран выбора способа оплаты для покупки тарифа. */
-    async function showPurchaseMethods(ctx, tariff) {
+    async function showPurchaseMethods(ctx, tariff, nodeId = null) {
         const settings = getBotSettings();
         const providerConfigured = !!(settings.cryptobot_token || (settings.yookassa_shop_id && settings.yookassa_secret_key));
 
-        // Заказ создаётся сразу — любой способ привяжется к нему
+        // Заказ создаётся сразу — любой способ привяжется к нему (node_id — локация)
         const paymentId = db.prepare(
-            'INSERT INTO payments (tariff_id, amount, currency, provider, status, telegram_id) VALUES (?, ?, ?, ?, ?, ?)'
-        ).run(tariff.id, tariff.price, tariff.currency, 'manual', 'pending', ctx.from.id).lastInsertRowid;
+            'INSERT INTO payments (tariff_id, amount, currency, provider, status, telegram_id, node_id) VALUES (?, ?, ?, ?, ?, ?, ?)'
+        ).run(tariff.id, tariff.price, tariff.currency, 'manual', 'pending', ctx.from.id, nodeId).lastInsertRowid;
 
         const kb = new InlineKeyboard();
 
@@ -1398,8 +1437,9 @@ bot.on('message:text', async (ctx, next) => {
         kb.text('🏦 Карта админа (СБП)', `manualpay:${paymentId}`).row();
         kb.text('⬅️ К тарифам', 'tariffs');
 
+        const locLine = nodeId ? (() => { const nd = nodesService.getNode(nodeId); return nd ? `🌍 Локация: <b>${nd.emoji || '🌍'} ${nd.name}</b>\n\n` : ''; })() : '';
         await ctx.reply(
-            `${tariffDescription(tariff)}\n\n🧾 Заказ #${paymentId}\n\n💳 <b>Выберите способ оплаты:</b>`,
+            `${tariffDescription(tariff)}\n\n${locLine}🧾 Заказ #${paymentId}\n\n💳 <b>Выберите способ оплаты:</b>`,
             { parse_mode: 'HTML', reply_markup: kb }
         );
     }
@@ -1595,6 +1635,67 @@ bot.on('message:text', async (ctx, next) => {
         }
     }
 
+    // Смена локации: список доступных (текущая исключена) → подтверждение
+    bot.callbackQuery(/^nodeloc:(\d+)$/, async (ctx) => {
+        const client = db.prepare('SELECT * FROM clients WHERE id = ? AND telegram_id = ?')
+            .get(Number(ctx.match[1]), ctx.from.id);
+        if (!client) return ctx.answerCallbackQuery({ text: 'Прокси не найден', show_alert: true });
+        await ctx.answerCallbackQuery();
+        const locations = await nodesService.availableLocations();
+        const kb = new InlineKeyboard();
+        let options = 0;
+        for (const loc of locations) {
+            if ((loc.id ?? null) === (client.node_id || null)) continue;
+            kb.text(`${loc.emoji} ${loc.name}`, `nodelocgo:${client.id}:${loc.id ?? 0}`).row();
+            options += 1;
+        }
+        if (options === 0) {
+            return showScreen(ctx, {
+                text: '🌍 <b>Смена локации</b>\n\nСейчас доступна только текущая — других серверов не подключено или они недоступны.',
+                kb: new InlineKeyboard().text('⬅️ Назад', `sel:${client.id}`),
+            });
+        }
+        kb.text('⬅️ Назад', `sel:${client.id}`);
+        await showScreen(ctx, {
+            text: '🌍 <b>Смена локации</b>\n\n' +
+                'Прокси переедет на новый сервер: <b>ссылки изменятся</b> — придётся подключить заново. Срок, трафик и секрет сохранятся.\n\nВыберите новую локацию:',
+            kb,
+        });
+    });
+
+    bot.callbackQuery(/^nodelocgo:(\d+):(\d+)$/, async (ctx) => {
+        const client = db.prepare('SELECT * FROM clients WHERE id = ? AND telegram_id = ?')
+            .get(Number(ctx.match[1]), ctx.from.id);
+        if (!client) return ctx.answerCallbackQuery({ text: 'Прокси не найден', show_alert: true });
+        const targetNodeId = Number(ctx.match[2]) || null;
+        if ((client.node_id || null) === targetNodeId) {
+            return ctx.answerCallbackQuery('Это уже текущая локация');
+        }
+        if (targetNodeId && !nodesService.getNode(targetNodeId)) {
+            return ctx.answerCallbackQuery({ text: 'Локация недоступна', show_alert: true });
+        }
+        await ctx.answerCallbackQuery('Переезжаю…');
+        try {
+            const updated = await nodesService.moveClient(client, targetNodeId);
+            const links = clientLinks(updated);
+            const locName = targetNodeId
+                ? (() => { const nd = nodesService.getNode(targetNodeId); return nd ? `${nd.emoji || '🌍'} ${nd.name}` : '🌍'; })()
+                : '🏠 Основная';
+            logger.info('Клиент сменил локацию через бот', { username: client.username, to: targetNodeId });
+            let text =
+                `✅ <b>Локация изменена: ${locName}</b>\n\n` +
+                `📦 ${proxyTitle(updated.username)}\n📅 Действует до: <b>${updated.expires_at ? fmtMSK(updated.expires_at, false) : '∞'}</b>\n\n` +
+                `⚠️ <b>Ссылки изменились</b> — подключите прокси заново кнопками ниже:`;
+            await ctx.reply(text, {
+                parse_mode: 'HTML', disable_web_page_preview: true,
+                reply_markup: connectKeyboard(updated),
+            });
+        } catch (e) {
+            logger.error('Смена локации не удалась', { username: client.username, error: e.message });
+            await ctx.reply(`⚠️ Не удалось сменить локацию: ${e.message}\nПопробуйте позже — текущий прокси работает без изменений.`, { parse_mode: 'HTML' });
+        }
+    });
+
     // Кнопка «Тест 3 часа» из пустого кабинета и из reply-клавиатуры
     bot.hears('🎁 Тест 3 часа', (ctx) => issueTestAccess(ctx));
     bot.callbackQuery('test3', async (ctx) => {
@@ -1684,7 +1785,7 @@ bot.on('message:text', async (ctx, next) => {
             const patch = { expiration_rfc3339: newExpiry };
             if (tariff.max_ips) patch.max_unique_ips = tariff.max_ips;
             if (tariff.quota_gb) patch.data_quota_bytes = Math.round(tariff.quota_gb * 1024 ** 3);
-            await telemt.patchUser(client.username, patch).catch(() => {});
+            await nodesService.getApiForClient(client).patchUser(client.username, patch).catch(() => {});
             const lim = [];
             if (tariff.max_ips) lim.push('max_ips = ?');
             if (tariff.quota_gb) lim.push('quota_bytes = ?');

@@ -499,7 +499,7 @@ function renderProxies() {
                 <div class="name"><span class="dot ${active ? 'ok' : 'bad'}"></span>${esc(p.username)}</div>
                 ${daysBadge(p)}
             </div>
-            <div class="term">до <b>${p.expires_at ? fmtDate(p.expires_at) : '∞'}</b>${p.balance > 0 ? ` · на строке <b>${p.balance} ${DATA.currency_sign}</b>` : ''}</div>
+            <div class="term">до <b>${p.expires_at ? fmtDate(p.expires_at) : '∞'}</b>${p.location ? ` · 🌍 <b>${esc(p.location)}</b>` : ''}${p.balance > 0 ? ` · на строке <b>${p.balance} ${DATA.currency_sign}</b>` : ''}</div>
             <div class="bar"><i class="${barCls}" style="width:${pct}%"></i></div>
             <div class="actions">
                 ${p.web_link ? `<a class="btn primary" href="${escAttr(p.web_link)}">🌐 Подключить Web</a>` : ''}

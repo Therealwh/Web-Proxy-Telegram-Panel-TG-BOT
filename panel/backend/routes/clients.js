@@ -9,6 +9,7 @@ const express = require('express');
 const { z } = require('zod');
 const db = require('../db');
 const telemt = require('../services/telemtApi');
+const nodes = require('../services/nodes');
 const { clientLinks } = require('../services/links');
 const { syncWebProfiles } = require('../services/webProfiles');
 const { ensureQrToken } = require('../services/qrTokens');
@@ -63,6 +64,7 @@ const clientSchema = z.object({
     max_sessions: numField(1, 65536),
     max_streams: numField(64, 262144),
     max_streams_per_session: numField(16, 65535),
+    node_id: z.number().int().positive().nullable().optional(),
     rate_down_bps: numField(0),
     rate_up_bps: numField(0),
     ad_tag: z.string().regex(/^[0-9a-f]{32}$/, 'Ad Tag — 32 hex-символа').nullable().optional(),
@@ -160,15 +162,15 @@ router.post('/', async (req, res, next) => {
         if (exists) throw httpError(409, 'Клиент с таким именем уже существует');
 
         // Создаём пользователя в Telemt — источник истины по секрету
-        const created = await telemt.createUser(toTelemtUser(data));
+        const created = await nodes.getApiForNodeId(data.node_id || null).createUser(toTelemtUser(data));
         const secret = created.secret;
 
         const result = db.prepare(
             `INSERT INTO clients
              (username, secret, quota_bytes, expires_at, max_ips, rate_down_bps,
               rate_up_bps, ad_tag, web_enabled, mtproto_enabled, note,
-              max_sessions, max_streams, max_streams_per_session)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+              max_sessions, max_streams, max_streams_per_session, node_id)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         ).run(
             data.username, secret,
             data.quota_bytes ?? null, data.expires_at ?? null, data.max_ips ?? null,
@@ -176,7 +178,8 @@ router.post('/', async (req, res, next) => {
             data.web_enabled === false ? 0 : 1,
             data.mtproto_enabled === false ? 0 : 1,
             data.note ?? null,
-            data.max_sessions ?? null, data.max_streams ?? null, data.max_streams_per_session ?? null
+            data.max_sessions ?? null, data.max_streams ?? null, data.max_streams_per_session ?? null,
+            data.node_id ?? null
         );
 
         logger.info('Клиент создан', { username: data.username });
@@ -206,7 +209,7 @@ router.post('/bulk-create', async (req, res, next) => {
             try {
                 const exists = db.prepare('SELECT id FROM clients WHERE username = ?').get(username);
                 if (exists) throw new Error('уже существует');
-                const created = await telemt.createUser(toTelemtUser({ username, ...defaults }));
+                const created = await nodes.getApiForNodeId(defaults.node_id || null).createUser(toTelemtUser({ username, ...defaults }));
                 db.prepare(
                     `INSERT INTO clients
                      (username, secret, quota_bytes, expires_at, max_ips, rate_down_bps,
@@ -247,11 +250,24 @@ router.patch('/:id', async (req, res, next) => {
         if ('quota_bytes' in data) patch.data_quota_bytes = data.quota_bytes;
         if ('expires_at' in data) patch.expiration_rfc3339 = data.expires_at;
         if ('max_ips' in data) patch.max_unique_ips = data.max_ips;
+        // Смена локации: переносим пользователя на целевой узел (тот же секрет)
+        if ('node_id' in data) {
+            const targetNodeId = data.node_id === null ? null : Number(data.node_id);
+            if ((row.node_id || null) !== targetNodeId) {
+                if (targetNodeId !== null && !nodes.getNode(targetNodeId)) {
+                    throw httpError(400, 'Узел не найден');
+                }
+                const moved = await nodes.moveClient(row, targetNodeId);
+                row.node_id = moved.node_id; // последующие операции — уже на новом узле
+                delete data.node_id;
+                logger.info('Локация клиента изменена', { username: row.username, to: targetNodeId });
+            }
+        }
         if ('rate_down_bps' in data) patch.rate_limit_down_bps = data.rate_down_bps;
         if ('rate_up_bps' in data) patch.rate_limit_up_bps = data.rate_up_bps;
         if ('ad_tag' in data) patch.user_ad_tag = data.ad_tag;
         if (Object.keys(patch).length > 0) {
-            await telemt.patchUser(row.username, patch); // quota_auto_reset — локальное поле панели
+            await nodes.getApiForClient(row).patchUser(row.username, patch); // quota_auto_reset — локальное поле панели
         }
 
         const fields = [];
@@ -293,7 +309,7 @@ router.delete('/:id', async (req, res, next) => {
         await syncWebProfiles(row.username);
 
         // 2. Удаляем в Telemt
-        await telemt.deleteUser(row.username);
+        await nodes.getApiForClient(row).deleteUser(row.username);
 
         // 3. Удаляем из БД панели
         db.prepare('DELETE FROM clients WHERE id = ?').run(row.id);
@@ -314,10 +330,10 @@ router.post('/:id/toggle', async (req, res, next) => {
 
         const enable = row.status !== 'active';
         if (enable) {
-            await telemt.enableUser(row.username);
+            await nodes.getApiForClient(row).enableUser(row.username);
             db.prepare("UPDATE clients SET status = 'active', updated_at = datetime('now') WHERE id = ?").run(row.id);
         } else {
-            await telemt.disableUser(row.username);
+            await nodes.getApiForClient(row).disableUser(row.username);
             db.prepare("UPDATE clients SET status = 'blocked', updated_at = datetime('now') WHERE id = ?").run(row.id);
         }
         fireWebhook(enable ? 'client.unblocked' : 'client.blocked', clientPayload(row)).catch(() => {});
@@ -341,11 +357,11 @@ router.post('/:id/extend', async (req, res, next) => {
             : new Date();
         const newExpiry = new Date(base.getTime() + days * 86400000).toISOString();
 
-        await telemt.patchUser(row.username, { expiration_rfc3339: newExpiry });
+        await nodes.getApiForClient(row).patchUser(row.username, { expiration_rfc3339: newExpiry });
         db.prepare("UPDATE clients SET expires_at = ?, status = 'active', updated_at = datetime('now') WHERE id = ?")
             .run(newExpiry, row.id);
         // Если клиент был заблокирован по просрочке — включаем обратно
-        await telemt.enableUser(row.username).catch(() => {});
+        await nodes.getApiForClient(row).enableUser(row.username).catch(() => {});
 
         res.json({ ok: true, expires_at: newExpiry });
     } catch (err) {
@@ -358,7 +374,7 @@ router.post('/:id/rotate', async (req, res, next) => {
     try {
         const row = db.prepare('SELECT * FROM clients WHERE id = ?').get(req.params.id);
         if (!row) throw httpError(404, 'Клиент не найден');
-        const result = await telemt.rotateSecret(row.username);
+        const result = await nodes.getApiForClient(row).rotateSecret(row.username);
         db.prepare("UPDATE clients SET secret = ?, updated_at = datetime('now') WHERE id = ?")
             .run(result.secret, row.id);
         res.json({ ok: true, secret: result.secret });
@@ -372,7 +388,7 @@ router.post('/:id/reset-quota', async (req, res, next) => {
     try {
         const row = db.prepare('SELECT * FROM clients WHERE id = ?').get(req.params.id);
         if (!row) throw httpError(404, 'Клиент не найден');
-        await telemt.resetQuota(row.username);
+        await nodes.getApiForClient(row).resetQuota(row.username);
         db.prepare('UPDATE clients SET traffic_used = 0 WHERE id = ?').run(row.id);
         res.json({ ok: true });
     } catch (err) {
@@ -424,12 +440,12 @@ router.post('/bulk', async (req, res, next) => {
             try {
                 let evt = null;
                 if (action === 'block') {
-                    await telemt.disableUser(client.username).catch(() => {});
+                    await nodes.getApiForClient(client).disableUser(client.username).catch(() => {});
                     db.prepare("UPDATE clients SET status = 'blocked' WHERE id = ?").run(id);
                     processed += 1;
                     evt = 'client.blocked';
                 } else if (action === 'unblock') {
-                    await telemt.enableUser(client.username).catch(() => {});
+                    await nodes.getApiForClient(client).enableUser(client.username).catch(() => {});
                     // Разблокируем только если доступ ещё не истёк
                     const expired = client.expires_at && new Date(client.expires_at) < new Date();
                     db.prepare('UPDATE clients SET status = ? WHERE id = ?').run(expired ? 'expired' : 'active', id);
@@ -439,7 +455,7 @@ router.post('/bulk', async (req, res, next) => {
                     const base = client.expires_at && new Date(client.expires_at) > new Date()
                         ? new Date(client.expires_at) : new Date();
                     const newExpiry = new Date(base.getTime() + days * 86400000).toISOString();
-                    await telemt.patchUser(client.username, { expiration_rfc3339: newExpiry }).catch(() => {});
+                    await nodes.getApiForClient(client).patchUser(client.username, { expiration_rfc3339: newExpiry }).catch(() => {});
                     db.prepare("UPDATE clients SET expires_at = ?, status = 'active' WHERE id = ?").run(newExpiry, id);
                     processed += 1;
                     evt = 'client.renewed';

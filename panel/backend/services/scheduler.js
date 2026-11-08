@@ -46,6 +46,7 @@ async function checkProxies() {
         let apiOk = 0;
         try {
             const telemt = require('./telemtApi');
+const nodes = require('./nodes');
             await telemt.getHealth();
             apiOk = 1;
         } catch { apiOk = 0; }
@@ -164,7 +165,7 @@ async function disableExpired() {
     const { fireWebhook } = require('./webhooks');
     for (const client of rows) {
         try {
-            await telemt.disableUser(client.username);
+            await nodes.getApiForClient(client).disableUser(client.username);
             db.prepare("UPDATE clients SET status = 'expired' WHERE id = ?").run(client.id);
             logger.info('Клиент просрочен и отключён', { username: client.username });
             fireWebhook('client.expired', {
@@ -204,11 +205,11 @@ async function cleanupTestClients() {
             await syncWebProfiles(client.username).catch(() => {});
 
             // 2. Удаляем в Telemt (с повтором через enable при отказе)
-            await telemt.deleteUser(client.username).catch(async (e) => {
+            await nodes.getApiForClient(client).deleteUser(client.username).catch(async (e) => {
                 // Пользователя могли удалить вручную из Telemt — тогда просто чистим базу
                 if (/404|not found|not_found|no such/i.test(e.message)) return;
-                await telemt.enableUser(client.username).catch(() => {});
-                return telemt.deleteUser(client.username);
+                await nodes.getApiForClient(client).enableUser(client.username).catch(() => {});
+                return nodes.getApiForClient(client).deleteUser(client.username);
             });
             // 3. Удаляем из БД панели
             db.prepare('DELETE FROM clients WHERE id = ?').run(client.id);
@@ -283,7 +284,7 @@ async function autoRenew() {
             const base = client.expires_at && new Date(client.expires_at) > new Date()
                 ? new Date(client.expires_at) : new Date();
             const newExpiry = new Date(base.getTime() + tariff.days * 86400000).toISOString();
-            await telemt.patchUser(client.username, { expiration_rfc3339: newExpiry }).catch(() => {});
+            await nodes.getApiForClient(client).patchUser(client.username, { expiration_rfc3339: newExpiry }).catch(() => {});
             db.prepare("UPDATE clients SET expires_at = ?, status = 'active' WHERE id = ?").run(newExpiry, client.id);
 
             if (token) {

@@ -9,7 +9,7 @@ import { Card, StatusBadge, ProgressBar, Modal, Field, Toggle, formatBytes, form
 // Пустая форма клиента
 const EMPTY_FORM = {
     username: '', quota_gb: '', expires_at: '', max_ips: '',
-    max_sessions: '', max_streams: '', max_streams_per_session: '',
+    max_sessions: '', max_streams: '', max_streams_per_session: '', node_id: null,
     rate_down_mbps: '', rate_up_mbps: '', ad_tag: '',
     web_enabled: true, mtproto_enabled: true, note: '',
     quota_auto_reset: false,
@@ -25,6 +25,7 @@ function formToPayload(f) {
         max_sessions: f.max_sessions ? parseInt(f.max_sessions, 10) : null,
         max_streams: f.max_streams ? parseInt(f.max_streams, 10) : null,
         max_streams_per_session: f.max_streams_per_session ? parseInt(f.max_streams_per_session, 10) : null,
+        node_id: f.node_id ?? null,
         rate_down_bps: f.rate_down_mbps ? Math.round(parseFloat(f.rate_down_mbps) * 1_000_000) : null,
         rate_up_bps: f.rate_up_mbps ? Math.round(parseFloat(f.rate_up_mbps) * 1_000_000) : null,
         ad_tag: f.ad_tag || null,
@@ -63,6 +64,12 @@ export default function Clients() {
     const [saving, setSaving] = useState(false);
     const lang = useLangStore((s) => s.lang);
     const t = useT();
+    const [nodesList, setNodesList] = useState([]);
+
+
+    useEffect(() => {
+        get('/nodes').then((d) => setNodesList([{ id: null, name: d.local?.name || 'Основной', emoji: '🏠' }, ...d.nodes.filter((n) => n.enabled)])).catch(() => {});
+    }, []);
 
     const load = () => {
         const params = new URLSearchParams();
@@ -109,6 +116,7 @@ export default function Clients() {
             max_sessions: c.max_sessions ?? '',
             max_streams: c.max_streams ?? '',
             max_streams_per_session: c.max_streams_per_session ?? '',
+            node_id: c.node_id ?? null,
             rate_down_mbps: c.rate_down_bps ? c.rate_down_bps / 1e6 : '',
             rate_up_mbps: c.rate_up_bps ? c.rate_up_bps / 1e6 : '',
             ad_tag: c.ad_tag ?? '',
@@ -430,6 +438,14 @@ export default function Clients() {
                     <Field label={t('clients.fMaxStreamsPerSession')} hint={t('clients.fMaxStreamsPerSessionHint')}>
                         <input className="input" type="number" min="16" max="65535" value={form.max_streams_per_session}
                                onChange={(e) => setForm({ ...form, max_streams_per_session: e.target.value })} />
+                    </Field>
+                    <Field label={t('clients.fNode')} hint={t('clients.fNodeHint')}>
+                        <select className="input" value={form.node_id ?? ''}
+                                onChange={(e) => setForm({ ...form, node_id: e.target.value === '' ? null : Number(e.target.value) })}>
+                            {nodesList.map((n) => (
+                                <option key={n.id ?? 'local'} value={n.id ?? ''}>{n.emoji || '🌍'} {n.name}</option>
+                            ))}
+                        </select>
                     </Field>
                     <Field label={t('clients.fRateDown')} hint={t('clients.fRateHint')}>
                         <input className="input" type="number" min="0" value={form.rate_down_mbps}

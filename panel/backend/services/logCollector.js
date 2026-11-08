@@ -9,6 +9,7 @@
 
 const db = require('../db');
 const telemt = require('./telemtApi');
+const nodes = require('./nodes');
 const wsHub = require('./wsHub');
 const logger = require('../utils/logger');
 const { getAll } = require('../routes/settings');
@@ -26,37 +27,45 @@ let prevKeys = new Set();
 async function pollOnce() {
     const snapshot = new Map(); // key -> record
 
-    // WEB: активные сессии (поле клиента в Telemt — client_ip)
-    try {
-        const sessions = await telemt.getWebSessions({ limit: 200 });
-        const list = Array.isArray(sessions) ? sessions : sessions?.sessions || [];
-        for (const s of list) {
-            const ip = s.client_ip || s.ip;
-            if (!ip || !s.user) continue;
-            snapshot.set(`${s.user}|${ip}|web`, {
-                username: s.user, ip, protocol: 'web',
-                status: 'ok', user_agent: s.user_agent || null,
-                created_at: new Date().toISOString(),
-            });
-        }
-    } catch { /* WEB-рантайм недоступен */ }
+    // Все источники: локальный движок + включённые узлы
+    const sources = [{ id: null, api: telemt }];
+    for (const nd of nodes.listNodes({ enabledOnly: true })) {
+        sources.push({ id: nd.id, api: nodes.getApiForNodeId(nd.id) });
+    }
 
-    // MTProto: активные source-IP по пользователям. Эндпоинт не различает
-    // транспорт и агрегирует все устройства за NAT: строки mtproto НЕ
-    // подавляем, даже если тот же user|ip виден как web-сессия.
-    try {
-        const users = await telemt.getUsersActiveIps().catch(() => []);
-        const list = Array.isArray(users) ? users : users?.users || [];
-        for (const u of list) {
-            for (const ip of u.active_ips || []) {
-                snapshot.set(`${u.username}|${ip}|mtproto`, {
-                    username: u.username, ip, protocol: 'mtproto',
-                    status: 'ok', user_agent: null,
+    for (const { id, api } of sources) {
+        // WEB: активные сессии (поле клиента в Telemt — client_ip)
+        try {
+            const sessions = await api.getWebSessions({ limit: 200 });
+            const list = Array.isArray(sessions) ? sessions : sessions?.sessions || [];
+            for (const s of list) {
+                const ip = s.client_ip || s.ip;
+                if (!ip || !s.user) continue;
+                snapshot.set(`${s.user}|${ip}|web`, {
+                    username: s.user, ip, protocol: 'web',
+                    status: 'ok', user_agent: s.user_agent || null,
                     created_at: new Date().toISOString(),
                 });
             }
-        }
-    } catch { /* Telemt недоступен */ }
+        } catch { /* WEB-рантайм недоступен */ }
+
+        // MTProto: активные source-IP по пользователям. Эндпоинт не различает
+        // транспорт и агрегирует все устройства за NAT: строки mtproto НЕ
+        // подавляем, даже если тот же user|ip виден как web-сессия.
+        try {
+            const users = await api.getUsersActiveIps().catch(() => []);
+            const list = Array.isArray(users) ? users : users?.users || [];
+            for (const u of list) {
+                for (const ip of u.active_ips || []) {
+                    snapshot.set(`${u.username}|${ip}|mtproto`, {
+                        username: u.username, ip, protocol: 'mtproto',
+                        status: 'ok', user_agent: null,
+                        created_at: new Date().toISOString(),
+                    });
+                }
+            }
+        } catch { /* Telemt недоступен */ }
+    }
 
     // Дельта: новые ключи = новые подключения
     const insert = db.prepare(

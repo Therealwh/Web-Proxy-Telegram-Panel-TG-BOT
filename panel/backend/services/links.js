@@ -79,9 +79,9 @@ function webProxyLinkHttps(secret, domain) {
  * @param {string} [domain] - явный домен MTProto; null/undefined = общий domain
  * @returns {string} tg:// ссылка
  */
-function mtprotoLink(secret, domain) {
+function mtprotoLink(secret, domain, port) {
     const d = domain ?? config.domain;
-    return `tg://proxy?server=${d}&port=${config.mtprotoPort}&secret=dd${secret}`;
+    return `tg://proxy?server=${d}&port=${port ?? config.mtprotoPort}&secret=dd${secret}`;
 }
 
 /**
@@ -94,11 +94,11 @@ function mtprotoLink(secret, domain) {
  * @param {string} [domain] - сервер из ссылки; null/undefined = общий домен
  * @returns {string|null} ссылка или null, если домен непригоден
  */
-function mtprotoLinkFakeTls(secret, maskDomain, domain) {
+function mtprotoLinkFakeTls(secret, maskDomain, domain, port) {
     const s = fakeTlsSecret(secret, maskDomain);
     if (!s) return null;
     const d = domain ?? config.domain;
-    return `tg://proxy?server=${d}&port=${config.mtprotoPort}&secret=${s}`;
+    return `tg://proxy?server=${d}&port=${port ?? config.mtprotoPort}&secret=${s}`;
 }
 
 /**
@@ -108,11 +108,11 @@ function mtprotoLinkFakeTls(secret, maskDomain, domain) {
  * @param {string} [domain] - сервер из ссылки
  * @returns {string|null}
  */
-function mtprotoLinkFakeTlsHttps(secret, maskDomain, domain) {
+function mtprotoLinkFakeTlsHttps(secret, maskDomain, domain, port) {
     const s = fakeTlsSecret(secret, maskDomain);
     if (!s) return null;
     const d = domain ?? config.domain;
-    return `https://t.me/proxy?server=${d}&port=${config.mtprotoPort}&secret=${s}`;
+    return `https://t.me/proxy?server=${d}&port=${port ?? config.mtprotoPort}&secret=${s}`;
 }
 
 /**
@@ -121,9 +121,9 @@ function mtprotoLinkFakeTlsHttps(secret, maskDomain, domain) {
  * @param {string} [domain] - явный домен MTProto
  * @returns {string} https://t.me/ ссылка
  */
-function mtprotoLinkHttps(secret, domain) {
+function mtprotoLinkHttps(secret, domain, port) {
     const d = domain ?? config.domain;
-    return `https://t.me/proxy?server=${d}&port=${config.mtprotoPort}&secret=dd${secret}`;
+    return `https://t.me/proxy?server=${d}&port=${port ?? config.mtprotoPort}&secret=dd${secret}`;
 }
 
 /**
@@ -135,24 +135,46 @@ function mtprotoLinkHttps(secret, domain) {
  *            mtproto_https: string|null, mtproto_faketls: string|null,
  *            mtproto_faketls_https: string|null}}
  */
+/**
+ * Домены узла клиента (мульти-сервер): клиент с node_id берёт домены
+ * и порт MTProto из своего узла; NULL — локальный движок главной панели.
+ */
+function nodeDomainsFor(client) {
+    if (!client || !client.node_id) return null;
+    try {
+        const db = require('../db');
+        const n = db.prepare('SELECT * FROM nodes WHERE id = ? AND enabled = 1').get(client.node_id);
+        if (!n) return null;
+        return {
+            web: n.domain, mtproto: n.domain,
+            mask: n.mask_domain || null,
+            port: n.mtproto_port || null,
+        };
+    } catch {
+        return null;
+    }
+}
+
 function clientLinks(client, opts = {}) {
     // Готовность Fake TLS берём из кэшированной проверки домена: пока она
     // не пройдена, ee-ссылки не выдаются — вместо них клиент получает dd.
     const fakeTls = opts.fakeTls ?? require('./mtprotoFaketls').isReady();
-    const domains = opts.domainsOverride ?? getProxyDomains();
+    const nodeDomains = nodeDomainsFor(client);
+    const domains = opts.domainsOverride ?? nodeDomains ?? getProxyDomains();
     const { web: webDomain, mtproto: mtprotoDomain, mask: maskDomain } = domains;
+    const port = nodeDomains ? nodeDomains.port : null;
 
     return {
         web: client.web_enabled ? webProxyLink(client.secret, webDomain) : null,
-        mtproto: client.mtproto_enabled ? mtprotoLink(client.secret, mtprotoDomain) : null,
+        mtproto: client.mtproto_enabled ? mtprotoLink(client.secret, mtprotoDomain, port) : null,
         web_https: client.web_enabled ? webProxyLinkHttps(client.secret, webDomain) : null,
-        mtproto_https: client.mtproto_enabled ? mtprotoLinkHttps(client.secret, mtprotoDomain) : null,
+        mtproto_https: client.mtproto_enabled ? mtprotoLinkHttps(client.secret, mtprotoDomain, port) : null,
         // Fake TLS показывается только когда домен прошёл проверку (fakeTls=true)
         mtproto_faketls: client.mtproto_enabled && fakeTls
-            ? mtprotoLinkFakeTls(client.secret, maskDomain, mtprotoDomain)
+            ? mtprotoLinkFakeTls(client.secret, maskDomain, mtprotoDomain, port)
             : null,
         mtproto_faketls_https: client.mtproto_enabled && fakeTls
-            ? mtprotoLinkFakeTlsHttps(client.secret, maskDomain, mtprotoDomain)
+            ? mtprotoLinkFakeTlsHttps(client.secret, maskDomain, mtprotoDomain, port)
             : null,
     };
 }
@@ -160,4 +182,5 @@ function clientLinks(client, opts = {}) {
 module.exports = {
     webProxyLink, mtprotoLink, webProxyLinkHttps, mtprotoLinkHttps,
     mtprotoLinkFakeTls, mtprotoLinkFakeTlsHttps, fakeTlsSecret, clientLinks,
+    nodeDomainsFor,
 };

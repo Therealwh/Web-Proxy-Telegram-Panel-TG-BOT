@@ -9,6 +9,7 @@
 
 const db = require('../db');
 const telemt = require('./telemtApi');
+const nodes = require('./nodes');
 const logger = require('../utils/logger');
 const { fireWebhook } = require('./webhooks');
 
@@ -20,13 +21,26 @@ const quotaNotified = new Set();
 
 /** Один цикл сбора. */
 async function pollOnce() {
-    const users = await telemt.listUsers(); // UserInfo[] с total_octets
-    if (!Array.isArray(users)) return;
+    // Опрашиваем локальный движок + все включённые узлы.
+    // Ключи счётчиков — с префиксом узла: total_octets у каждого узла свои.
+    const sources = [{ id: null, api: telemt }];
+    for (const nd of nodes.listNodes({ enabledOnly: true })) {
+        sources.push({ id: nd.id, api: nodes.getApiForNodeId(nd.id) });
+    }
 
     const nowOctets = new Map();
-    for (const u of users) {
-        if (!u.username) continue;
-        nowOctets.set(u.username, Number(u.total_octets) || 0);
+    for (const { id, api } of sources) {
+        try {
+            const users = await api.listUsers(); // UserInfo[] с total_octets
+            if (!Array.isArray(users)) continue;
+            const prefix = (id ?? 'l') + '|';
+            for (const u of users) {
+                if (!u.username) continue;
+                nowOctets.set(prefix + u.username, Number(u.total_octets) || 0);
+            }
+        } catch (e) {
+            logger.warn('Сбор трафика: узел недоступен', { node: id ?? 'local', error: e.message });
+        }
     }
 
     const upsertTraffic = db.prepare(
@@ -37,8 +51,9 @@ async function pollOnce() {
 
     const today = new Date().toISOString().slice(0, 10);
     db.transaction(() => {
-        for (const [username, total] of nowOctets) {
-            const prev = prevOctets.has(username) ? prevOctets.get(username) : null;
+        for (const [key, total] of nowOctets) {
+            const username = key.slice(key.indexOf('|') + 1);
+            const prev = prevOctets.has(key) ? prevOctets.get(key) : null;
             // prev=null → первый опрос: пропускаем (иначе зачтётся вся история)
             // total < prev → квота сброшена (reset-quota) → начинаем с нуля
             const delta = prev === null ? 0 : Math.max(0, total - prev);
