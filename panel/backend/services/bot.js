@@ -1789,16 +1789,12 @@ if (links.mtproto_https) text += `🔌 <b>MTProto</b>:\n${links.mtproto_https}\n
         logger.error('TG-бот упал', { error: err.message });
     });
 
-    // Кнопка меню бота → мини-апп (личный кабинет в один тап).
-    // Не критично: при недоступном домене Telegram отклонит — просто лог.
+    // Возвращаем кнопку меню бота (☰ с командами): setChatMenuButton(web_app)
+    // из v1.30.x подменил её на «Приложение» и выглядело как «пропало меню».
+    // Мини-апп и так доступен кнопкой «📱 Приложение» в reply-клавиатуре.
     try {
-        const cfg = require('../config');
-        const miniappUrl = `https://${cfg.domain}/miniapp`;
-        if (/^https:\/\/[a-z0-9.-]+\.[a-z]{2,}/i.test(miniappUrl)) {
-            await bot.api.setChatMenuButton({
-                menu_button: { type: 'web_app', text: '📱 Приложение', web_app: { url: miniappUrl } },
-            }).catch((e) => logger.warn('Мини-апп: кнопка меню не установлена', { error: e.message }));
-        }
+        await bot.api.setChatMenuButton({ menu_button: { type: 'commands' } })
+            .catch((e) => logger.warn('Меню бота: не удалось вернуть ☰', { error: e.message }));
     } catch { /* не критично */ }
 
     logger.info('TG-бот продаж запущен');
