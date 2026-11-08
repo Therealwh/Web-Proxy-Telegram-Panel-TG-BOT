@@ -7,9 +7,8 @@
 const express = require('express');
 const { z } = require('zod');
 const db = require('../db');
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, audit } = require('../middleware/auth');
 const { httpError } = require('../middleware/errorHandler');
-const audit = require('../middleware/audit');
 const nodes = require('../services/nodes');
 const { getAll } = require('./settings');
 
