@@ -48,6 +48,8 @@ async function checkProxies() {
             const telemt = require('./telemtApi');
 const nodes = require('./nodes');
 const broadcasts = require('./broadcasts');
+const eventLog = require('./eventLog');
+const autoCleanup = require('./autoCleanup');
             await telemt.getHealth();
             apiOk = 1;
         } catch { apiOk = 0; }
@@ -469,6 +471,10 @@ function start() {
     setInterval(() => {
         try { broadcasts.checkScheduled(); } catch (e) { logger.error('Рассылки: планировщик', { error: e.message }); }
     }, 60 * 1000).unref();
+    // События старше суток чистятся ежечасно; автоочистка диска — раз в 10 минут
+    setInterval(() => { try { eventLog.cleanupOld(); } catch (e) { logger.warn(e.message); } }, 60 * 60 * 1000).unref();
+    eventLog.cleanupOld();
+    setInterval(() => { autoCleanup.checkAndCleanup().catch((e) => logger.warn(e.message)); }, 10 * 60 * 1000).unref();
     checkProxies().catch(() => {});
 
     // DC-монитор: состояние дата-центров Telegram каждые 2 минуты

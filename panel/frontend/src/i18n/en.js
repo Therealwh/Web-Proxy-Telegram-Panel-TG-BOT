@@ -354,6 +354,15 @@ export default {
         removeConfirm: 'Delete promo code {code}? This cannot be undone.',
     },
 
+    events: {
+        title: 'Events',
+        subtitle: 'Purchases, renewals, top-ups and errors for the last 24 hours — in plain language',
+        refresh: 'Refresh',
+        updatedAt: 'updated at {t}',
+        empty: 'No events in the last 24 hours',
+        ttlNote: 'Events are stored for 24 hours and removed automatically',
+    },
+
     sales: {
         title: 'Sales & analytics',
         subtitle: 'Revenue, trial conversion and top tariffs',
@@ -898,6 +907,10 @@ curl -X POST -H "Authorization: Bearer tgk_your_key" \\
         catBackup: 'Backups',
         fBackupAuto: 'Daily auto-backups',
         fBackupKeep: 'Keep backups, days',
+        fAutoCleanup: 'Auto-cleanup on low disk',
+        fAutoCleanupHint: 'When free space drops below the threshold — old backups (except the latest) and old logs are removed',
+        fAutoCleanupThreshold: 'Auto-cleanup threshold, GB',
+        fAutoCleanupThresholdHint: 'Cleanup starts when free space falls below this',
         catLogs: 'Logs',
         fLogsKeep: 'Keep connection logs, days',
         fLogsKeepHint: 'Old entries are cleaned automatically',
@@ -1092,6 +1105,7 @@ curl -X POST -H "Authorization: Bearer tgk_your_key" \\
         engineTuning: 'Engine & limits',
         configToml: 'Telemt config (TOML)',
         promos: 'Promo codes',
+        events: 'Events',
         referral: 'Referrals',
         logs: 'Live logs',
         qr: 'QR codes',

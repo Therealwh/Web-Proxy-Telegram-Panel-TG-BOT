@@ -19,6 +19,7 @@ const { deductBalanceSpread } = require('../utils/balance');
 const referral = require('../utils/referral');
 const nodesService = require('./nodes');
 const promoService = require('./promo');
+const eventLog = require('./eventLog');
 const telemt = require('./telemtApi');
 const { clientLinks } = require('./links');
 const { getAll } = require('../routes/settings');
@@ -1485,6 +1486,9 @@ bot.on('message:text', async (ctx, next) => {
                 try { promoService.consumePercent(payRow.promo_code, ctx.from.id); }
                 catch (e2) { logger.warn('Промокод: не удалось списать', { error: e2.message }); }
             }
+            eventLog.logEvent('purchase', '🛒 Покупка прокси (с баланса)',
+                `${created.username} · ${tariff.price} ${currencySign(tariff.currency)} · tg${ctx.from.id}`,
+                'info', ctx.from.id);
         } catch (e) {
             // Возврат ровно затронутым строкам (а не всем клиентам по telegram_id)
             db.transaction((rows) => {
@@ -1493,6 +1497,8 @@ bot.on('message:text', async (ctx, next) => {
                 }
             })(touched);
             db.prepare("UPDATE payments SET status = 'failed' WHERE id = ?").run(paymentId);
+            eventLog.logEvent('error', '⚠️ Покупка с баланса не удалась — средства возвращены',
+                `${e.message} · заказ #${paymentId}`, 'error', ctx.from.id);
             logger.error('Покупка с баланса не удалась, средства возвращены', { error: e.message });
             await ctx.reply(`⚠️ Произошла ошибка — средства возвращены. Напишите в поддержку ${SUPPORT_USERNAME}`);
         }
@@ -1894,6 +1900,9 @@ bot.on('message:text', async (ctx, next) => {
             const modeText = mode === 'web' ? ' (только Web Proxy)'
                 : mode === 'mtproto' ? ' (только MTProto)'
                 : mode === 'both' ? ' (оба протокола)' : '';
+            eventLog.logEvent('renewal', '🔄 Прокси продлён (с баланса)',
+                `${client.username} — до ${fmtMSK(newExpiry, false)} · ${tariff.price} ${currencySign(tariff.currency)} · tg${ctx.from.id}`,
+                'info', ctx.from.id);
             return ctx.reply(
                 `✅ <b>Продлено с баланса!</b>\n\n📦 ${client.username}${modeText} — до <b>${fmtMSK(newExpiry, false)}</b>\n💳 Списано: ${tariff.price} ${currencySign(tariff.currency)}\n💰 Остаток: ${totalBalance(ctx.from.id).toFixed(2)}`,
                 { parse_mode: 'HTML' }

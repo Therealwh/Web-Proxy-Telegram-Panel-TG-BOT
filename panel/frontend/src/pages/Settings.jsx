@@ -63,6 +63,8 @@ const CATEGORIES = (t) => [
         fields: [
             { key: 'backup_auto', label: t('settings.fBackupAuto'), type: 'toggle' },
             { key: 'backup_keep_days', label: t('settings.fBackupKeep'), type: 'number' },
+            { key: 'auto_cleanup_enabled', label: t('settings.fAutoCleanup'), type: 'toggle', hint: t('settings.fAutoCleanupHint') },
+            { key: 'auto_cleanup_threshold_gb', label: t('settings.fAutoCleanupThreshold'), type: 'number', hint: t('settings.fAutoCleanupThresholdHint') },
         ],
     },
     {

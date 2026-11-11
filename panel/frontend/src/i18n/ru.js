@@ -354,6 +354,15 @@ export default {
         removeConfirm: 'Удалить промокод {code}? Это действие необратимо.',
     },
 
+    events: {
+        title: 'События',
+        subtitle: 'Покупки, продления, пополнения и ошибки за последние сутки — по-человечески',
+        refresh: 'Обновить',
+        updatedAt: 'обновлено в {t}',
+        empty: 'За сутки событий не было',
+        ttlNote: 'События хранятся сутки и удаляются автоматически',
+    },
+
     sales: {
         title: 'Продажи и аналитика',
         subtitle: 'Выручка, конверсия теста и топ тарифов',
@@ -898,6 +907,10 @@ curl -X POST -H "Authorization: Bearer tgk_ваш_ключ" \\
         catBackup: 'Резервные копии',
         fBackupAuto: 'Ежедневные автобэкапы',
         fBackupKeep: 'Хранить бэкапов, дней',
+        fAutoCleanup: 'Автоочистка при нехватке места',
+        fAutoCleanupHint: 'Если свободного места меньше порога — удаляются старые бэкапы (кроме последнего) и старые логи',
+        fAutoCleanupThreshold: 'Порог автоочистки, ГБ',
+        fAutoCleanupThresholdHint: 'Когда свободного места становится меньше — запускается очистка',
         catLogs: 'Журналы',
         fLogsKeep: 'Хранить логи подключений, дней',
         fLogsKeepHint: 'Старые записи чистятся автоматически',
@@ -1092,6 +1105,7 @@ curl -X POST -H "Authorization: Bearer tgk_ваш_ключ" \\
         engineTuning: 'Движок и лимиты',
         configToml: 'Конфиг Telemt (TOML)',
         promos: 'Промокоды',
+        events: 'События',
         referral: 'Партнёрка',
         logs: 'Живые логи',
         qr: 'QR-коды',

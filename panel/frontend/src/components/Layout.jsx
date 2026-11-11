@@ -42,6 +42,7 @@ const NAV_GROUPS = [
         { to: '/updates', icon: RefreshCw, label: 'nav.updates' },
     ] },
     { label: 'layout.groupSystem', items: [
+        { to: '/events', icon: ScrollText, label: 'nav.events' },
         { to: '/audit', icon: ClipboardList, label: 'nav.audit' },
         { to: '/diagnostics', icon: Stethoscope, label: 'nav.diagnostics' },
         { to: '/disk', icon: HardDrive, label: 'nav.disk' },

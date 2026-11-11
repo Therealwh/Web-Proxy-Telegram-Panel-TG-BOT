@@ -16,6 +16,7 @@ const { fireWebhook } = require('../services/webhooks');
 const { getAll } = require('./settings');
 const logger = require('../utils/logger');
 const promoService = require('../services/promo');
+const eventLog = require('../services/eventLog');
 
 const router = express.Router();
 
@@ -64,6 +65,8 @@ async function completePayment(paymentId) {
                 await nodes.getApiForClient(client).patchUser(client.username, patch);
             } catch (e) {
                 backToPending(e);
+                eventLog.logEvent('error', '⚠️ Продление не удалось — платёж в очереди',
+                    `${client.username}: ${e.message}`, 'error', payment.telegram_id);
                 throw httpError(502, 'Не удалось обновить срок в Telemt — платёж возвращён в очередь, повторите попытку');
             }
             db.prepare("UPDATE clients SET expires_at = ?, status = 'active' WHERE id = ?").run(newExpiry, client.id);
@@ -101,6 +104,9 @@ async function completePayment(paymentId) {
                     });
                 } catch (e) { logger.warn('Рефералка: продление', { error: e.message }); }
             }
+            eventLog.logEvent('renewal', '🔄 Прокси продлён',
+                `${client.username} — до ${fmt(newExpiry)} · ${payment.amount} ${payment.currency}`,
+                'info', payment.telegram_id);
             logger.info('Прокси продлён', { paymentId, username: client.username });
             return payment;
         }
@@ -137,6 +143,9 @@ async function completePayment(paymentId) {
                 kind: 'deposit', currency: payment.currency,
             });
         } catch (e) { logger.warn('Рефералка: пополнение', { error: e.message }); }
+        eventLog.logEvent('deposit', '💰 Пополнение баланса',
+            `+${payment.amount} ${payment.currency} · tg${payment.telegram_id}`,
+            'info', payment.telegram_id);
         logger.info('Баланс пополнен', { paymentId, amount: payment.amount });
         return payment;
     }
@@ -148,10 +157,21 @@ async function completePayment(paymentId) {
             await bot.issueAccessFor(payment.telegram_id, tariff, paymentId, { moneyIn: true });
         } catch (e) {
             backToPending(e);
+            eventLog.logEvent('error', '⚠️ Выдача прокси не удалась — платёж в очереди',
+                `Тариф #${payment.tariff_id}: ${e.message}`, 'error', payment.telegram_id);
             throw httpError(502, 'Не удалось выдать доступ — платёж возвращён в очередь, повторите попытку');
         }
     } else {
         markSuccess();
+    }
+
+    // Подтверждённая покупка (новый прокси через issueAccessFor)
+    if (payment.tariff_id && payment.telegram_id) {
+        const boughtName = db.prepare('SELECT username FROM clients WHERE telegram_id = ? ORDER BY id DESC LIMIT 1')
+            .get(payment.telegram_id)?.username || null;
+        eventLog.logEvent('purchase', '🛒 Покупка прокси',
+            `${boughtName || 'новый прокси'} · ${payment.amount} ${payment.currency} · tg${payment.telegram_id}`,
+            'info', payment.telegram_id);
     }
 
     // Промокод-скидка: списываем применение после успешной покупки
