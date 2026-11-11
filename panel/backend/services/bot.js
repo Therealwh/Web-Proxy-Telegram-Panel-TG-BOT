@@ -34,7 +34,7 @@ const broadcastState = new Map();
 // Ожидание чека: tgId -> paymentId
 const receiptState = new Map();
 
-// Ожидание ввода промокода: tgId -> true
+// Ожидание ввода промокода: tgId -> timestamp запроса (TTL 10 минут)
 const promoInput = new Map();
 // Ожидание своей суммы пополнения. Держим в БД, а не в памяти процесса:
 // перезапуск панели (например, сразу после обновления) стирал Map целиком,
@@ -1053,6 +1053,7 @@ bot.on('message:text', async (ctx, next) => {
 
     // ═══ 2. /start и reply-клавиатура ═══
     bot.command('start', async (ctx) => {
+        promoInput.delete(ctx.from.id); // /start сбрасывает режим ввода промокода
         if (ctx.payload && ctx.payload.startsWith('ref_')) {
             const referrerId = referral.resolveRefPayload(ctx.payload);
             const self = referrerId
@@ -1392,11 +1393,16 @@ bot.on('message:text', async (ctx, next) => {
     async function showPurchaseMethods(ctx, tariff, nodeId = null) {
         const settings = getBotSettings();
 
-        // Активированный промокод-скидка: считаем цену со скидкой
+        // Активированный промокод-скидка: ревалидируем (срок/лимиты могли истечь
+        // после активации) — протухший снимаем и считаем полную цену
+        let pendingPromo = null;
         const pendingCode = db.prepare('SELECT pending_promo FROM bot_users WHERE telegram_id = ?')
             .get(ctx.from.id)?.pending_promo || null;
-        const pendingPromo = pendingCode
-            ? db.prepare('SELECT * FROM promo_codes WHERE code = ? AND enabled = 1').get(pendingCode) : null;
+        if (pendingCode) {
+            const v = promoService.validate(pendingCode, ctx.from.id);
+            if (v.ok && v.promo.kind === 'percent') pendingPromo = v.promo;
+            else db.prepare('UPDATE bot_users SET pending_promo = NULL WHERE telegram_id = ?').run(ctx.from.id);
+        }
         const finalPrice = pendingPromo ? promoService.discountedPrice(tariff.price, pendingPromo) : tariff.price;
 
         // Заказ создаётся сразу — любой способ привяжется к нему (node_id — локация,
@@ -1417,8 +1423,8 @@ bot.on('message:text', async (ctx, next) => {
         if (settings.cryptobot_token) kb.text('🪙 Оплатить через CryptoBot', `cbpay:${paymentId}:${tariff.id}:cryptobot`).row();
         if (settings.yookassa_shop_id && settings.yookassa_secret_key) kb.text('💳 Оплатить через ЮKassa', `cbpay:${paymentId}:${tariff.id}:yookassa`).row();
 
-        // Telegram Stars (инвойс в чат)
-        const stars = starsPrice(tariff, settings);
+        // Telegram Stars (инвойс в чат) — от цены заказа со скидкой
+        const stars = starsPrice({ ...tariff, price: finalPrice }, settings);
         if (stars) kb.text(`⭐ Оплатить звёздами (${stars} ⭐)`, `starspay:${paymentId}`).row();
 
         // Карта админа — всегда доступна
@@ -1441,7 +1447,7 @@ bot.on('message:text', async (ctx, next) => {
         const paymentId = Number(ctx.match[2]);
         if (!tariff) return ctx.answerCallbackQuery('Тариф недоступен');
         // Цена заказа (может быть со скидкой по промокоду)
-        const payRow = db.prepare('SELECT amount FROM payments WHERE id = ?').get(paymentId);
+        const payRow = db.prepare('SELECT amount, promo_code FROM payments WHERE id = ?').get(paymentId);
         const price = Number(payRow?.amount ?? tariff.price);
         const balance = totalBalance(ctx.from.id);
         if (balance < price) {
@@ -1456,6 +1462,12 @@ bot.on('message:text', async (ctx, next) => {
         }
         try {
             await issueAccessFor(ctx.from.id, tariff, paymentId, { moneyIn: false });
+            // Промокод-скидка использована: списываем применение (иначе скидка
+            // останется активной навсегда — путь с балансом идёт мимо completePayment)
+            if (payRow?.promo_code) {
+                try { promoService.consumePercent(payRow.promo_code, ctx.from.id); }
+                catch (e2) { logger.warn('Промокод: не удалось списать', { error: e2.message }); }
+            }
         } catch (e) {
             // Возврат ровно затронутым строкам (а не всем клиентам по telegram_id)
             db.transaction((rows) => {
@@ -1763,7 +1775,7 @@ bot.on('message:text', async (ctx, next) => {
     // ── Промокод: ввод в кабинете ──
     bot.callbackQuery('promo', async (ctx) => {
         await ctx.answerCallbackQuery();
-        promoInput.set(ctx.from.id, true);
+        promoInput.set(ctx.from.id, Date.now());
         await ctx.reply(
             '🎁 <b>Введите промокод</b> одним сообщением:\n' +
             '(напишите его следующим сообщением, например: <code>PROMO-AB12C</code>)\n\n' +
@@ -1778,7 +1790,9 @@ bot.on('message:text', async (ctx, next) => {
 
     // Текст-сообщение в режиме ввода промокода (до остальных обработчиков текста)
     bot.on('message:text', async (ctx, next) => {
-        if (!promoInput.has(ctx.from.id)) return next();
+        const askedAt = promoInput.get(ctx.from.id);
+        if (!askedAt) return next();
+        if (Date.now() - askedAt > 10 * 60 * 1000) { promoInput.delete(ctx.from.id); return next(); }
         promoInput.delete(ctx.from.id);
         const code = String(ctx.message.text || '').trim();
         await applyPromoFlow(ctx, code);

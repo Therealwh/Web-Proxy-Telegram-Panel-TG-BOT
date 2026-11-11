@@ -316,6 +316,10 @@ router.post('/promo', requireAuth, (req, res, next) => {
               p.kind, p.audience, p.days ?? null, p.one_per_user === false ? 0 : 1);
         res.status(201).json({ ok: true, code });
     } catch (err) {
+        if (/UNIQUE/i.test(err.message)) {
+            next(Object.assign(new Error('Такой код уже существует — сгенерируйте другой'), { statusCode: 400 }));
+            return;
+        }
         next(err);
     }
 });
@@ -352,48 +356,8 @@ router.post('/promo/check', (req, res, next) => {
     }
 });
 
-// ── Применение промокода из бота (публичный — вызывается панелью бота) ──
-// kind='days'  → мгновенный подарок (создание прокси новому / продление всем)
-// kind='percent' → активация скидки на следующую покупку
-router.post('/promo/apply', (req, res, next) => {
-    try {
-        const schema = z.object({ code: z.string().max(32), telegram_id: z.number().int() });
-        const { code, telegram_id: tgId } = schema.parse(req.body);
-        const v = promoService.validate(code, tgId);
-        if (!v.ok) return res.json({ ok: false, error: v.error });
-        const a = promoService.checkAudience(v.promo, tgId);
-        if (!a.ok) return res.json({ ok: false, error: a.error });
-
-        if (v.promo.kind === 'days') {
-            promoService.applyDaysPromo(v.promo, tgId).then((r) => {
-                if (!r.ok) return logger.warn('Промокод-дни: не удалось применить', { code: v.promo.code, error: r.error });
-                logger.info('Промокод-дни применён', { code: v.promo.code, tgId });
-            }).catch((e) => logger.error('Промокод-дни: ошибка', { code: v.promo.code, error: e.message }));
-            // Дни применяются асинхронно (создание/продление в Telemt)
-            return res.json({ ok: true, kind: 'days', days: v.promo.days });
-        }
-        const act = promoService.activatePercent(v.promo, tgId);
-        if (!act.ok) return res.json({ ok: false, error: act.error });
-        res.json({ ok: true, kind: 'percent', percent: act.percent, code: act.code });
-    } catch (err) { next(err); }
-});
-
-// Активный промокод-скидка пользователя (для бота)
-router.get('/promo/pending/:tgId', (req, res) => {
-    const code = db.prepare('SELECT pending_promo FROM bot_users WHERE telegram_id = ?')
-        .get(Number(req.params.tgId))?.pending_promo || null;
-    if (!code) return res.json({ promo: null });
-    const promo = db.prepare('SELECT * FROM promo_codes WHERE code = ? AND enabled = 1').get(code);
-    if (!promo) return res.json({ promo: null });
-    res.json({ promo: { code: promo.code, discount_percent: promo.discount_percent, discount_fixed: promo.discount_fixed } });
-});
-
-// Списание промокода-скидки после успешной покупки (внутренний, из completePayment)
-router.post('/promo/consume', (req, res) => {
-    const { code, telegram_id: tgId } = req.body || {};
-    if (!code || !tgId) return res.status(400).json({ error: 'code и telegram_id обязательны' });
-    promoService.consumePercent(String(code), Number(tgId));
-    res.json({ ok: true });
-});
+// Применение и списание промокодов — через services/promo.js напрямую
+// (бот и completePayment в одном процессе). Публичных эндпоинтов нет:
+// знание кода не должно давать управление чужими telegram_id.
 
 module.exports = { router, completePayment };

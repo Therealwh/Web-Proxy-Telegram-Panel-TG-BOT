@@ -101,6 +101,7 @@ function checkAudience(promo, telegramId) {
  */
 async function applyDaysPromo(promo, telegramId) {
     const telemt = require('./telemtApi');
+    const nodesService = require('./nodes');
     const days = Math.min(MAX_DAYS, Math.max(1, Number(promo.days) || 0));
     if (!days) return { ok: false, error: 'У промокода не задано количество дней' };
 
@@ -117,37 +118,50 @@ async function applyDaysPromo(promo, telegramId) {
         return { ok: false, error: 'Нет активного прокси для продления' };
     }
 
-    // Новенький: создаём бесплатный прокси на срок промокода
-    if (promo.audience === 'new' && proxies.length === 0) {
-        const count = db.prepare('SELECT COUNT(*) AS c FROM clients WHERE telegram_id = ?').get(telegramId).c;
-        const username = `tg${telegramId}x${count + 1}`;
-        const expires = new Date(Date.now() + days * 86400000).toISOString();
-        const created = await telemt.createUser({
-            username, expiration_rfc3339: expires, max_unique_ips: 2,
-        });
-        db.prepare(
-            `INSERT INTO clients (username, secret, expires_at, telegram_id, web_enabled, mtproto_enabled, max_ips, status)
-             VALUES (?, ?, ?, ?, 1, 1, 2, 'active')`
-        ).run(username, created.secret, expires, telegramId);
-        recordUse(promo.code, telegramId);
-        logger.info('Промокод: новому пользователю создан прокси', { code: promo.code, username, days });
-        return { ok: true, created: username, until: expires };
+    // Резервируем использование ДО сетевых вызовов (TOCTOU: два параллельных
+    // применения проходят валидацию до записи). При неудаче — откат.
+    if (!recordUse(promo.code, telegramId)) {
+        return { ok: false, error: 'Вы уже применяли этот промокод' };
+    }
+    if (promo.max_uses !== null && promo.max_uses !== undefined && usesCount(promo.code) > promo.max_uses) {
+        rollbackUse(promo.code, telegramId);
+        return { ok: false, error: 'Лимит применений промокода исчерпан' };
     }
 
-    // Всем: продлеваем каждый активный прокси
-    if (proxies.length === 0) return { ok: false, error: 'Нет активного прокси для продления' };
-    const untils = [];
-    for (const p of proxies) {
-        const base = p.expires_at && new Date(p.expires_at) > new Date()
-            ? new Date(p.expires_at) : new Date();
-        const newExpiry = new Date(base.getTime() + days * 86400000).toISOString();
-        await telemt.patchUser(p.username, { expiration_rfc3339: newExpiry }).catch(() => {});
-        db.prepare("UPDATE clients SET expires_at = ?, status = 'active' WHERE id = ?").run(newExpiry, p.id);
-        untils.push(newExpiry);
+    try {
+        // Новенький: создаём бесплатный прокси на срок промокода
+        if (promo.audience === 'new' && proxies.length === 0) {
+            const count = db.prepare('SELECT COUNT(*) AS c FROM clients WHERE telegram_id = ?').get(telegramId).c;
+            const username = `tg${telegramId}x${count + 1}`;
+            const expires = new Date(Date.now() + days * 86400000).toISOString();
+            const created = await telemt.createUser({
+                username, expiration_rfc3339: expires, max_unique_ips: 2,
+            });
+            db.prepare(
+                `INSERT INTO clients (username, secret, expires_at, telegram_id, web_enabled, mtproto_enabled, max_ips, status)
+                 VALUES (?, ?, ?, ?, 1, 1, 2, 'active')`
+            ).run(username, created.secret, expires, telegramId);
+            logger.info('Промокод: новому пользователю создан прокси', { code: promo.code, username, days });
+            return { ok: true, created: username, until: expires };
+        }
+
+        // Всем: продлеваем каждый активный прокси (на узле конкретного прокси)
+        const untils = [];
+        for (const p of proxies) {
+            const base = p.expires_at && new Date(p.expires_at) > new Date()
+                ? new Date(p.expires_at) : new Date();
+            const newExpiry = new Date(base.getTime() + days * 86400000).toISOString();
+            await nodesService.getApiForClient(p).patchUser(p.username, { expiration_rfc3339: newExpiry }).catch(() => {});
+            db.prepare("UPDATE clients SET expires_at = ?, status = 'active' WHERE id = ?").run(newExpiry, p.id);
+            untils.push(newExpiry);
+        }
+        logger.info('Промокод: продлены прокси', { code: promo.code, count: proxies.length, days });
+        return { ok: true, extended: proxies.length, until: untils.sort().pop() };
+    } catch (e) {
+        // Откат резерва: применение не состоялось
+        rollbackUse(promo.code, telegramId);
+        throw e;
     }
-    recordUse(promo.code, telegramId);
-    logger.info('Промокод: продлены прокси', { code: promo.code, count: proxies.length, days });
-    return { ok: true, extended: proxies.length, until: untils.sort().pop() };
 }
 
 /**
@@ -168,18 +182,31 @@ function activatePercent(promo, telegramId) {
 function consumePercent(code, telegramId) {
     const promo = getPromo(code);
     if (!promo) return;
+    // Снимаем pending ТОЛЬКО если он соответствует промокоду (не чужой активации)
+    db.prepare('UPDATE bot_users SET pending_promo = NULL WHERE telegram_id = ? AND pending_promo = ?')
+        .run(telegramId, code);
     recordUse(code, telegramId);
-    db.prepare('UPDATE bot_users SET pending_promo = NULL WHERE telegram_id = ?').run(telegramId);
     logger.info('Промокод: скидка использована', { code, telegramId });
+}
+
+/** Откат резерва использования (применение не состоялось). */
+function rollbackUse(code, telegramId) {
+    db.prepare('DELETE FROM promo_uses WHERE promo_code = ? AND telegram_id = ?').run(code, telegramId);
+    db.prepare('UPDATE promo_codes SET used_count = MAX(0, used_count - 1) WHERE code = ?').run(code);
 }
 
 /** Журналирует использование (уникальность на уровне БД). */
 function recordUse(code, telegramId) {
-    db.prepare(
+    // Инкремент used_count только при фактической вставке (повторный вызов
+    // не должен накручивать счётчик)
+    const r = db.prepare(
         `INSERT INTO promo_uses (promo_code, telegram_id) VALUES (?, ?)
          ON CONFLICT(promo_code, telegram_id) DO NOTHING`
     ).run(code, telegramId);
-    db.prepare('UPDATE promo_codes SET used_count = used_count + 1 WHERE code = ?').run(code);
+    if (r.changes > 0) {
+        db.prepare('UPDATE promo_codes SET used_count = used_count + 1 WHERE code = ?').run(code);
+    }
+    return r.changes > 0;
 }
 
 /**
