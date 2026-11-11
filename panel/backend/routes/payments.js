@@ -15,6 +15,7 @@ const { httpError } = require('../middleware/errorHandler');
 const { fireWebhook } = require('../services/webhooks');
 const { getAll } = require('./settings');
 const logger = require('../utils/logger');
+const promoService = require('../services/promo');
 
 const router = express.Router();
 
@@ -153,6 +154,11 @@ async function completePayment(paymentId) {
         markSuccess();
     }
 
+    // Промокод-скидка: списываем применение после успешной покупки
+    if (payment.promo_code && payment.telegram_id) {
+        try { promoService.consumePercent(payment.promo_code, payment.telegram_id); }
+        catch (e) { logger.warn('Промокод: не удалось списать применение', { error: e.message }); }
+    }
     fireWebhook('payment.success', { payment_id: paymentId, amount: payment.amount, currency: payment.currency });
     logger.info('Платёж подтверждён', { paymentId, provider: payment.provider });
     return payment;
@@ -269,29 +275,46 @@ router.post('/:id/cancel', requireAuth, (req, res, next) => {
 
 // --- Промокоды ---
 router.get('/promo', requireAuth, (req, res) => {
-    res.json({ promo: db.prepare('SELECT * FROM promo_codes ORDER BY code').all() });
+    const rows = db.prepare('SELECT * FROM promo_codes ORDER BY rowid DESC').all();
+    const usesStmt = db.prepare('SELECT COUNT(*) AS c FROM promo_uses WHERE promo_code = ?');
+    const promo = rows.map((p) => ({
+        ...p,
+        uses: usesStmt.get(p.code).c,
+        expired: !!(p.expires_at && new Date(p.expires_at) < new Date()),
+    }));
+    res.json({ promo });
 });
 
 router.post('/promo', requireAuth, (req, res, next) => {
     try {
         const schema = z.object({
-            code: z.string().regex(/^[A-Z0-9_-]{3,32}$/i, 'Код: 3-32 символа (латиница, цифры)'),
-            discount_percent: z.number().min(1).max(100).nullable().optional(),
+            code: z.string().regex(/^[A-Z0-9_-]{3,32}$/i, 'Код: 3-32 символа (латиница, цифры)').optional(),
+            kind: z.enum(['percent', 'days']).default('percent'),
+            audience: z.enum(['all', 'new']).default('all'),
+            discount_percent: z.number().min(1).max(99).nullable().optional(),
             discount_fixed: z.number().min(1).nullable().optional(),
+            days: z.number().int().min(1).max(3650).nullable().optional(),
             first_payment_only: z.boolean().optional(),
             max_uses: z.number().int().min(1).nullable().optional(),
             expires_at: z.string().datetime({ offset: true }).nullable().optional(),
+            one_per_user: z.boolean().optional(),
         });
         const p = schema.parse(req.body);
-        if (!p.discount_percent && !p.discount_fixed) {
+        if (p.kind === 'days' && !p.days) {
+            throw httpError(400, 'Для промокода на дни укажите количество дней');
+        }
+        if (p.kind === 'percent' && !p.discount_percent && !p.discount_fixed) {
             throw httpError(400, 'Укажите скидку: в процентах или фиксированную');
         }
+        const code = (p.code || promoService.generateCode()).toUpperCase();
         db.prepare(
-            `INSERT INTO promo_codes (code, discount_percent, discount_fixed, first_payment_only, max_uses, expires_at)
-             VALUES (?, ?, ?, ?, ?, ?)`
-        ).run(p.code.toUpperCase(), p.discount_percent ?? null, p.discount_fixed ?? null,
-              p.first_payment_only ? 1 : 0, p.max_uses ?? null, p.expires_at ?? null);
-        res.status(201).json({ ok: true });
+            `INSERT INTO promo_codes (code, discount_percent, discount_fixed, first_payment_only, max_uses, expires_at,
+                                      kind, audience, days, one_per_user)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        ).run(code, p.discount_percent ?? null, p.discount_fixed ?? null,
+              p.first_payment_only ? 1 : 0, p.max_uses ?? null, p.expires_at ?? null,
+              p.kind, p.audience, p.days ?? null, p.one_per_user === false ? 0 : 1);
+        res.status(201).json({ ok: true, code });
     } catch (err) {
         next(err);
     }
@@ -307,7 +330,7 @@ router.delete('/promo/:code', requireAuth, (req, res, next) => {
     }
 });
 
-// --- Проверка промокода (для бота, публичный) ---
+// --- Проверка промокода (для мини-аппа, публичный) ---
 router.post('/promo/check', (req, res, next) => {
     try {
         const schema = z.object({ code: z.string().max(32), amount: z.number().min(0) });
@@ -327,6 +350,50 @@ router.post('/promo/check', (req, res, next) => {
     } catch (err) {
         next(err);
     }
+});
+
+// ── Применение промокода из бота (публичный — вызывается панелью бота) ──
+// kind='days'  → мгновенный подарок (создание прокси новому / продление всем)
+// kind='percent' → активация скидки на следующую покупку
+router.post('/promo/apply', (req, res, next) => {
+    try {
+        const schema = z.object({ code: z.string().max(32), telegram_id: z.number().int() });
+        const { code, telegram_id: tgId } = schema.parse(req.body);
+        const v = promoService.validate(code, tgId);
+        if (!v.ok) return res.json({ ok: false, error: v.error });
+        const a = promoService.checkAudience(v.promo, tgId);
+        if (!a.ok) return res.json({ ok: false, error: a.error });
+
+        if (v.promo.kind === 'days') {
+            promoService.applyDaysPromo(v.promo, tgId).then((r) => {
+                if (!r.ok) return logger.warn('Промокод-дни: не удалось применить', { code: v.promo.code, error: r.error });
+                logger.info('Промокод-дни применён', { code: v.promo.code, tgId });
+            }).catch((e) => logger.error('Промокод-дни: ошибка', { code: v.promo.code, error: e.message }));
+            // Дни применяются асинхронно (создание/продление в Telemt)
+            return res.json({ ok: true, kind: 'days', days: v.promo.days });
+        }
+        const act = promoService.activatePercent(v.promo, tgId);
+        if (!act.ok) return res.json({ ok: false, error: act.error });
+        res.json({ ok: true, kind: 'percent', percent: act.percent, code: act.code });
+    } catch (err) { next(err); }
+});
+
+// Активный промокод-скидка пользователя (для бота)
+router.get('/promo/pending/:tgId', (req, res) => {
+    const code = db.prepare('SELECT pending_promo FROM bot_users WHERE telegram_id = ?')
+        .get(Number(req.params.tgId))?.pending_promo || null;
+    if (!code) return res.json({ promo: null });
+    const promo = db.prepare('SELECT * FROM promo_codes WHERE code = ? AND enabled = 1').get(code);
+    if (!promo) return res.json({ promo: null });
+    res.json({ promo: { code: promo.code, discount_percent: promo.discount_percent, discount_fixed: promo.discount_fixed } });
+});
+
+// Списание промокода-скидки после успешной покупки (внутренний, из completePayment)
+router.post('/promo/consume', (req, res) => {
+    const { code, telegram_id: tgId } = req.body || {};
+    if (!code || !tgId) return res.status(400).json({ error: 'code и telegram_id обязательны' });
+    promoService.consumePercent(String(code), Number(tgId));
+    res.json({ ok: true });
 });
 
 module.exports = { router, completePayment };

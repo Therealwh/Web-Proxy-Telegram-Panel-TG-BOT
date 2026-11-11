@@ -18,6 +18,7 @@ const db = require('../db');
 const { deductBalanceSpread } = require('../utils/balance');
 const referral = require('../utils/referral');
 const nodesService = require('./nodes');
+const promoService = require('./promo');
 const telemt = require('./telemtApi');
 const { clientLinks } = require('./links');
 const { getAll } = require('../routes/settings');
@@ -33,6 +34,8 @@ const broadcastState = new Map();
 // Ожидание чека: tgId -> paymentId
 const receiptState = new Map();
 
+// Ожидание ввода промокода: tgId -> true
+const promoInput = new Map();
 // Ожидание своей суммы пополнения. Держим в БД, а не в памяти процесса:
 // перезапуск панели (например, сразу после обновления) стирал Map целиком,
 // и введённая сумма молча проглатывалась — пользователь не получал
@@ -351,7 +354,8 @@ async function cabinetView(ctx, selectedId = null) {
 
     if (clients.length === 0) {
         const kb = new InlineKeyboard().text('🚀 Выбрать тариф', 'tariffs').row()
-            .text('🎁 Тест 3 часа', 'test3').row();
+            .text('🎁 Тест 3 часа', 'test3').row()
+            .text('🎁 Промокод', 'promo');
         const miniUrl = miniAppUrl();
         if (miniUrl) kb.webApp('📱 Открыть приложение', miniUrl);
         return { text: '📱 <b>Личный кабинет</b>\n\nУ вас пока нет прокси.\nВыберите тариф или возьмите бесплатный тест!', kb };
@@ -449,6 +453,7 @@ const selected = clients.find((c) => c.id === selectedId) || null;
         kb.text('📷 QR-код', `qr:${selected.id}`).row();
         kb.text('🌍 Локация', `nodeloc:${selected.id}`);
         kb.text('💳 Пополнить', 'topup');
+        kb.text('🎁 Промокод', 'promo');
         kb.text('♻️ Продлить', `renew:${selected.id}`);
         if (settings.auto_renew_enabled) {
             kb.text(selected.auto_renew ? '♻️ Автопродление: ✅' : '♻️ Автопродление: ❌', `autorenew:${selected.id}`);
@@ -487,7 +492,8 @@ const selected = clients.find((c) => c.id === selectedId) || null;
     }
     const miniUrlList = miniAppUrl();
     if (miniUrlList) kb.webApp('📱 Приложение', miniUrlList).row();
-    kb.text('💳 Пополнить счёт', 'topup').row();
+    kb.text('💳 Пополнить счёт', 'topup');
+    kb.text('🎁 Промокод', 'promo').row();
     kb.text('🚀 Тарифы', 'tariffs');
     styleButtons(kb, [['Пополнить счёт', 'primary']]);
     return { text, kb };
@@ -1385,18 +1391,25 @@ bot.on('message:text', async (ctx, next) => {
     /** Экран выбора способа оплаты для покупки тарифа. */
     async function showPurchaseMethods(ctx, tariff, nodeId = null) {
         const settings = getBotSettings();
-        const providerConfigured = !!(settings.cryptobot_token || (settings.yookassa_shop_id && settings.yookassa_secret_key));
 
-        // Заказ создаётся сразу — любой способ привяжется к нему (node_id — локация)
+        // Активированный промокод-скидка: считаем цену со скидкой
+        const pendingCode = db.prepare('SELECT pending_promo FROM bot_users WHERE telegram_id = ?')
+            .get(ctx.from.id)?.pending_promo || null;
+        const pendingPromo = pendingCode
+            ? db.prepare('SELECT * FROM promo_codes WHERE code = ? AND enabled = 1').get(pendingCode) : null;
+        const finalPrice = pendingPromo ? promoService.discountedPrice(tariff.price, pendingPromo) : tariff.price;
+
+        // Заказ создаётся сразу — любой способ привяжется к нему (node_id — локация,
+        // promo_code — активированная скидка, amount — цена со скидкой)
         const paymentId = db.prepare(
-            'INSERT INTO payments (tariff_id, amount, currency, provider, status, telegram_id, node_id) VALUES (?, ?, ?, ?, ?, ?, ?)'
-        ).run(tariff.id, tariff.price, tariff.currency, 'manual', 'pending', ctx.from.id, nodeId).lastInsertRowid;
+            'INSERT INTO payments (tariff_id, amount, currency, provider, status, telegram_id, node_id, promo_code) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+        ).run(tariff.id, finalPrice, tariff.currency, 'manual', 'pending', ctx.from.id, nodeId, pendingPromo?.code ?? null).lastInsertRowid;
 
         const kb = new InlineKeyboard();
 
         // Баланс (если хватает) — первый способ
         const balance = totalBalance(ctx.from.id);
-        if (balance >= tariff.price) {
+        if (balance >= finalPrice) {
             kb.text(`💰 С баланса (${balance.toFixed(2)})`, `paybal:${tariff.id}:${paymentId}`).row();
         }
 
@@ -1413,8 +1426,11 @@ bot.on('message:text', async (ctx, next) => {
         kb.text('⬅️ К тарифам', 'tariffs');
 
         const locLine = nodeId ? (() => { const nd = nodesService.getNode(nodeId); return nd ? `🌍 Локация: <b>${nd.emoji || '🌍'} ${nd.name}</b>\n\n` : ''; })() : '';
+        const promoLine = pendingPromo
+            ? `🎁 Промокод <b>${pendingPromo.code}</b>: цена ${tariff.price} → <b>${finalPrice} ${currencySign(tariff.currency)}</b>\n\n`
+            : '';
         await ctx.reply(
-            `${tariffDescription(tariff)}\n\n${locLine}🧾 Заказ #${paymentId}\n\n💳 <b>Выберите способ оплаты:</b>`,
+            `${tariffDescription(tariff)}\n\n${locLine}${promoLine}🧾 Заказ #${paymentId}\n\n💳 <b>Выберите способ оплаты:</b>`,
             { parse_mode: 'HTML', reply_markup: kb }
         );
     }
@@ -1424,14 +1440,17 @@ bot.on('message:text', async (ctx, next) => {
         const tariff = db.prepare('SELECT * FROM tariffs WHERE id = ? AND enabled = 1').get(Number(ctx.match[1]));
         const paymentId = Number(ctx.match[2]);
         if (!tariff) return ctx.answerCallbackQuery('Тариф недоступен');
+        // Цена заказа (может быть со скидкой по промокоду)
+        const payRow = db.prepare('SELECT amount FROM payments WHERE id = ?').get(paymentId);
+        const price = Number(payRow?.amount ?? tariff.price);
         const balance = totalBalance(ctx.from.id);
-        if (balance < tariff.price) {
+        if (balance < price) {
             return ctx.answerCallbackQuery({ text: 'Недостаточно средств на балансе', show_alert: true });
         }
         await ctx.answerCallbackQuery('Оформляю...');
 
         // Атомарное списание с проверкой покрытия — закрывает гонку двойного клика
-        const { ok, touched } = deductBalanceSpread(ctx.from.id, tariff.price);
+        const { ok, touched } = deductBalanceSpread(ctx.from.id, price);
         if (!ok) {
             return ctx.answerCallbackQuery({ text: 'Недостаточно средств на балансе', show_alert: true });
         }
@@ -1462,6 +1481,8 @@ bot.on('message:text', async (ctx, next) => {
         const settings = getBotSettings();
         const paymentsService = require('./payments');
         let pay = null;
+        // Цена заказа (со скидкой по промокоду)
+        tariff.price = Number(payment.amount ?? tariff.price);
         // Для продления — подпись с юзернеймом прокси
         const tariffName = payment.client_id
             ? (() => { const c = db.prepare('SELECT username FROM clients WHERE id = ?').get(payment.client_id); return c ? `${tariff.name} (продление ${c.username})` : tariff.name; })()
@@ -1502,7 +1523,8 @@ bot.on('message:text', async (ctx, next) => {
             return ctx.answerCallbackQuery('Заказ не найден');
         }
         const settings = getBotSettings();
-        const stars = starsPrice(tariff, settings);
+        const payRow = db.prepare('SELECT amount FROM payments WHERE id = ?').get(paymentId);
+        const stars = starsPrice({ ...tariff, price: Number(payRow?.amount ?? tariff.price) }, settings);
         if (!stars) return ctx.answerCallbackQuery({ text: 'Оплата звёздами недоступна', show_alert: true });
 
         await ctx.answerCallbackQuery();
@@ -1692,6 +1714,74 @@ bot.on('message:text', async (ctx, next) => {
             `⏰ Действует 10 минут, код разовый.`,
             { parse_mode: 'HTML' }
         );
+    });
+
+    /** Применение промокода: дни — мгновенно, скидка — на следующую покупку. */
+    async function applyPromoFlow(ctx, code) {
+        const tgId = ctx.from.id;
+        const v = promoService.validate(code, tgId);
+        if (!v.ok) return ctx.reply(`❌ ${v.error}`, { parse_mode: 'HTML' });
+        const a = promoService.checkAudience(v.promo, tgId);
+        if (!a.ok) return ctx.reply(`❌ ${a.error}`, { parse_mode: 'HTML' });
+
+        if (v.promo.kind === 'days') {
+            const days = v.promo.days;
+            const r = await promoService.applyDaysPromo(v.promo, tgId).catch((e) => ({ ok: false, error: e.message }));
+            if (!r.ok) return ctx.reply(`❌ ${r.error}`, { parse_mode: 'HTML' });
+            if (r.created) {
+                const links = clientLinks(db.prepare('SELECT * FROM clients WHERE username = ?').get(r.created));
+                let text = `🎁 <b>Промокод активирован!</b>\n\n` +
+                    `📦 Новый прокси: <b>${proxyTitle(r.created)}</b>\n📅 Действует до: <b>${fmtMSK(r.until, false)}</b>\n\n` +
+                    `Подключайся кнопками ниже:`;
+                return ctx.reply(text, {
+                    parse_mode: 'HTML', disable_web_page_preview: true,
+                    reply_markup: connectKeyboard(db.prepare('SELECT * FROM clients WHERE username = ?').get(r.created)),
+                });
+            }
+            return ctx.reply(
+                `🎁 <b>Промокод активирован!</b>\n\n` +
+                `♻️ Продлено прокси: <b>${r.extended}</b> на <b>+${days} дн.</b>\n` +
+                `📅 Теперь действует до: <b>${fmtMSK(r.until, false)}</b>`,
+                { parse_mode: 'HTML' }
+            );
+        }
+
+        // Скидка — на следующую покупку
+        const act = promoService.activatePercent(v.promo, tgId);
+        if (!act.ok) return ctx.reply(`❌ ${act.error}`, { parse_mode: 'HTML' });
+        const off = act.discount_fixed
+            ? `- ${act.discount_fixed} ${currencySign(getBotSettings().currency)}`
+            : `- ${act.percent}%`;
+        return ctx.reply(
+            `🎁 <b>Промокод активирован!</b>\n\n` +
+            `Скидка <b>${off}</b> применится к вашей следующей покупке.\n` +
+            `Выберите тариф — цена со скидкой будет видна при оплате.`,
+            { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('🚀 К тарифам', 'tariffs') }
+        );
+    }
+
+    // ── Промокод: ввод в кабинете ──
+    bot.callbackQuery('promo', async (ctx) => {
+        await ctx.answerCallbackQuery();
+        promoInput.set(ctx.from.id, true);
+        await ctx.reply(
+            '🎁 <b>Введите промокод</b> одним сообщением:\n' +
+            '(напишите его следующим сообщением, например: <code>PROMO-AB12C</code>)\n\n' +
+            'Отменить: /promocancel',
+            { parse_mode: 'HTML' }
+        );
+    });
+
+    bot.command('promocancel', async (ctx) => {
+        if (promoInput.delete(ctx.from.id)) await ctx.reply('❌ Ввод промокода отменён');
+    });
+
+    // Текст-сообщение в режиме ввода промокода (до остальных обработчиков текста)
+    bot.on('message:text', async (ctx, next) => {
+        if (!promoInput.has(ctx.from.id)) return next();
+        promoInput.delete(ctx.from.id);
+        const code = String(ctx.message.text || '').trim();
+        await applyPromoFlow(ctx, code);
     });
 
     // QR-код ссылки подключения: купил с ноутбука — навёл камеру телефона

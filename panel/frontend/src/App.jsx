@@ -29,6 +29,7 @@ const Diagnostics = lazy(() => import('./pages/Diagnostics'));
 const Disk = lazy(() => import('./pages/Disk'));
 const Referral = lazy(() => import('./pages/Referral'));
 const Nodes = lazy(() => import('./pages/Nodes'));
+const Promos = lazy(() => import('./pages/Promos'));
 
 /** Обертка: пускает только авторизованных */
 function Protected({ children }) {
@@ -55,6 +56,7 @@ export default function App() {
                 <Route path="sales" element={<Suspense fallback={PageLoader}><Sales /></Suspense>} />
                 <Route path="referral" element={<Suspense fallback={PageLoader}><Referral /></Suspense>} />
                 <Route path="nodes" element={<Suspense fallback={PageLoader}><Nodes /></Suspense>} />
+                <Route path="promos" element={<Suspense fallback={PageLoader}><Promos /></Suspense>} />
                 <Route path="logs" element={<Suspense fallback={PageLoader}><Logs /></Suspense>} />
                 <Route path="qr" element={<Suspense fallback={PageLoader}><QRGenerator /></Suspense>} />
                 <Route path="website" element={<Suspense fallback={PageLoader}><Website /></Suspense>} />
