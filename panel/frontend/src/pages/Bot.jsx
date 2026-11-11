@@ -2,13 +2,15 @@
 import React, { useEffect, useState } from 'react';
 import { Plus, Save, Trash2, Power, Wallet, MessageSquare, ChevronDown, ChevronLeft, ChevronRight,
          Pencil, Bot as BotIcon, Search, RefreshCcw, Users as UsersIcon,
-         SlidersHorizontal, Receipt, Megaphone, Image as ImageIcon, Clock, Ban } from 'lucide-react';
+         SlidersHorizontal, Receipt, Megaphone, Image as ImageIcon, Clock, Ban,
+         Ticket } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import { get, post, put, del } from '../api';
 import { useAuthStore } from '../store';
 import { toast, useLangStore } from '../store';
 import { useT } from '../i18n';
 import { Card, Field, Toggle, Skeleton, Modal, StatusBadge, formatDate, PageHeader, Avatar } from '../components/ui';
+import Promos from './Promos';
 
 /** Строка «настройка → значение» для сводного вида карточек */
 function settingRow(label, value) {
@@ -282,6 +284,7 @@ export default function Bot() {
                 {[
                     { id: 'users', icon: <UsersIcon size={15} aria-hidden="true" />, label: t('bot.tabUsers') },
                     { id: 'broadcast', icon: <Megaphone size={15} aria-hidden="true" />, label: t('bot.tabBroadcast') },
+                    { id: 'promos', icon: <Ticket size={15} aria-hidden="true" />, label: t('bot.tabPromos') },
                     { id: 'tariffs', icon: <Receipt size={15} aria-hidden="true" />, label: t('bot.tabTariffs') },
                     { id: 'settings', icon: <SlidersHorizontal size={15} aria-hidden="true" />, label: t('bot.tabSettings') },
                 ].map((tb) => (
@@ -906,6 +909,7 @@ export default function Bot() {
                 )}
             </Card>
             </>}
+            {tab === 'promos' && <Promos />}
             {tab === 'tariffs' && <>
             {/* Тарифы: компактный список + модалка редактирования */}
             <Card title={t('bot.tariffsTitle')} actions={

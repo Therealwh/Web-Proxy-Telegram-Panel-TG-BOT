@@ -13,31 +13,40 @@ import { Toasts } from './ui';
 import ErrorBoundary from './ErrorBoundary';
 import { useT } from '../i18n';
 
-// Пункты меню
-const NAV = [
-    { to: '/', icon: LayoutDashboard, label: 'nav.dashboard' },
-    { to: '/clients', icon: Users, label: 'nav.clients' },
-    { to: '/sales', icon: BarChart3, label: 'nav.sales' },
-    { to: '/referral', icon: Gift, label: 'nav.referral' },
-    { to: '/nodes', icon: Server, label: 'nav.nodes' },
-    { to: '/promos', icon: Ticket, label: 'nav.promos' },
-    { to: '/logs', icon: ScrollText, label: 'nav.logs' },
-    { to: '/qr', icon: QrCode, label: 'nav.qr' },
-    { to: '/website', icon: Globe, label: 'nav.website' },
-    { to: '/bot', icon: Bot, label: 'nav.bot' },
-    { to: '/api-keys', icon: KeyRound, label: 'nav.apikeys' },
-    { to: '/developers', icon: Code2, label: 'nav.developers' },
-    { to: '/updates', icon: RefreshCw, label: 'nav.updates' },
-    { to: '/engine', icon: Activity, label: 'nav.engine' },
-    { to: '/tuning', icon: SlidersHorizontal, label: '⚙️ Движок и лимиты' },
-    { to: '/config-toml', icon: FileText, label: '📄 Конфиг Telemt (TOML)' },
-    { to: '/geo', icon: Globe2, label: 'nav.geo' },
-    { to: '/webhooks', icon: Webhook, label: 'nav.webhooks' },
-    { to: '/audit', icon: ClipboardList, label: 'nav.audit' },
-    { to: '/diagnostics', icon: Stethoscope, label: 'nav.diagnostics' },
-    { to: '/disk', icon: HardDrive, label: 'nav.disk' },
-    { to: '/zapret2', icon: Shield, label: 'nav.zapret2' },
-    { to: '/settings', icon: Settings, label: 'nav.settings' },
+// Пункты меню по категориям (заголовки групп — не кнопки)
+const NAV_GROUPS = [
+    { label: 'layout.groupMain', items: [
+        { to: '/', icon: LayoutDashboard, label: 'nav.dashboard' },
+        { to: '/clients', icon: Users, label: 'nav.clients' },
+        { to: '/sales', icon: BarChart3, label: 'nav.sales' },
+        { to: '/referral', icon: Gift, label: 'nav.referral' },
+        { to: '/logs', icon: ScrollText, label: 'nav.logs' },
+    ] },
+    { label: 'layout.groupTelegram', items: [
+        { to: '/bot', icon: Bot, label: 'nav.bot' },
+        { to: '/qr', icon: QrCode, label: 'nav.qr' },
+        { to: '/website', icon: Globe, label: 'nav.website' },
+    ] },
+    { label: 'layout.groupNetwork', items: [
+        { to: '/nodes', icon: Server, label: 'nav.nodes' },
+        { to: '/engine', icon: Activity, label: 'nav.engine' },
+        { to: '/tuning', icon: SlidersHorizontal, label: '⚙️ Движок и лимиты' },
+        { to: '/config-toml', icon: FileText, label: '📄 Конфиг Telemt (TOML)' },
+        { to: '/zapret2', icon: Shield, label: 'nav.zapret2' },
+        { to: '/geo', icon: Globe2, label: 'nav.geo' },
+    ] },
+    { label: 'layout.groupTools', items: [
+        { to: '/api-keys', icon: KeyRound, label: 'nav.apikeys' },
+        { to: '/developers', icon: Code2, label: 'nav.developers' },
+        { to: '/webhooks', icon: Webhook, label: 'nav.webhooks' },
+        { to: '/updates', icon: RefreshCw, label: 'nav.updates' },
+    ] },
+    { label: 'layout.groupSystem', items: [
+        { to: '/audit', icon: ClipboardList, label: 'nav.audit' },
+        { to: '/diagnostics', icon: Stethoscope, label: 'nav.diagnostics' },
+        { to: '/disk', icon: HardDrive, label: 'nav.disk' },
+        { to: '/settings', icon: Settings, label: 'nav.settings' },
+    ] },
 ];
 
 /** Переключатель языка RU/EN (сохраняет и в настройки панели) */
@@ -170,33 +179,42 @@ export default function Layout() {
                         <div className="text-xs text-slate-500 dark:text-slate-400">Telegram Gate</div>
                     </div>
                 </div>
-                <nav className="p-3 space-y-1">
-                    {NAV.map(({ to, icon: Icon, label }) => (
-                        <NavLink
-                            key={to}
-                            to={to}
-                            end={to === '/'}
-                            onClick={() => setMenuOpen(false)}
-                            className={({ isActive }) => `
-                                flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium
-                                transition-all duration-200 min-h-[44px]
-                                ${isActive
-                                    ? 'bg-primary/10 text-primary dark:bg-primary/20'
-                                    : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'}
-                            `}
-                        >
-                            <Icon size={18} />
-                            <span className="flex-1">{t(label)}</span>
-                            {to === '/logs' && badges.online > 0 && (
-                                <span className="badge-green !px-1.5" title={t('layout.onlineNow')}>{badges.online}</span>
-                            )}
-                            {to === '/sales' && badges.pending > 0 && (
-                                <span className="badge-yellow !px-1.5" title={t('layout.pendingPayments')}>{badges.pending}</span>
-                            )}
-                            {to === '/updates' && badges.updates && (
-                                <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" title={t('layout.updateAvailableShort')} />
-                            )}
-                        </NavLink>
+                <nav className="p-3 space-y-3">
+                    {NAV_GROUPS.map((group) => (
+                        <div key={group.label}>
+                            <div className="px-3 pb-1 pt-1 text-[10.5px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 select-none">
+                                {t(group.label)}
+                            </div>
+                            <div className="space-y-0.5">
+                                {group.items.map(({ to, icon: Icon, label }) => (
+                                    <NavLink
+                                        key={to}
+                                        to={to}
+                                        end={to === '/'}
+                                        onClick={() => setMenuOpen(false)}
+                                        className={({ isActive }) => `
+                                            flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium
+                                            transition-all duration-200 min-h-[44px]
+                                            ${isActive
+                                                ? 'bg-primary/10 text-primary dark:bg-primary/20'
+                                                : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'}
+                                        `}
+                                    >
+                                        <Icon size={18} />
+                                        <span className="flex-1">{t(label)}</span>
+                                        {to === '/logs' && badges.online > 0 && (
+                                            <span className="badge-green !px-1.5" title={t('layout.onlineNow')}>{badges.online}</span>
+                                        )}
+                                        {to === '/sales' && badges.pending > 0 && (
+                                            <span className="badge-yellow !px-1.5" title={t('layout.pendingPayments')}>{badges.pending}</span>
+                                        )}
+                                        {to === '/updates' && badges.updates && (
+                                            <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" title={t('layout.updateAvailableShort')} />
+                                        )}
+                                    </NavLink>
+                                ))}
+                            </div>
+                        </div>
                     ))}
                 </nav>
             </aside>
