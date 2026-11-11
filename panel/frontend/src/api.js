@@ -29,18 +29,22 @@ function refreshSession() {
 export async function api(path, options = {}) {
     const { accessToken, setAuth, clearAuth } = useAuthStore.getState();
 
+    const isForm = options.body instanceof FormData;
     const doFetch = (token) =>
         fetch(`${API_BASE}${path}`, {
             ...options,
             headers: {
-                'Content-Type': 'application/json',
+                // FormData: Content-Type ставит браузер (multipart boundary)
+                ...(isForm ? {} : { 'Content-Type': 'application/json' }),
                 'X-Requested-With': 'XMLHttpRequest', // CSRF-защита
                 ...(token ? { Authorization: `Bearer ${token}` } : {}),
                 ...(options.headers || {}),
             },
-            body: options.body && typeof options.body !== 'string'
-                ? JSON.stringify(options.body)
-                : options.body,
+            body: isForm
+                ? options.body
+                : options.body && typeof options.body !== 'string'
+                    ? JSON.stringify(options.body)
+                    : options.body,
         });
 
     let response = await doFetch(accessToken);

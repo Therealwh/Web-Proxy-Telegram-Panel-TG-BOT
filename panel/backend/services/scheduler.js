@@ -47,6 +47,7 @@ async function checkProxies() {
         try {
             const telemt = require('./telemtApi');
 const nodes = require('./nodes');
+const broadcasts = require('./broadcasts');
             await telemt.getHealth();
             apiOk = 1;
         } catch { apiOk = 0; }
@@ -463,6 +464,8 @@ async function syncLimits() {
 function start() {
     // Проверка доступности каждые 5 минут
     setInterval(() => checkProxies().catch(() => {}), 5 * 60 * 1000).unref();
+    // Отложенные рассылки: проверка раз в минуту
+    setInterval(() => broadcasts.checkScheduled().catch(() => {}), 60 * 1000).unref();
     checkProxies().catch(() => {});
 
     // DC-монитор: состояние дата-центров Telegram каждые 2 минуты

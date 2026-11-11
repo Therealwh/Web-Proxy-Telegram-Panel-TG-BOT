@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { Plus, Save, Trash2, Power, Wallet, MessageSquare, ChevronDown, ChevronLeft, ChevronRight,
          Pencil, Bot as BotIcon, Search, RefreshCcw, Users as UsersIcon,
-         SlidersHorizontal, Receipt } from 'lucide-react';
+         SlidersHorizontal, Receipt, Megaphone, Image as ImageIcon, Clock, Ban } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import { get, post, put, del } from '../api';
 import { toast, useLangStore } from '../store';
@@ -43,6 +43,12 @@ export default function Bot() {
     const [msgModal, setMsgModal] = useState(null); // {tgId, name}
     const [msgText, setMsgText] = useState('');
     const [expanded, setExpanded] = useState(null); // раскрытый tgId
+    const [bcList, setBcList] = useState(null);
+    const [bcText, setBcText] = useState('');
+    const [bcImage, setBcImage] = useState(null);      // File
+    const [bcTarget, setBcTarget] = useState('all');
+    const [bcWhen, setBcWhen] = useState('');           // datetime-local (по МСК)
+    const [bcBusy, setBcBusy] = useState(false);
 
     // ── Список пользователей: состояние в URL (глубокие ссылки на вкладку,
     //    страницу, поиск и фильтр) ──
@@ -70,6 +76,11 @@ export default function Bot() {
         get(`/bot/users?${p}`).then(setUsersResp).catch(() => {}).finally(() => setUsersLoading(false));
     }, [usersPage, usersLimit, usersFilter, usersQuery]);
     useEffect(() => { loadUsers(); }, [loadUsers]);
+
+    const loadBroadcasts = () => {
+        get('/bot/broadcasts').then((d) => setBcList(d.broadcasts)).catch(() => {});
+    };
+    useEffect(() => { loadBroadcasts(); }, []);
 
     // Поиск с задержкой: не дёргаем сервер на каждое нажатие
     useEffect(() => {
@@ -135,6 +146,53 @@ export default function Bot() {
     };
 
     const curName = (cur) => ({ RUB: t('bot.curRub'), USD: t('bot.curUsd'), USDT: t('bot.curUsdt') }[cur] || cur);
+
+    /* ── Рассылка: отправка/планирование/отмена ── */
+    const sendBroadcast = async () => {
+        if (!bcText.trim()) { toast.error(t('bot.bcNeedText')); return; }
+        setBcBusy(true);
+        try {
+            const fd = new FormData();
+            fd.append('text', bcText);
+            fd.append('target', bcTarget);
+            if (bcWhen) fd.append('scheduled_at', bcWhen);
+            if (bcImage) fd.append('image', bcImage);
+            const r = await post('/bot/broadcasts', fd);
+            toast.success(bcWhen ? t('bot.bcScheduled', { t: fmtMsk(bcWhen) }) : t('bot.bcStarted'));
+            setBcText(''); setBcImage(null); setBcWhen('');
+            const inp = document.getElementById('bcImageInput');
+            if (inp) inp.value = '';
+            loadBroadcasts();
+        } catch (e) { toast.error(e.message); } finally { setBcBusy(false); }
+    };
+    const cancelBroadcast = async (id) => {
+        if (!confirm(t('bot.bcCancelConfirm'))) return;
+        try {
+            await del(`/bot/broadcasts/${id}`);
+            toast.success(t('bot.bcCancelled'));
+            loadBroadcasts();
+        } catch (e) { toast.error(e.message); }
+    };
+    const sendNow = async (id) => {
+        try {
+            await post(`/bot/broadcasts/${id}/send-now`);
+            toast.success(t('bot.bcStarted'));
+            loadBroadcasts();
+        } catch (e) { toast.error(e.message); }
+    };
+    const fmtMsk = (naiveOrIso) => {
+        try {
+            const iso = naiveOrIso.length === 16 ? naiveOrIso + ':00+03:00' : naiveOrIso;
+            return new Date(iso).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow', day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' }) + ' МСК';
+        } catch { return naiveOrIso; }
+    };
+    const bcStatusBadge = (st) => ({
+        pending: <span className="badge-yellow">{t('bot.bcStPending')}</span>,
+        sending: <span className="badge-blue">{t('bot.bcStSending')}</span>,
+        sent: <span className="badge-green">{t('bot.bcStSent')}</span>,
+        failed: <span className="badge-red">{t('bot.bcStFailed')}</span>,
+        cancelled: <span className="badge-red">{t('bot.bcStCancelled')}</span>,
+    }[st] || st);
 
     /* ═══ Включение/выключение бота и сброс статистики ═══ */
 
@@ -218,6 +276,7 @@ export default function Bot() {
             <div className="flex flex-wrap gap-2" role="tablist" aria-label={t('bot.tabsAria')}>
                 {[
                     { id: 'users', icon: <UsersIcon size={15} aria-hidden="true" />, label: t('bot.tabUsers') },
+                    { id: 'broadcast', icon: <Megaphone size={15} aria-hidden="true" />, label: t('bot.tabBroadcast') },
                     { id: 'tariffs', icon: <Receipt size={15} aria-hidden="true" />, label: t('bot.tabTariffs') },
                     { id: 'settings', icon: <SlidersHorizontal size={15} aria-hidden="true" />, label: t('bot.tabSettings') },
                 ].map((tb) => (
@@ -757,6 +816,90 @@ export default function Bot() {
                 </div>
             </Card>
 
+            </>}
+            {tab === 'broadcast' && <>
+            {/* Новая рассылка */}
+            <Card title={t('bot.bcNewTitle')} subtitle={t('bot.bcNewSub')}>
+                <div className="space-y-3">
+                    <Field label={t('bot.bcText')} hint={t('bot.bcTextHint')}>
+                        <textarea className="input min-h-[120px]" value={bcText} maxLength={4000}
+                                  onChange={(e) => setBcText(e.target.value)}
+                                  placeholder={t('bot.bcTextPh')} />
+                    </Field>
+                    <Field label={t('bot.bcImage')} hint={t('bot.bcImageHint')}>
+                        <input id="bcImageInput" className="input" type="file" accept="image/jpeg,image/png,image/webp"
+                               onChange={(e) => setBcImage(e.target.files?.[0] || null)} />
+                    </Field>
+                    <Field label={t('bot.bcTarget')}>
+                        <select className="input" value={bcTarget} onChange={(e) => setBcTarget(e.target.value)}>
+                            <option value="all">{t('bot.bcTargetAll')}</option>
+                            <option value="active">{t('bot.bcTargetActive')}</option>
+                            <option value="expired">{t('bot.bcTargetExpired')}</option>
+                            <option value="noproxy">{t('bot.bcTargetNoproxy')}</option>
+                        </select>
+                    </Field>
+                    <Field label={t('bot.bcWhen')} hint={t('bot.bcWhenHint')}>
+                        <input className="input" type="datetime-local" value={bcWhen}
+                               onChange={(e) => setBcWhen(e.target.value)} />
+                    </Field>
+                    <div className="flex flex-wrap gap-2">
+                        <button className="btn-primary" disabled={bcBusy || !bcText.trim()} onClick={sendBroadcast}>
+                            <Megaphone size={15} /> {bcWhen ? t('bot.bcScheduleBtn') : t('bot.bcSendNow')}
+                        </button>
+                        {bcWhen && (
+                            <button className="btn-secondary" disabled={bcBusy}
+                                    onClick={() => { setBcWhen(''); }}>
+                                {t('bot.bcSendImmediately')}
+                            </button>
+                        )}
+                    </div>
+                </div>
+            </Card>
+
+            {/* История рассылок */}
+            <Card title={t('bot.bcListTitle')}>
+                {!bcList ? <Skeleton className="h-24" /> : bcList.length === 0 ? (
+                    <p className="text-sm text-slate-500 py-4 text-center">{t('bot.bcListEmpty')}</p>
+                ) : (
+                    <div className="space-y-2">
+                        {bcList.map((b) => (
+                            <div key={b.id} className="flex flex-wrap items-center gap-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50">
+                                {b.image_path && (
+                                    <img src={`/bot/broadcasts/${b.id}/image`} alt="" width={44} height={44}
+                                         loading="lazy" className="rounded-lg object-cover w-11 h-11" />
+                                )}
+                                <div className="flex-1 min-w-[200px]">
+                                    <div className="text-sm break-all">{b.text.slice(0, 120)}{b.text.length > 120 ? '…' : ''}</div>
+                                    <div className="text-xs text-slate-400 mt-0.5">
+                                        {b.scheduled_at ? `🕒 ${t('bot.bcStPending') === bcStatusBadge(b.status) ? '' : ''}${fmtMsk(b.scheduled_at)}` : ''}
+                                        {b.sent_at ? `✅ ${fmtMsk(b.sent_at)}` : ''}
+                                        {' · '}{t('bot.bcTarget_' + b.target, { defaultValue: b.target })}
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-2 tabular-nums">
+                                    {bcStatusBadge(b.status)}
+                                    {(b.status === 'sent' || b.status === 'sending') && (
+                                        <span className="text-xs text-slate-400">
+                                            ✔ {b.sent_count}{b.fail_count ? ` / ✖ ${b.fail_count}` : ''}
+                                        </span>
+                                    )}
+                                </div>
+                                {b.status === 'pending' && (
+                                    <div className="flex gap-1">
+                                        <button className="btn-secondary !min-h-0 !px-2 !py-1.5 text-xs" onClick={() => sendNow(b.id)}>
+                                            {t('bot.bcSendNowBtn')}
+                                        </button>
+                                        <button className="btn-ghost !min-h-0 !p-2 text-red-500" title={t('bot.bcCancel')}
+                                                onClick={() => cancelBroadcast(b.id)}>
+                                            <Ban size={15} />
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </Card>
             </>}
             {tab === 'tariffs' && <>
             {/* Тарифы: компактный список + модалка редактирования */}

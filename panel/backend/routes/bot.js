@@ -4,6 +4,10 @@
  */
 
 const express = require('express');
+const path = require('path');
+const fs = require('fs');
+const multer = require('multer');
+const crypto = require('crypto');
 const { z } = require('zod');
 const db = require('../db');
 const botService = require('../services/bot');
@@ -13,8 +17,103 @@ const { clientLinks } = require('../services/links');
 const { getAll } = require('./settings');
 const { httpError } = require('../middleware/errorHandler');
 const logger = require('../utils/logger');
+const config = require('../config');
 
 const router = express.Router();
+
+// ── Массовые рассылки: загрузка картинки (до 5 МБ, только изображения) ──
+const bcUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 5 * 1024 * 1024 },
+    fileFilter: (req, file, cb) => {
+        if (/^image\/(jpeg|png|webp)$/.test(file.mimetype)) return cb(null, true);
+        cb(new Error('Только JPEG, PNG или WebP'));
+    },
+});
+
+const IMAGE_EXTS = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
+
+/** Время МСК (наивное «YYYY-MM-DDTHH:mm») → UTC ISO; некорректное — null. */
+function mskToUtc(naive) {
+    if (!naive) return null;
+    const d = new Date(`${naive}:00+03:00`);
+    return Number.isNaN(d.getTime()) ? null : d.toISOString();
+}
+
+router.get('/broadcasts', async (req, res, next) => {
+    try {
+        const rows = db.prepare('SELECT * FROM broadcasts ORDER BY id DESC LIMIT 50').all();
+        res.json({ broadcasts: rows });
+    } catch (err) { next(err); }
+});
+
+router.post('/broadcasts', bcUpload.single('image'), async (req, res, next) => {
+    try {
+        const text = String(req.body?.text || '').trim();
+        if (!text) throw Object.assign(new Error('Введите текст рассылки'), { statusCode: 400 });
+        if (text.length > 4000) throw Object.assign(new Error('Текст слишком длинный (максимум 4000 символов)'), { statusCode: 400 });
+        const target = ['all', 'active', 'expired', 'noproxy'].includes(req.body?.target) ? req.body.target : 'all';
+        let scheduledUtc = null;
+        if (req.body?.scheduled_at) {
+            scheduledUtc = mskToUtc(String(req.body.scheduled_at));
+            if (!scheduledUtc) throw Object.assign(new Error('Некорректная дата рассылки'), { statusCode: 400 });
+            if (new Date(scheduledUtc) < new Date(Date.now() + 60 * 1000)) {
+                throw Object.assign(new Error('Время в будущем минимум через минуту (по МСК)'), { statusCode: 400 });
+            }
+        }
+
+        const info = db.prepare(
+            `INSERT INTO broadcasts (text, target, scheduled_at) VALUES (?, ?, ?)`
+        ).run(text, target, scheduledUtc);
+        const id = info.lastInsertRowid;
+
+        // Картинка: сохраняем на диск панели
+        if (req.file) {
+            const ext = IMAGE_EXTS[req.file.mimetype] || 'jpg';
+            const dir = path.join(config.dataDir, 'broadcast');
+            fs.mkdirSync(dir, { recursive: true });
+            const filePath = path.join(dir, `${id}_${crypto.randomBytes(4).toString('hex')}.${ext}`);
+            fs.writeFileSync(filePath, req.file.buffer);
+            db.prepare('UPDATE broadcasts SET image_path = ? WHERE id = ?').run(filePath, id);
+        }
+
+        // Без расписания — запуск немедленно
+        if (!scheduledUtc) {
+            require('../services/broadcasts').startBroadcast(id);
+            return res.json({ ok: true, id, started: true });
+        }
+        res.json({ ok: true, id, scheduled_at: scheduledUtc });
+    } catch (err) { next(err); }
+});
+
+router.delete('/broadcasts/:id', async (req, res, next) => {
+    try {
+        const row = db.prepare('SELECT * FROM broadcasts WHERE id = ?').get(Number(req.params.id));
+        if (!row) throw Object.assign(new Error('Рассылка не найдена'), { statusCode: 404 });
+        if (row.status === 'sending') throw Object.assign(new Error('Рассылка уже отправляется — нельзя отменить'), { statusCode: 409 });
+        db.prepare("UPDATE broadcasts SET status = 'cancelled' WHERE id = ?").run(row.id);
+        require('../services/broadcasts').removeImage(row.id);
+        res.json({ ok: true });
+    } catch (err) { next(err); }
+});
+
+router.post('/broadcasts/:id/send-now', async (req, res, next) => {
+    try {
+        const row = db.prepare("SELECT * FROM broadcasts WHERE id = ? AND status = 'pending'").get(Number(req.params.id));
+        if (!row) throw Object.assign(new Error('Рассылка не найдена или уже отправлена'), { statusCode: 404 });
+        require('../services/broadcasts').startBroadcast(row.id);
+        res.json({ ok: true });
+    } catch (err) { next(err); }
+});
+
+router.get('/broadcasts/:id/image', async (req, res, next) => {
+    try {
+        const row = db.prepare('SELECT image_path FROM broadcasts WHERE id = ?').get(Number(req.params.id));
+        if (!row?.image_path || !fs.existsSync(row.image_path)) throw Object.assign(new Error('Нет картинки'), { statusCode: 404 });
+        res.setHeader('Cache-Control', 'private, max-age=3600');
+        res.sendFile(path.resolve(row.image_path));
+    } catch (err) { next(err); }
+});
 
 // --- Отправить бэкап базы админу в Telegram (кнопка «Отправить сейчас») ---
 router.post('/backup-tg', async (req, res, next) => {
