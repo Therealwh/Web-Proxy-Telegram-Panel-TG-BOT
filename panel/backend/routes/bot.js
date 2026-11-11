@@ -226,6 +226,7 @@ router.get('/users', (req, res) => {
         u.proxies.push({
             id: r.id, username: r.username, status: r.status,
             expires_at: r.expires_at, balance: r.balance || 0,
+            created_at: r.created_at,
         });
         u.balance += r.balance || 0;
         if (r.status === 'active') u.active += 1;

@@ -48,9 +48,14 @@ export default function Bot() {
     //    страницу, поиск и фильтр) ──
     const [searchParams, setSearchParams] = useSearchParams();
     const tab = searchParams.get('tab') || 'users';
-    const setTab = (v) => setSearchParams(v === 'users' ? {} : { tab: v }, { replace: true });
+    const setTab = (v) => setSearchParams((sp) => {
+        const p = new URLSearchParams(sp);
+        if (v === 'users') p.delete('tab'); else p.set('tab', v);
+        return p;
+    }, { replace: true });
     const usersPage = Math.max(1, parseInt(searchParams.get('page') || '1', 10) || 1);
-    const usersLimit = Math.min(100, Math.max(10, parseInt(searchParams.get('limit') || '25', 10) || 25));
+    const rawLimit = Math.min(100, Math.max(10, parseInt(searchParams.get('limit') || '25', 10) || 25));
+    const usersLimit = [25, 50, 100].includes(rawLimit) ? rawLimit : 25;
     const usersFilter = ['all', 'proxies', 'active', 'noproxies', 'balance'].includes(searchParams.get('filter'))
         ? searchParams.get('filter') : 'all';
     const usersQuery = searchParams.get('q') || '';
@@ -69,10 +74,13 @@ export default function Bot() {
     // Поиск с задержкой: не дёргаем сервер на каждое нажатие
     useEffect(() => {
         const tm = setTimeout(() => {
-            const p = new URLSearchParams(searchParams);
-            if (searchInput) p.set('q', searchInput); else p.delete('q');
-            p.delete('page'); // новый поиск — с первой страницы
-            setSearchParams(p, { replace: true });
+            setSearchParams((sp) => {
+                if ((sp.get('q') || '') === searchInput) return sp; // не изменилось — не трогаем URL
+                const p = new URLSearchParams(sp);
+                if (searchInput) p.set('q', searchInput); else p.delete('q');
+                p.delete('page'); // новый поиск — с первой страницы
+                return p;
+            }, { replace: true });
         }, 350);
         return () => clearTimeout(tm);
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -264,7 +272,7 @@ export default function Bot() {
                 <p className="text-xs text-slate-400 mb-2" aria-live="polite">
                     {t('bot.foundN', { n: usersResp?.total ?? 0 })}
                 </p>
-                {!usersLoading && (!usersResp || usersResp.users.length === 0) ? (
+                {usersLoading ? <Skeleton className="h-24" /> : (!usersResp || usersResp.users.length === 0) ? (
                     <p className="text-sm text-slate-500 py-6 text-center">
                         {usersQuery || usersFilter !== 'all' ? t('bot.searchEmpty') : t('bot.usersEmpty')}
                     </p>
@@ -384,7 +392,7 @@ export default function Bot() {
                                     disabled={(usersResp?.page ?? 1) <= 1}
                                     onClick={() => setSearchParams((sp) => {
                                         const p = new URLSearchParams(sp);
-                                        p.set('page', String(usersPage - 1));
+                                        p.set('page', String(Math.max(1, (usersResp?.page ?? 1) - 1)));
                                         setSearchParams(p, { replace: true });
                                     })}>
                                 <ChevronLeft size={14} />
@@ -394,7 +402,7 @@ export default function Bot() {
                                     disabled={(usersResp?.page ?? 1) >= (usersResp?.pages ?? 1)}
                                     onClick={() => setSearchParams((sp) => {
                                         const p = new URLSearchParams(sp);
-                                        p.set('page', String(usersPage + 1));
+                                        p.set('page', String((usersResp?.page ?? 1) + 1));
                                         setSearchParams(p, { replace: true });
                                     })}>
                                 <ChevronRight size={14} />
@@ -449,6 +457,7 @@ export default function Bot() {
                                     toast.success(t('bot.issuedOk', { u: r.username }) + (r.notified ? t('bot.issuedNotified') : t('bot.issuedNoNotify')));
                                     setIssueModal(null);
                                     load();
+                                    loadUsers();
                                 } catch (e) { toast.error(e.message); }
                                 finally { setIssueBusy(false); }
                             }}>
@@ -638,6 +647,7 @@ export default function Bot() {
                                     toast.success(t('bot.balanceChanged'));
                                     setBalanceModal(null);
                                     load();
+                                    loadUsers();
                                 } catch (e) { toast.error(e.message); }
                             }}>
                         {t('bot.apply')}
@@ -668,9 +678,7 @@ export default function Bot() {
             </Modal>
 
             {tab === 'settings' && <>
-            <div className="flex flex-wrap gap-2 mb-1" role="tablist" aria-label={t('bot.tabsAria')}>
-                <span className="text-sm text-slate-500">{t('bot.settingsHint')}</span>
-            </div>
+            <p className="text-sm text-slate-500 mb-1">{t('bot.settingsHint')}</p>
             {/* Кастомные кнопки в боте: сводка + модалка */}
             <Card title={t('bot.buttonsTitle')}
                   subtitle={t('bot.buttonsSub')}
