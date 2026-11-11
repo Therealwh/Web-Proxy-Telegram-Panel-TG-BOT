@@ -1479,7 +1479,7 @@ bot.on('message:text', async (ctx, next) => {
             return ctx.answerCallbackQuery({ text: 'Недостаточно средств на балансе', show_alert: true });
         }
         try {
-            await issueAccessFor(ctx.from.id, tariff, paymentId, { moneyIn: false });
+            const created = await issueAccessFor(ctx.from.id, tariff, paymentId, { moneyIn: false });
             // Промокод-скидка использована: списываем применение (иначе скидка
             // останется активной навсегда — путь с балансом идёт мимо completePayment)
             if (payRow?.promo_code) {
@@ -1487,7 +1487,7 @@ bot.on('message:text', async (ctx, next) => {
                 catch (e2) { logger.warn('Промокод: не удалось списать', { error: e2.message }); }
             }
             eventLog.logEvent('purchase', '🛒 Покупка прокси (с баланса)',
-                `${created.username} · ${tariff.price} ${currencySign(tariff.currency)} · tg${ctx.from.id}`,
+                `${created.username} · ${Number(payRow?.amount ?? tariff.price)} ${currencySign(tariff.currency)} · tg${ctx.from.id}`,
                 'info', ctx.from.id);
         } catch (e) {
             // Возврат ровно затронутым строкам (а не всем клиентам по telegram_id)

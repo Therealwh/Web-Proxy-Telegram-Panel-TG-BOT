@@ -78,6 +78,10 @@ async function completePayment(paymentId) {
                     .run(...modeFlags[mode], client.id);
             }
             markSuccess();
+            // Событие сразу после успеха (до Telegram-уведомлений, которые могут упасть)
+            eventLog.logEvent('renewal', '🔄 Прокси продлён',
+                `${client.username} — до ${new Date(newExpiry).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' })} · ${payment.amount} ${payment.currency}`,
+                'info', payment.telegram_id);
 
             const bot = require('../services/bot');
             if (payment.telegram_id && bot.isRunning()) {
@@ -104,9 +108,6 @@ async function completePayment(paymentId) {
                     });
                 } catch (e) { logger.warn('Рефералка: продление', { error: e.message }); }
             }
-            eventLog.logEvent('renewal', '🔄 Прокси продлён',
-                `${client.username} — до ${fmt(newExpiry)} · ${payment.amount} ${payment.currency}`,
-                'info', payment.telegram_id);
             logger.info('Прокси продлён', { paymentId, username: client.username });
             return payment;
         }

@@ -14,6 +14,10 @@ const config = require('../config');
 const { getAll } = require('../routes/settings');
 const notifier = require('./notifier');
 const logger = require('../utils/logger');
+const nodes = require('./nodes');
+const broadcasts = require('./broadcasts');
+const eventLog = require('./eventLog');
+const autoCleanup = require('./autoCleanup');
 
 // Счётчик последовательных сбоев сервисов (для алертов без спама)
 let downStreak = 0;
@@ -46,10 +50,6 @@ async function checkProxies() {
         let apiOk = 0;
         try {
             const telemt = require('./telemtApi');
-const nodes = require('./nodes');
-const broadcasts = require('./broadcasts');
-const eventLog = require('./eventLog');
-const autoCleanup = require('./autoCleanup');
             await telemt.getHealth();
             apiOk = 1;
         } catch { apiOk = 0; }
