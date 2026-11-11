@@ -1089,6 +1089,8 @@ curl -X POST -H "Authorization: Bearer tgk_your_key" \\
         clients: 'Clients',
         sales: 'Sales',
         nodes: 'Nodes',
+        engineTuning: 'Engine & limits',
+        configToml: 'Telemt config (TOML)',
         promos: 'Promo codes',
         referral: 'Referrals',
         logs: 'Live logs',
