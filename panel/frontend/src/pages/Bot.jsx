@@ -262,8 +262,8 @@ export default function Bot() {
                                     onClick={() => setSearchParams((sp) => {
                                         const p = new URLSearchParams(sp);
                                         p.set('filter', id); p.delete('page');
-                                        setSearchParams(p, { replace: true });
-                                    })}>
+                                        return p;
+                                    }, { replace: true })}>
                                 {label}
                             </button>
                         ))}
@@ -384,8 +384,8 @@ export default function Bot() {
                                     onChange={(e) => setSearchParams((sp) => {
                                         const p = new URLSearchParams(sp);
                                         p.set('limit', e.target.value); p.delete('page');
-                                        setSearchParams(p, { replace: true });
-                                    })}>
+                                        return p;
+                                    }, { replace: true })}>
                                 {[25, 50, 100].map((v) => <option key={v} value={v}>{v}</option>)}
                             </select>
                             <button className="btn-secondary !min-h-0 !p-2" aria-label={t('bot.prevPage')}
@@ -393,8 +393,8 @@ export default function Bot() {
                                     onClick={() => setSearchParams((sp) => {
                                         const p = new URLSearchParams(sp);
                                         p.set('page', String(Math.max(1, (usersResp?.page ?? 1) - 1)));
-                                        setSearchParams(p, { replace: true });
-                                    })}>
+                                        return p;
+                                    }, { replace: true })}>
                                 <ChevronLeft size={14} />
                             </button>
                             <span className="text-sm tabular-nums px-1">{usersResp?.page ?? 1} / {usersResp?.pages ?? 1}</span>
@@ -403,8 +403,8 @@ export default function Bot() {
                                     onClick={() => setSearchParams((sp) => {
                                         const p = new URLSearchParams(sp);
                                         p.set('page', String((usersResp?.page ?? 1) + 1));
-                                        setSearchParams(p, { replace: true });
-                                    })}>
+                                        return p;
+                                    }, { replace: true })}>
                                 <ChevronRight size={14} />
                             </button>
                         </div>
