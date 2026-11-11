@@ -132,11 +132,25 @@ async function applyDaysPromo(promo, telegramId) {
         // Новенький: создаём бесплатный прокси на срок промокода
         if (promo.audience === 'new' && proxies.length === 0) {
             const count = db.prepare('SELECT COUNT(*) AS c FROM clients WHERE telegram_id = ?').get(telegramId).c;
-            const username = `tg${telegramId}x${count + 1}`;
             const expires = new Date(Date.now() + days * 86400000).toISOString();
-            const created = await telemt.createUser({
-                username, expiration_rfc3339: expires, max_unique_ips: 2,
-            });
+            let username = `tg${telegramId}x${count + 1}`;
+            let created = null;
+            for (let attempt = 0; attempt < 25; attempt++) {
+                try {
+                    created = await telemt.createUser({
+                        username, expiration_rfc3339: expires, max_unique_ips: 2,
+                    });
+                    break;
+                } catch (e) {
+                    if (/already exists/i.test(e.message)) {
+                        attempt += 1;
+                        username = `tg${telegramId}x${count + 1 + attempt}`;
+                        continue;
+                    }
+                    throw e;
+                }
+            }
+            if (!created) throw new Error('Не удалось подобрать имя для нового прокси');
             db.prepare(
                 `INSERT INTO clients (username, secret, expires_at, telegram_id, web_enabled, mtproto_enabled, max_ips, status)
                  VALUES (?, ?, ?, ?, 1, 1, 2, 'active')`

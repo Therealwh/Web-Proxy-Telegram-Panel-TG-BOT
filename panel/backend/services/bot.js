@@ -530,7 +530,6 @@ async function issueAccessFor(tgId, tariff, paymentId, opts = {}) {
     const expires = new Date(Date.now() + tariff.days * 86400000).toISOString();
 
     const count = db.prepare('SELECT COUNT(*) AS c FROM clients WHERE telegram_id = ?').get(tgId).c;
-    const username = `tg${tgId}x${count + 1}`;
     const referrerId = refPending.get(tgId)
         || db.prepare('SELECT referrer_id FROM referral_pending WHERE telegram_id = ?').get(tgId)?.referrer_id
         || null;
@@ -541,14 +540,32 @@ async function issueAccessFor(tgId, tariff, paymentId, opts = {}) {
     const nodeId = opts.nodeId !== undefined ? opts.nodeId : (payRow?.node_id || null);
     const nodeApi = nodesService.getApiForNodeId(nodeId);
 
-    const created = await nodeApi.createUser({
-        username,
-        expiration_rfc3339: expires,
-        ...(tariff.max_ips ? { max_unique_ips: tariff.max_ips } : {}),
-        ...(tariff.quota_gb ? { data_quota_bytes: Math.round(tariff.quota_gb * 1024 ** 3) } : {}),
-        ...(tariff.rate_down_mbps ? { rate_limit_down_bps: Math.round(tariff.rate_down_mbps * 1e6) } : {}),
-        ...(tariff.rate_up_mbps ? { rate_limit_up_bps: Math.round(tariff.rate_up_mbps * 1e6) } : {}),
-    });
+    // Имя прокси: счётчик записей панели может отставать от движка (старые
+    // пользователи удалены из панели, но живы в Telemt) — при «already exists»
+    // подбираем следующий свободный суффикс (x3, x4, …)
+    let username = `tg${tgId}x${count + 1}`;
+    let created = null;
+    for (let attempt = 0; attempt < 25; attempt++) {
+        try {
+            created = await nodeApi.createUser({
+                username,
+                expiration_rfc3339: expires,
+                ...(tariff.max_ips ? { max_unique_ips: tariff.max_ips } : {}),
+                ...(tariff.quota_gb ? { data_quota_bytes: Math.round(tariff.quota_gb * 1024 ** 3) } : {}),
+                ...(tariff.rate_down_mbps ? { rate_limit_down_bps: Math.round(tariff.rate_down_mbps * 1e6) } : {}),
+                ...(tariff.rate_up_mbps ? { rate_limit_up_bps: Math.round(tariff.rate_up_mbps * 1e6) } : {}),
+            });
+            break;
+        } catch (e) {
+            if (/already exists/i.test(e.message)) {
+                attempt += 1;
+                username = `tg${tgId}x${count + 1 + attempt}`;
+                continue;
+            }
+            throw e;
+        }
+    }
+    if (!created) throw new Error('Не удалось подобрать имя для нового прокси');
     const result = db.prepare(
         `INSERT INTO clients (username, secret, expires_at, telegram_id, web_enabled, mtproto_enabled, referrer_id, max_ips, quota_bytes, node_id)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
