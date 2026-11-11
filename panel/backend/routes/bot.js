@@ -27,7 +27,7 @@ const bcUpload = multer({
     limits: { fileSize: 5 * 1024 * 1024 },
     fileFilter: (req, file, cb) => {
         if (/^image\/(jpeg|png|webp)$/.test(file.mimetype)) return cb(null, true);
-        cb(new Error('Только JPEG, PNG или WebP'));
+        cb(Object.assign(new Error('Только JPEG, PNG или WebP'), { statusCode: 400 }));
     },
 });
 
@@ -37,7 +37,10 @@ const IMAGE_EXTS = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'web
 function mskToUtc(naive) {
     if (!naive) return null;
     const d = new Date(`${naive}:00+03:00`);
-    return Number.isNaN(d.getTime()) ? null : d.toISOString();
+    if (Number.isNaN(d.getTime())) return null;
+    // Формат SQLite datetime('now'): 'YYYY-MM-DD HH:MM:SS' — сравнение
+    // с datetime('now') в запросах лексикографическое и корректное
+    return d.toISOString().slice(0, 19).replace('T', ' ');
 }
 
 router.get('/broadcasts', async (req, res, next) => {
@@ -51,7 +54,11 @@ router.post('/broadcasts', bcUpload.single('image'), async (req, res, next) => {
     try {
         const text = String(req.body?.text || '').trim();
         if (!text) throw Object.assign(new Error('Введите текст рассылки'), { statusCode: 400 });
-        if (text.length > 4000) throw Object.assign(new Error('Текст слишком длинный (максимум 4000 символов)'), { statusCode: 400 });
+        // Лимит подписи Telegram: с картинкой текст уходит как caption (1024)
+        const maxLen = req.file ? 1024 : 4000;
+        if (text.length > maxLen) {
+            throw Object.assign(new Error(`Слишком длинный текст: максимум ${maxLen} символов${req.file ? ' при отправке с картинкой' : ''}`), { statusCode: 400 });
+        }
         const target = ['all', 'active', 'expired', 'noproxy'].includes(req.body?.target) ? req.body.target : 'all';
         let scheduledUtc = null;
         if (req.body?.scheduled_at) {
@@ -83,14 +90,19 @@ router.post('/broadcasts', bcUpload.single('image'), async (req, res, next) => {
             return res.json({ ok: true, id, started: true });
         }
         res.json({ ok: true, id, scheduled_at: scheduledUtc });
-    } catch (err) { next(err); }
+    } catch (err) {
+        if (err.code === 'LIMIT_FILE_SIZE') err.statusCode = 413;
+        next(err);
+    }
 });
 
 router.delete('/broadcasts/:id', async (req, res, next) => {
     try {
         const row = db.prepare('SELECT * FROM broadcasts WHERE id = ?').get(Number(req.params.id));
         if (!row) throw Object.assign(new Error('Рассылка не найдена'), { statusCode: 404 });
-        if (row.status === 'sending') throw Object.assign(new Error('Рассылка уже отправляется — нельзя отменить'), { statusCode: 409 });
+        if (row.status !== 'pending') {
+            throw Object.assign(new Error('Можно отменить только запланированную рассылку'), { statusCode: 409 });
+        }
         db.prepare("UPDATE broadcasts SET status = 'cancelled' WHERE id = ?").run(row.id);
         require('../services/broadcasts').removeImage(row.id);
         res.json({ ok: true });

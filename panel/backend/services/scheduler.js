@@ -465,7 +465,10 @@ function start() {
     // Проверка доступности каждые 5 минут
     setInterval(() => checkProxies().catch(() => {}), 5 * 60 * 1000).unref();
     // Отложенные рассылки: проверка раз в минуту
-    setInterval(() => broadcasts.checkScheduled().catch(() => {}), 60 * 1000).unref();
+    // Отложенные рассылки: раз в минуту (checkScheduled синхронный)
+    setInterval(() => {
+        try { broadcasts.checkScheduled(); } catch (e) { logger.error('Рассылки: планировщик', { error: e.message }); }
+    }, 60 * 1000).unref();
     checkProxies().catch(() => {});
 
     // DC-монитор: состояние дата-центров Telegram каждые 2 минуты

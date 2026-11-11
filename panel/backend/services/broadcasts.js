@@ -17,6 +17,12 @@ const SEND_DELAY_MS = 50;
 
 let running = false; // одновременно уходит одна рассылка
 
+// Зависшие после сбоя 'sending' при старте процесса честно помечаем failed:
+// продолжить без повторной отправки всем нельзя, а 'sending' висел бы вечно.
+try {
+    db.prepare("UPDATE broadcasts SET status = 'failed' WHERE status = 'sending'").run();
+} catch { /* таблицы ещё нет при первом запуске — миграция применится ниже */ }
+
 /** Готовит каталог под картинки рассылок. */
 function ensureDir() {
     fs.mkdirSync(BROADCAST_DIR, { recursive: true });
@@ -83,23 +89,21 @@ async function runBroadcast(id) {
     if (!row || row.status !== 'pending') return;
 
     const recipientsList = recipients(row.target);
-    db.prepare(
-        "UPDATE broadcasts SET status = 'sending', total_count = ?, sent_count = 0, fail_count = 0 WHERE id = ?"
+    // Атомарный захват: повторный запуск (двойной тик планировщика) не задвоит рассылку
+    const claim = db.prepare(
+        "UPDATE broadcasts SET status = 'sending', total_count = ?, sent_count = 0, fail_count = 0 WHERE id = ? AND status = 'pending'"
     ).run(recipientsList.length, id);
+    if (claim.changes === 0) return;
     logger.info('Рассылка начата', { id, recipients: recipientsList.length, hasImage: !!row.image_path });
 
     const api = bot.getApi();
     let sent = 0, fails = 0, fileIdCached = row.image_file_id || null;
 
     for (const tgId of recipientsList) {
-        try {
+        const sendTo = async () => {
             if (row.image_path && fs.existsSync(row.image_path)) {
-                const payload = {
+                const msg = await api.sendPhoto(tgId, fileIdCached || new (require('grammy').InputFile)(row.image_path), {
                     caption: row.text, parse_mode: 'HTML',
-                    ...(fileIdCached ? { photo: fileIdCached } : { photo: new (require('grammy').InputFile)(row.image_path) }),
-                };
-                const msg = await api.sendPhoto(tgId, payload.photo, {
-                    caption: payload.caption, parse_mode: 'HTML',
                 });
                 if (!fileIdCached) {
                     const ph = msg?.photo?.[msg.photo.length - 1]?.file_id;
@@ -111,10 +115,23 @@ async function runBroadcast(id) {
             } else {
                 await api.sendMessage(tgId, row.text, { parse_mode: 'HTML' });
             }
+        };
+        try {
+            await sendTo();
             sent += 1;
         } catch (e) {
-            fails += 1;
-            logger.warn('Рассылка: доставка не удалась', { id, tgId, error: e.message });
+            // Flood-limit: Telegram сам говорит, сколько подождать — ретраим один раз
+            const retryAfter = Number(e?.parameters?.retry_after || e?.error?.parameters?.retry_after || 0);
+            if (retryAfter > 0 && retryAfter <= 60) {
+                await new Promise((r) => setTimeout(r, retryAfter * 1000));
+                try {
+                    await sendTo();
+                    sent += 1;
+                } catch (e2) { fails += 1; logger.warn('Рассылка: доставка не удалась', { id, tgId, error: e2.message }); }
+            } else {
+                fails += 1;
+                logger.warn('Рассылка: доставка не удалась', { id, tgId, error: e.message });
+            }
         }
         if ((sent + fails) % 25 === 0) {
             db.prepare('UPDATE broadcasts SET sent_count = ?, fail_count = ? WHERE id = ?').run(sent, fails, id);
@@ -122,10 +139,11 @@ async function runBroadcast(id) {
         await new Promise((r) => setTimeout(r, SEND_DELAY_MS));
     }
 
+    const finalStatus = sent > 0 ? 'sent' : 'failed';
     db.prepare(
-        "UPDATE broadcasts SET status = 'sent', sent_count = ?, fail_count = ?, sent_at = datetime('now') WHERE id = ?"
+        `UPDATE broadcasts SET status = '${finalStatus}', sent_count = ?, fail_count = ?, sent_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?`
     ).run(sent, fails, id);
-    logger.info('Рассылка завершена', { id, sent, fails });
+    logger.info('Рассылка завершена', { id, status: finalStatus, sent, fails });
 }
 
 /** Отложенные рассылки: запускает те, чей срок наступил (вызывается раз в минуту). */

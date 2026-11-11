@@ -5,6 +5,7 @@ import { Plus, Save, Trash2, Power, Wallet, MessageSquare, ChevronDown, ChevronL
          SlidersHorizontal, Receipt, Megaphone, Image as ImageIcon, Clock, Ban } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import { get, post, put, del } from '../api';
+import { useAuthStore } from '../store';
 import { toast, useLangStore } from '../store';
 import { useT } from '../i18n';
 import { Card, Field, Toggle, Skeleton, Modal, StatusBadge, formatDate, PageHeader, Avatar } from '../components/ui';
@@ -32,6 +33,7 @@ export default function Bot() {
     const [tariffModal, setTariffModal] = useState(null);   // редактирование тарифа (null = закрыто)
     const lang = useLangStore((s) => s.lang);
     const t = useT();
+    const accessToken = useAuthStore((st) => st.accessToken);
 
     const toggleTariff = async (row, v) => {
         if (!row.id) return;
@@ -44,6 +46,7 @@ export default function Bot() {
     const [msgText, setMsgText] = useState('');
     const [expanded, setExpanded] = useState(null); // раскрытый tgId
     const [bcList, setBcList] = useState(null);
+    const [authReady, setAuthReady] = useState(false);
     const [bcText, setBcText] = useState('');
     const [bcImage, setBcImage] = useState(null);      // File
     const [bcTarget, setBcTarget] = useState('all');
@@ -80,7 +83,8 @@ export default function Bot() {
     const loadBroadcasts = () => {
         get('/bot/broadcasts').then((d) => setBcList(d.broadcasts)).catch(() => {});
     };
-    useEffect(() => { loadBroadcasts(); }, []);
+    // Превью картинок с токеном: <img> не шлёт Authorization — ждём авторизации
+    useEffect(() => { if (authReady) loadBroadcasts(); }, [authReady]);
 
     // Поиск с задержкой: не дёргаем сервер на каждое нажатие
     useEffect(() => {
@@ -102,6 +106,7 @@ export default function Bot() {
         get('/bot/settings').then((d) => setSettings(d)).catch((e) => toast.error(e.message));
         get('/bot/tariffs').then((d) => setTariffs(d.tariffs)).catch(() => {});
         get('/bot/stats').then(setStats).catch(() => {});
+        setAuthReady(true);
     };
     useEffect(() => { load(); }, []);
 
@@ -865,15 +870,15 @@ export default function Bot() {
                         {bcList.map((b) => (
                             <div key={b.id} className="flex flex-wrap items-center gap-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50">
                                 {b.image_path && (
-                                    <img src={`/bot/broadcasts/${b.id}/image`} alt="" width={44} height={44}
+                                    <img src={`/api/bot/broadcasts/${b.id}/image?token=${accessToken}`} alt="" width={44} height={44}
                                          loading="lazy" className="rounded-lg object-cover w-11 h-11" />
                                 )}
                                 <div className="flex-1 min-w-[200px]">
                                     <div className="text-sm break-all">{b.text.slice(0, 120)}{b.text.length > 120 ? '…' : ''}</div>
                                     <div className="text-xs text-slate-400 mt-0.5">
-                                        {b.scheduled_at ? `🕒 ${t('bot.bcStPending') === bcStatusBadge(b.status) ? '' : ''}${fmtMsk(b.scheduled_at)}` : ''}
+                                        {b.scheduled_at && b.status === 'pending' ? `🕒 ${fmtMsk(b.scheduled_at)}` : ''}
                                         {b.sent_at ? `✅ ${fmtMsk(b.sent_at)}` : ''}
-                                        {' · '}{t('bot.bcTarget_' + b.target, { defaultValue: b.target })}
+                                        {' · '}{t('bot.bcTarget' + b.target[0].toUpperCase() + b.target.slice(1))}
                                     </div>
                                 </div>
                                 <div className="flex items-center gap-2 tabular-nums">
