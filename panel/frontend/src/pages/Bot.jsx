@@ -1,6 +1,9 @@
 // Настройка Telegram-бота продаж: админка (пользователи, баланс), тарифы, платежки
 import React, { useEffect, useState } from 'react';
-import { Plus, Save, Trash2, Power, Wallet, MessageSquare, ChevronDown, Pencil, Bot as BotIcon } from 'lucide-react';
+import { Plus, Save, Trash2, Power, Wallet, MessageSquare, ChevronDown, ChevronLeft, ChevronRight,
+         Pencil, Bot as BotIcon, Search, RefreshCcw, Users as UsersIcon,
+         SlidersHorizontal, Receipt } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
 import { get, post, put, del } from '../api';
 import { toast, useLangStore } from '../store';
 import { useT } from '../i18n';
@@ -21,7 +24,6 @@ export default function Bot() {
     const [tariffs, setTariffs] = useState(null);
     const [botStatus, setBotStatus] = useState(null);
     const [stats, setStats] = useState(null);
-    const [users, setUsers] = useState(null);
     const [balanceModal, setBalanceModal] = useState(null); // {tgId, name}
     const [balanceAmount, setBalanceAmount] = useState('');
     const [issueModal, setIssueModal] = useState(null);     // {telegram_id, days, protocols, max_ips, quota_gb}
@@ -42,12 +44,45 @@ export default function Bot() {
     const [msgText, setMsgText] = useState('');
     const [expanded, setExpanded] = useState(null); // раскрытый tgId
 
+    // ── Список пользователей: состояние в URL (глубокие ссылки на вкладку,
+    //    страницу, поиск и фильтр) ──
+    const [searchParams, setSearchParams] = useSearchParams();
+    const tab = searchParams.get('tab') || 'users';
+    const setTab = (v) => setSearchParams(v === 'users' ? {} : { tab: v }, { replace: true });
+    const usersPage = Math.max(1, parseInt(searchParams.get('page') || '1', 10) || 1);
+    const usersLimit = Math.min(100, Math.max(10, parseInt(searchParams.get('limit') || '25', 10) || 25));
+    const usersFilter = ['all', 'proxies', 'active', 'noproxies', 'balance'].includes(searchParams.get('filter'))
+        ? searchParams.get('filter') : 'all';
+    const usersQuery = searchParams.get('q') || '';
+    const [searchInput, setSearchInput] = useState(usersQuery);
+    const [usersResp, setUsersResp] = useState(null);
+    const [usersLoading, setUsersLoading] = useState(true);
+
+    const loadUsers = React.useCallback(() => {
+        setUsersLoading(true);
+        const p = new URLSearchParams({ page: String(usersPage), limit: String(usersLimit), filter: usersFilter });
+        if (usersQuery) p.set('search', usersQuery);
+        get(`/bot/users?${p}`).then(setUsersResp).catch(() => {}).finally(() => setUsersLoading(false));
+    }, [usersPage, usersLimit, usersFilter, usersQuery]);
+    useEffect(() => { loadUsers(); }, [loadUsers]);
+
+    // Поиск с задержкой: не дёргаем сервер на каждое нажатие
+    useEffect(() => {
+        const tm = setTimeout(() => {
+            const p = new URLSearchParams(searchParams);
+            if (searchInput) p.set('q', searchInput); else p.delete('q');
+            p.delete('page'); // новый поиск — с первой страницы
+            setSearchParams(p, { replace: true });
+        }, 350);
+        return () => clearTimeout(tm);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [searchInput]);
+
     const load = () => {
         get('/bot/status').then(setBotStatus).catch(() => setBotStatus({ running: false }));
         get('/bot/settings').then((d) => setSettings(d)).catch((e) => toast.error(e.message));
         get('/bot/tariffs').then((d) => setTariffs(d.tariffs)).catch(() => {});
         get('/bot/stats').then(setStats).catch(() => {});
-        get('/bot/users').then((d) => setUsers(d.users)).catch(() => {});
     };
     useEffect(() => { load(); }, []);
 
@@ -171,17 +206,70 @@ export default function Bot() {
                 </div>
             )}
 
+            {/* ── Вкладки: пользователи / тарифы / настройки ── */}
+            <div className="flex flex-wrap gap-2" role="tablist" aria-label={t('bot.tabsAria')}>
+                {[
+                    { id: 'users', icon: <UsersIcon size={15} aria-hidden="true" />, label: t('bot.tabUsers') },
+                    { id: 'tariffs', icon: <Receipt size={15} aria-hidden="true" />, label: t('bot.tabTariffs') },
+                    { id: 'settings', icon: <SlidersHorizontal size={15} aria-hidden="true" />, label: t('bot.tabSettings') },
+                ].map((tb) => (
+                    <button key={tb.id} role="tab" aria-selected={tab === tb.id}
+                            className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium transition-colors
+                                focus-visible:ring-2 focus-visible:ring-primary/60 outline-none
+                                ${tab === tb.id ? 'bg-primary text-white shadow' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'}`}
+                            onClick={() => setTab(tb.id)}>
+                        {tb.icon} {tb.label}
+                    </button>
+                ))}
+            </div>
+
+            {tab === 'users' && <>
             {/* ═══ Админка бота: пользователи Telegram ═══ */}
             <Card title={t('bot.usersTitle')}
                   subtitle={t('bot.usersSub')}
                   actions={
-                      <button className="btn-secondary !min-h-0 !px-3 !py-1.5 text-sm" onClick={load}>
-                          {t('bot.refresh')}
+                      <button className="btn-secondary !min-h-0 !px-3 !py-1.5 text-sm" onClick={loadUsers}
+                              aria-label={t('bot.refresh')}>
+                          <RefreshCcw size={14} />
                       </button>
                   }>
-                {!users ? <Skeleton className="h-16" /> : users.length === 0 ? (
-                    <p className="text-sm text-slate-500 py-2 text-center">{t('bot.usersEmpty')}</p>
+                {/* Поиск + фильтры + счётчик */}
+                <div className="flex flex-wrap items-center gap-2 mb-3">
+                    <div className="relative flex-1 min-w-[230px]">
+                        <Search size={15} aria-hidden="true"
+                                className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                        <input type="search" className="input !pl-9" value={searchInput}
+                               onChange={(e) => setSearchInput(e.target.value)}
+                               placeholder={t('bot.searchPh')}
+                               aria-label={t('bot.searchAria')}
+                               autoComplete="off" spellCheck={false} />
+                    </div>
+                    <div className="flex flex-wrap gap-1.5" role="group" aria-label={t('bot.filterAria')}>
+                        {[['all', t('bot.fAll')], ['proxies', t('bot.fProxies')], ['active', t('bot.fActive')],
+                          ['noproxies', t('bot.fNoProxies')], ['balance', t('bot.fBalance')]].map(([id, label]) => (
+                            <button key={id} aria-pressed={usersFilter === id}
+                                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors outline-none
+                                        focus-visible:ring-2 focus-visible:ring-primary/60
+                                        ${usersFilter === id ? 'bg-primary text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'}`}
+                                    onClick={() => setSearchParams((sp) => {
+                                        const p = new URLSearchParams(sp);
+                                        p.set('filter', id); p.delete('page');
+                                        setSearchParams(p, { replace: true });
+                                    })}>
+                                {label}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+                <p className="text-xs text-slate-400 mb-2" aria-live="polite">
+                    {t('bot.foundN', { n: usersResp?.total ?? 0 })}
+                </p>
+                {!usersLoading && (!usersResp || usersResp.users.length === 0) ? (
+                    <p className="text-sm text-slate-500 py-6 text-center">
+                        {usersQuery || usersFilter !== 'all' ? t('bot.searchEmpty') : t('bot.usersEmpty')}
+                    </p>
                 ) : (
+                    <>
                     <div className="overflow-x-auto">
                     <table className="w-full text-sm min-w-[720px]">
                         <thead className="sticky top-0 z-10 bg-white dark:bg-slate-900">
@@ -189,11 +277,12 @@ export default function Bot() {
                                 <th className="py-2 pr-4 font-medium sticky left-0 bg-white dark:bg-slate-900 z-20">{t('bot.thTgId')}</th>
                                 <th className="py-2 pr-4 font-medium">{t('bot.thProxies')}</th>
                                 <th className="py-2 pr-4 font-medium">{t('bot.thBalance')}</th>
+                                <th className="py-2 pr-4 font-medium">{t('bot.thLastSeen')}</th>
                                 <th className="py-2 pr-4 font-medium text-right">{t('common.actions')}</th>
                             </tr>
                         </thead>
                         <tbody>
-                            {users.map((u) => (
+                            {(usersResp?.users || []).map((u) => (
                                 <React.Fragment key={u.telegram_id}>
                                     <tr className="border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
                                         <td className="py-2 pr-4 sticky left-0 bg-white dark:bg-slate-900 z-[5]">
@@ -217,11 +306,14 @@ export default function Bot() {
                                                 )}
                                             </div>
                                         </td>
-                                        <td className="py-2 pr-4">
-                                            <span className="badge-green">{t('bot.activeN', { n: u.active })}</span>{' '}
-                                            <span className="text-xs text-slate-400">{t('bot.totalN', { n: u.proxies.length })}</span>
+                                        <td className="py-2 pr-4 tabular-nums">
+                                            <span className="badge-green">{t('bot.activeN', { n: u.active_count })}</span>{' '}
+                                            <span className="text-xs text-slate-400">{t('bot.totalN', { n: u.proxies_count })}</span>
                                         </td>
-                                        <td className="py-2 pr-4 font-medium">{u.balance.toFixed(2)}</td>
+                                        <td className="py-2 pr-4 font-medium tabular-nums">{u.balance.toFixed(2)}</td>
+                                        <td className="py-2 pr-4 text-xs text-slate-400">
+                                            {u.seen_at ? formatDate(u.seen_at, lang).split(',')[0] : '—'}
+                                        </td>
                                         <td className="py-2 pr-4">
                                             <div className="flex justify-end gap-1">
                                                 <button className="btn-secondary !min-h-0 !px-2 !py-1.5 text-xs"
@@ -245,7 +337,7 @@ export default function Bot() {
                                     {/* Раскрытый список прокси пользователя */}
                                     {expanded === u.telegram_id && (
                                         <tr className="border-b border-slate-100 dark:border-slate-800">
-                                            <td colSpan={4} className="py-3 px-4 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
+                                            <td colSpan={5} className="py-3 px-4 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
                                                 <table className="w-full text-xs">
                                                     <thead>
                                                         <tr className="text-left text-slate-400">
@@ -274,8 +366,45 @@ export default function Bot() {
                         </tbody>
                     </table>
                     </div>
+                    {/* Пагинация: страница, размер страницы, переходы */}
+                    <div className="flex flex-wrap items-center justify-between gap-2 mt-3">
+                        <span className="text-xs text-slate-500 tabular-nums" aria-live="polite">
+                            {t('bot.pageOf', { page: usersResp?.page ?? 1, pages: usersResp?.pages ?? 1 })}
+                        </span>
+                        <div className="flex items-center gap-1.5">
+                            <select className="input !w-auto !py-1.5 text-xs" value={usersLimit} aria-label={t('bot.perPage')}
+                                    onChange={(e) => setSearchParams((sp) => {
+                                        const p = new URLSearchParams(sp);
+                                        p.set('limit', e.target.value); p.delete('page');
+                                        setSearchParams(p, { replace: true });
+                                    })}>
+                                {[25, 50, 100].map((v) => <option key={v} value={v}>{v}</option>)}
+                            </select>
+                            <button className="btn-secondary !min-h-0 !p-2" aria-label={t('bot.prevPage')}
+                                    disabled={(usersResp?.page ?? 1) <= 1}
+                                    onClick={() => setSearchParams((sp) => {
+                                        const p = new URLSearchParams(sp);
+                                        p.set('page', String(usersPage - 1));
+                                        setSearchParams(p, { replace: true });
+                                    })}>
+                                <ChevronLeft size={14} />
+                            </button>
+                            <span className="text-sm tabular-nums px-1">{usersResp?.page ?? 1} / {usersResp?.pages ?? 1}</span>
+                            <button className="btn-secondary !min-h-0 !p-2" aria-label={t('bot.nextPage')}
+                                    disabled={(usersResp?.page ?? 1) >= (usersResp?.pages ?? 1)}
+                                    onClick={() => setSearchParams((sp) => {
+                                        const p = new URLSearchParams(sp);
+                                        p.set('page', String(usersPage + 1));
+                                        setSearchParams(p, { replace: true });
+                                    })}>
+                                <ChevronRight size={14} />
+                            </button>
+                        </div>
+                    </div>
+                    </>
                 )}
             </Card>
+            </>}
 
             {/* Модал: выдать прокси пользователю */}
             <Modal open={!!issueModal} onClose={() => setIssueModal(null)}
@@ -538,6 +667,10 @@ export default function Bot() {
                 </div>
             </Modal>
 
+            {tab === 'settings' && <>
+            <div className="flex flex-wrap gap-2 mb-1" role="tablist" aria-label={t('bot.tabsAria')}>
+                <span className="text-sm text-slate-500">{t('bot.settingsHint')}</span>
+            </div>
             {/* Кастомные кнопки в боте: сводка + модалка */}
             <Card title={t('bot.buttonsTitle')}
                   subtitle={t('bot.buttonsSub')}
@@ -616,6 +749,8 @@ export default function Bot() {
                 </div>
             </Card>
 
+            </>}
+            {tab === 'tariffs' && <>
             {/* Тарифы: компактный список + модалка редактирования */}
             <Card title={t('bot.tariffsTitle')} actions={
                 <button className="btn-secondary !min-h-0 !px-3 !py-1.5 text-sm"
@@ -663,6 +798,7 @@ export default function Bot() {
                 </div>
             </Card>
 
+            </>}
             {/* Модал: создание/редактирование тарифа */}
             <Modal open={!!tariffModal} onClose={() => setTariffModal(null)}
                    title={tariffModal?.id ? t('bot.editTariffTitle') : t('bot.newTariff')}>

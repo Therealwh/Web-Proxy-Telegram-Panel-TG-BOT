@@ -190,6 +190,11 @@ router.get('/users', (req, res) => {
          FROM clients WHERE telegram_id IS NOT NULL
          ORDER BY created_at DESC`
     ).all();
+    // Параметры списка: страница/лимит/поиск/фильтр (v2)
+    const page = Math.max(1, parseInt(String(req.query.page || '1'), 10) || 1);
+    const limit = Math.min(100, Math.max(10, parseInt(String(req.query.limit || '25'), 10) || 25));
+    const search = String(req.query.search || '').trim().toLowerCase();
+    const filter = String(req.query.filter || 'all');
 
     const users = new Map();
 
@@ -227,16 +232,45 @@ router.get('/users', (req, res) => {
     }
 
     // С прокси сверху (по новому прокси), затем остальные — по последней активности
-    const list = [...users.values()].sort((a, b) => {
-        if (a.proxies.length && b.proxies.length) {
-            return String(b.proxies[0].created_at || '').localeCompare(String(a.proxies[0].created_at || ''));
-        }
-        if (a.proxies.length) return -1;
-        if (b.proxies.length) return 1;
-        return String(b.seen_at || '').localeCompare(String(a.seen_at || ''));
+    let list = [...users.values()];
+
+    // Поиск: telegram_id, @username, имя/фамилия, ники прокси
+    if (search) {
+        const q = search.replace(/^@/, '');
+        list = list.filter((u) => {
+            if (String(u.telegram_id).includes(q)) return true;
+            if ((u.username || '').toLowerCase().includes(q)) return true;
+            if (`${u.first_name || ''} ${u.last_name || ''}`.toLowerCase().includes(q)) return true;
+            if (u.proxies.some((p) => (p.username || '').toLowerCase().includes(q))) return true;
+            return false;
+        });
+    }
+
+    // Фильтры
+    if (filter === 'proxies') list = list.filter((u) => u.proxies.length > 0);
+    else if (filter === 'active') list = list.filter((u) => u.active > 0);
+    else if (filter === 'noproxies') list = list.filter((u) => u.proxies.length === 0);
+    else if (filter === 'balance') list = list.filter((u) => u.balance > 0);
+
+    // Сортировка по последней активности: новый прокси или визит в бота
+    list.sort((a, b) => {
+        const ka = String(a.proxies[0]?.created_at || a.seen_at || '');
+        const kb = String(b.proxies[0]?.created_at || b.seen_at || '');
+        return kb.localeCompare(ka);
     });
 
-    res.json({ users: list });
+    const total = list.length;
+    const pages = Math.max(1, Math.ceil(total / limit));
+    const safePage = Math.min(page, pages);
+    const slice = list.slice((safePage - 1) * limit, safePage * limit)
+        .map((u) => ({
+            ...u,
+            proxies_count: u.proxies.length,
+            active_count: u.active,
+            last_proxy_date: u.proxies[0]?.created_at || null,
+        }));
+
+    res.json({ users: slice, total, page: safePage, pages, limit });
 });
 
 // --- Выдать прокси пользователю (создание в Telemt + привязка к telegram_id) ---
