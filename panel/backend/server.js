@@ -133,6 +133,7 @@ app.use('/api/referral', requireAuth, require('./routes/referral'));
 // Мульти-сервер: узлы (локации)
 app.use('/api/nodes', requireAuth, csrfProtection, audit(db), require('./routes/nodes'));
 app.use('/api/events', requireAuth, require('./routes/events'));
+app.use('/api/tickets', requireAuth, require('./routes/tickets'));
 // Мини-апп: авторизация Telegram initData внутри роутера (POST /auth публичный)
 app.use('/api/miniapp', require('./routes/miniapp'));
 app.use('/api/webhooks', requireAuth, csrfProtection, audit(db), webhooksModule.router);

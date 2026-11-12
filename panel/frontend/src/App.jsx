@@ -30,6 +30,7 @@ const Disk = lazy(() => import('./pages/Disk'));
 const Referral = lazy(() => import('./pages/Referral'));
 const Nodes = lazy(() => import('./pages/Nodes'));
 const Events = lazy(() => import('./pages/Events'));
+const Tickets = lazy(() => import('./pages/Tickets'));
 
 /** Обертка: пускает только авторизованных */
 function Protected({ children }) {
@@ -57,6 +58,7 @@ export default function App() {
                 <Route path="referral" element={<Suspense fallback={PageLoader}><Referral /></Suspense>} />
                 <Route path="nodes" element={<Suspense fallback={PageLoader}><Nodes /></Suspense>} />
                 <Route path="events" element={<Suspense fallback={PageLoader}><Events /></Suspense>} />
+                <Route path="tickets" element={<Suspense fallback={PageLoader}><Tickets /></Suspense>} />
                                 <Route path="logs" element={<Suspense fallback={PageLoader}><Logs /></Suspense>} />
                 <Route path="qr" element={<Suspense fallback={PageLoader}><QRGenerator /></Suspense>} />
                 <Route path="website" element={<Suspense fallback={PageLoader}><Website /></Suspense>} />

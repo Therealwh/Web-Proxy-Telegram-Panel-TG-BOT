@@ -24,6 +24,7 @@ const NAV_GROUPS = [
     ] },
     { label: 'layout.groupTelegram', items: [
         { to: '/bot', icon: Bot, label: 'nav.bot' },
+        { to: '/tickets', icon: MessageSquare, label: 'nav.tickets' },
         { to: '/qr', icon: QrCode, label: 'nav.qr' },
         { to: '/website', icon: Globe, label: 'nav.website' },
     ] },

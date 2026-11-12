@@ -20,6 +20,7 @@ const referral = require('../utils/referral');
 const nodesService = require('./nodes');
 const promoService = require('./promo');
 const eventLog = require('./eventLog');
+const ticketsService = require('./tickets');
 const telemt = require('./telemtApi');
 const { clientLinks } = require('./links');
 const { getAll } = require('../routes/settings');
@@ -37,6 +38,8 @@ const receiptState = new Map();
 
 // Ожидание ввода промокода: tgId -> timestamp запроса (TTL 10 минут)
 const promoInput = new Map();
+// Диалог тикета: tgId -> id тикета (сообщения пользователя попадают в обращение)
+const ticketDialog = new Map();
 // Ожидание своей суммы пополнения. Держим в БД, а не в памяти процесса:
 // перезапуск панели (например, сразу после обновления) стирал Map целиком,
 // и введённая сумма молча проглатывалась — пользователь не получал
@@ -1072,6 +1075,7 @@ bot.on('message:text', async (ctx, next) => {
     // ═══ 2. /start и reply-клавиатура ═══
     bot.command('start', async (ctx) => {
         promoInput.delete(ctx.from.id); // /start сбрасывает режим ввода промокода
+        ticketDialog.delete(ctx.from.id);
         if (ctx.payload && ctx.payload.startsWith('ref_')) {
             const referrerId = referral.resolveRefPayload(ctx.payload);
             const self = referrerId
@@ -1202,10 +1206,25 @@ bot.on('message:text', async (ctx, next) => {
         );
     });
 
-    bot.hears('🛟 Поддержка', (ctx) => {
+    bot.hears('🛟 Поддержка', async (ctx) => {
         const statusUrl = getBotSettings().status_url;
         const statusLine = statusUrl ? `\n\n🟢 <a href="${statusUrl}">Проверить, работает ли сервис</a>` : '';
-        ctx.reply(`🛟 <b>Поддержка</b>\n\nПо любым вопросам пишите:\n👤 ${SUPPORT_USERNAME}${statusLine}`, { parse_mode: 'HTML' });
+        const openTicket = ticketsService.listTickets({ status: 'open' })
+            .find((t) => t.telegram_id === ctx.from.id);
+        const answeredTicket = db.prepare(
+            "SELECT id FROM tickets WHERE telegram_id = ? AND status = 'answered' ORDER BY id DESC LIMIT 1"
+        ).get(ctx.from.id);
+        const kb = new InlineKeyboard();
+        if (openTicket) {
+            kb.text(`💬 Моё обращение #${openTicket.id} — ждать/дописать`, 'ticketopen').row();
+        } else if (answeredTicket) {
+            kb.text(`💬 Моё обращение #${answeredTicket.id}`, 'ticketopen').row();
+        }
+        kb.text('✍️ Написать в поддержку', 'ticketnew').row();
+        await ctx.reply(
+            `🛟 <b>Поддержка</b>\n\nНапишите вопрос прямо сюда — администрация отвечает в течение 24 часов, обычно быстрее.${statusLine}`,
+            { parse_mode: 'HTML', reply_markup: kb }
+        );
     });
 
     // ═══ Инструкции подключения: выбор платформы → шаги ═══
@@ -1821,6 +1840,102 @@ bot.on('message:text', async (ctx, next) => {
         await applyPromoFlow(ctx, code);
     });
 
+    // ── Тикеты поддержки ──
+    // Новое обращение: создаём тикет и включаем диалог
+    bot.callbackQuery('ticketnew', async (ctx) => {
+        await ctx.answerCallbackQuery();
+        // Если уже есть открытое — входим в него
+        const existing = db.prepare(
+            "SELECT id FROM tickets WHERE telegram_id = ? AND status IN ('open', 'answered') ORDER BY id DESC LIMIT 1"
+        ).get(ctx.from.id);
+        if (existing) {
+            ticketDialog.set(ctx.from.id, existing.id);
+            const msgs = ticketsService.ticketMessages(existing.id);
+            const history = msgs.slice(-5).map((m) =>
+                (m.sender === 'admin' ? '🛟 <b>Поддержка:</b> ' : '👤 <b>Вы:</b> ') + escapeHtml(m.text))
+                .join('\n\n');
+            return ctx.reply(
+                `💬 <b>Обращение #${existing.id} (открыто)</b>\n\n${history}\n\n👇 <b>Пишите ответ</b> — попадёт в обращение.`,
+                { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('✅ Закрыть обращение', 'ticketclose') }
+            );
+        }
+        ticketDialog.set(ctx.from.id, 'new');
+        await ctx.reply('✍️ <b>Опишите проблему</b> одним сообщением — это создаст обращение.\n\nОтменить: /promocancel', { parse_mode: 'HTML' });
+    });
+
+    // Войти в существующее обращение
+    bot.callbackQuery('ticketopen', async (ctx) => {
+        await ctx.answerCallbackQuery();
+        const t = db.prepare(
+            "SELECT id, status FROM tickets WHERE telegram_id = ? AND status IN ('open', 'answered', 'closed') ORDER BY id DESC LIMIT 1"
+        ).get(ctx.from.id);
+        if (!t) return ctx.answerCallbackQuery({ text: 'Обращение не найдено', show_alert: true });
+        ticketDialog.set(ctx.from.id, t.id);
+        const msgs = ticketsService.ticketMessages(t.id);
+        const history = msgs.slice(-5).map((m) =>
+            (m.sender === 'admin' ? '🛟 <b>Поддержка:</b> ' : '👤 <b>Вы:</b> ') + escapeHtml(m.text))
+            .join('\n\n');
+        const kb = new InlineKeyboard();
+        if (t.status !== 'closed') kb.text('✅ Закрыть обращение', 'ticketclose').row();
+        kb.text('💬 Пишите ответ следующим сообщением', 'ticketopen').row();
+        await ctx.reply(
+            `💬 <b>Обращение #${t.id}</b> ${t.status === 'closed' ? '(закрыто)' : ''}\n\n${history || '(пусто)'}`,
+            { parse_mode: 'HTML', reply_markup: kb }
+        );
+    });
+
+    // Закрытие обращения клиентом
+    bot.callbackQuery('ticketclose', async (ctx) => {
+        const tid = ticketDialog.get(ctx.from.id)
+            || db.prepare("SELECT id FROM tickets WHERE telegram_id = ? AND status IN ('open', 'answered') ORDER BY id DESC LIMIT 1")
+                .get(ctx.from.id)?.id;
+        if (!tid) return ctx.answerCallbackQuery({ text: 'Нет открытого обращения', show_alert: true });
+        await ctx.answerCallbackQuery('Закрываю…');
+        ticketDialog.delete(ctx.from.id);
+        if (ticketsService.closeTicket(tid, false)) {
+            await ctx.reply(`✅ Обращение #${tid} закрыто. Спасибо!`);
+        }
+    });
+
+    // Текст в режиме диалога тикета — попадает в обращение + уведомление админу
+    // (регистрируем ПОСЛЕ промо-обработчика текста)
+    bot.on('message:text', async (ctx, next) => {
+        const tid = ticketDialog.get(ctx.from.id);
+        if (!tid) return next();
+
+        // Создание нового обращения: tid === 'new' → первое сообщение создаёт тикет
+        if (tid === 'new') {
+            const { id } = ticketsService.createTicket(ctx.from.id, ctx.message.text);
+            ticketDialog.set(ctx.from.id, id);
+            await ctx.reply(
+                `✅ <b>Обращение #${id} создано</b>\n\n` +
+                `⏱ Администрация отвечает в течение 24 часов — обычно гораздо быстрее.\n` +
+                `Пишите сюда ещё, если нужно дополнить. Закрыть: /promocancel или кнопкой.`,
+                { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('✅ Закрыть обращение', 'ticketclose') }
+            );
+            // Уведомление админу
+            try {
+                const { notifyAdmin } = require('./notifier');
+                notifyAdmin(getAll(),
+                    `🎫 <b>Новое обращение #${id}</b>\n👤 ${ctx.from.first_name || ''} @${ctx.from.username || '—'} (tg${ctx.from.id})\n\n${escapeHtml(String(ctx.message.text || '').slice(0, 500))}`)
+                    .catch(() => {});
+            } catch { /* не критично */ }
+            return;
+        }
+
+        // Дописать в существующее обращение
+        const added = ticketsService.addUserMessage(ctx.from.id, ctx.message.text);
+        if (!added) { ticketDialog.delete(ctx.from.id); return next(); }
+        await ctx.reply(`📩 <b>Передано в обращение #${added}</b> — админ ответит в этом диалоге.`, { parse_mode: 'HTML' });
+        try {
+            const t = db.prepare('SELECT last_message FROM tickets WHERE id = ?').get(added);
+            const { notifyAdmin } = require('./notifier');
+            notifyAdmin(getAll(),
+                `💬 <b>Клиент дописал в обращение #${added}</b>\n👤 tg${ctx.from.id}\n\n${escapeHtml(String(t?.last_message || '').slice(0, 500))}`)
+                .catch(() => {});
+        } catch { /* не критично */ }
+    });
+
     // QR-код ссылки подключения: купил с ноутбука — навёл камеру телефона
     bot.callbackQuery(/^qr:(\d+)$/, async (ctx) => {
         const client = db.prepare('SELECT * FROM clients WHERE id = ? AND telegram_id = ?')
@@ -1851,7 +1966,7 @@ bot.on('message:text', async (ctx, next) => {
 
     bot.callbackQuery('support', async (ctx) => {
         await ctx.answerCallbackQuery();
-        await ctx.reply(`🛟 <b>Поддержка</b>\n\nПишите: ${SUPPORT_USERNAME}`, { parse_mode: 'HTML' });
+        await ctx.reply(`🛟 <b>Поддержка</b>\n\nНажмите «✍️ Написать в поддержку» — администрация отвечает в течение 24 часов.\n👤 ${SUPPORT_USERNAME}`, { parse_mode: 'HTML' });
     });
 
     bot.callbackQuery('tariffs', async (ctx) => {
