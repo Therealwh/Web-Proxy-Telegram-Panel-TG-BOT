@@ -26,6 +26,34 @@ router.get('/:id/messages', requireAuth, (req, res, next) => {
     } catch (err) { next(err); }
 });
 
+// Медиа сообщения (фото/PDF) — проксируется из Telegram (JWT; для <img> — ?token=)
+router.get('/:id/media/:msgId', requireAuth, async (req, res, next) => {
+    try {
+        const db = require('../db');
+        const msg = db.prepare(
+            'SELECT file_id, media_type, file_name FROM ticket_messages WHERE id = ? AND ticket_id = ? AND file_id IS NOT NULL'
+        ).get(Number(req.params.msgId), Number(req.params.id));
+        if (!msg) return res.status(404).json({ error: 'Медиа не найдено' });
+
+        const bot = require('../services/bot');
+        if (!bot.isRunning()) return res.status(503).json({ error: 'Бот не запущен' });
+        const token = bot.getBotSettings().bot_token;
+        if (!token) return res.status(503).json({ error: 'Бот не настроен' });
+
+        const file = await bot.getApi().getFile(msg.file_id);
+        const tgRes = await fetch(`https://api.telegram.org/file/bot${token}/${file.file_path}`);
+        if (!tgRes.ok) return res.status(502).json({ error: 'Не удалось скачать из Telegram' });
+
+        const isPdf = msg.media_type === 'document' && (msg.file_name || '').toLowerCase().endsWith('.pdf');
+        if (isPdf) res.setHeader('Content-Type', 'application/pdf');
+        else if (msg.media_type === 'document') res.setHeader('Content-Type', 'application/octet-stream');
+        else res.setHeader('Content-Type', 'image/jpeg');
+        if (msg.file_name) res.setHeader('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(msg.file_name)}`);
+        res.setHeader('Cache-Control', 'private, max-age=3600');
+        res.send(Buffer.from(await tgRes.arrayBuffer()));
+    } catch (err) { next(err); }
+});
+
 router.post('/:id/reply', requireAuth, (req, res, next) => {
     try {
         const schema = z.object({ text: z.string().trim().min(1).max(4000) });

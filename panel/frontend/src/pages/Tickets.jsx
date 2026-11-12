@@ -2,7 +2,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { MessageSquare, RefreshCcw, Send, Check, ChevronLeft, Search, Ban } from 'lucide-react';
 import { get, post } from '../api';
-import { toast, useLangStore } from '../store';
+import { toast, useAuthStore, useLangStore } from '../store';
 import { useT } from '../i18n';
 import { Card, PageHeader, Skeleton, Avatar, StatusBadge, formatDate } from '../components/ui';
 
@@ -22,6 +22,7 @@ export default function Tickets() {
     const [statusFilter, setStatusFilter] = useState('');
     const lang = useLangStore((s) => s.lang);
     const t = useT();
+    const accessToken = useAuthStore((st) => st.accessToken);
     const dialogEnd = useRef(null);
 
     const load = () => {
@@ -178,6 +179,17 @@ export default function Tickets() {
                                             ${m.sender === 'admin'
                                                 ? 'bg-primary text-white rounded-br-md'
                                                 : 'bg-slate-100 dark:bg-slate-800 rounded-bl-md'}`}>
+                                        {m.media_type === 'photo' && m.file_id && (
+                                            <img src={`/api/tickets/${dialog.ticket.id}/media/${m.id}?token=${accessToken}`}
+                                                 alt="" loading="lazy" className="rounded-lg mb-1.5 max-h-56 w-auto" />
+                                        )}
+                                        {m.media_type === 'document' && m.file_id && (
+                                            <a href={`/api/tickets/${dialog.ticket.id}/media/${m.id}?token=${accessToken}`}
+                                               target="_blank" rel="noreferrer"
+                                               className="flex items-center gap-1.5 font-medium underline mb-1">
+                                                📄 {m.file_name || 'Файл'}
+                                            </a>
+                                        )}
                                         <div className="whitespace-pre-wrap break-words">{m.text}</div>
                                         <div className={`text-[10px] mt-1 tabular-nums ${m.sender === 'admin' ? 'text-white/70' : 'text-slate-400'}`}>
                                             {formatDate(m.created_at, lang).split(',')[1] || formatDate(m.created_at, lang)}

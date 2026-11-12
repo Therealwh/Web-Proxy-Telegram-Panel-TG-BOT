@@ -18,9 +18,9 @@ const db = require('../db');
 const { deductBalanceSpread } = require('../utils/balance');
 const referral = require('../utils/referral');
 const nodesService = require('./nodes');
+const ticketsService = require('./tickets');
 const promoService = require('./promo');
 const eventLog = require('./eventLog');
-const ticketsService = require('./tickets');
 const telemt = require('./telemtApi');
 const { clientLinks } = require('./links');
 const { getAll } = require('../routes/settings');
@@ -40,6 +40,8 @@ const receiptState = new Map();
 const promoInput = new Map();
 // Диалог тикета: tgId -> id тикета (сообщения пользователя попадают в обращение)
 const ticketDialog = new Map();
+// Ответ админа из бота: tgId -> id тикета
+const ticketReplyState = new Map();
 // Ожидание своей суммы пополнения. Держим в БД, а не в памяти процесса:
 // перезапуск панели (например, сразу после обновления) стирал Map целиком,
 // и введённая сумма молча проглатывалась — пользователь не получал
@@ -282,6 +284,8 @@ function adminStatsText() {
 function adminKeyboard() {
     const kb = new InlineKeyboard();
     kb.text('👥 Клиенты', 'admin:clients').text('💰 Платежи', 'admin:payments').row();
+    const openTickets = db.prepare("SELECT COUNT(*) AS c FROM tickets WHERE status = 'open'").get().c;
+    kb.text(openTickets ? `🎫 Тикеты (${openTickets} ждут)` : '🎫 Тикеты', 'admin:tickets').row();
     kb.text('📢 Рассылка', 'admin:broadcast').row();
     kb.text('📊 Обновить', 'admin:stats');
     return kb;
@@ -1913,6 +1917,16 @@ bot.on('message:text', async (ctx, next) => {
 
     // Текст в режиме диалога тикета — попадает в обращение + уведомление админу
     // (регистрируем ПОСЛЕ промо-обработчика текста)
+    // Ответ админа из бота: текст уходит клиенту в тикет
+    bot.on('message:text', async (ctx, next) => {
+        if (!isAdmin(ctx) || !ticketReplyState.has(ctx.from.id)) return next();
+        const id = ticketReplyState.get(ctx.from.id);
+        ticketReplyState.delete(ctx.from.id);
+        const added = ticketsService.addAdminMessage(id, ctx.message.text, true);
+        if (added) await ctx.reply(`✅ Ответ по обращению #${id} отправлен клиенту.`);
+        else await ctx.reply('⚠️ Обращение не найдено или уже закрыто.');
+    });
+
     bot.on('message:text', async (ctx, next) => {
         const tid = ticketDialog.get(ctx.from.id);
         if (!tid) return next();
@@ -1926,7 +1940,7 @@ bot.on('message:text', async (ctx, next) => {
             await ctx.reply(
                 `✅ <b>Обращение #${id} создано</b>\n\n` +
                 `⏱ Администрация отвечает в течение 24 часов — обычно гораздо быстрее.\n` +
-                `Пишите сюда ещё, если нужно дополнить. Закрыть: /promocancel или кнопкой.`,
+                `Пишите сюда ещё, если нужно дополнить.`,
                 { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('✅ Закрыть обращение', 'ticketclose') }
             );
             // Уведомление админу
@@ -1950,6 +1964,159 @@ bot.on('message:text', async (ctx, next) => {
                 `💬 <b>Клиент дописал в обращение #${added}</b>\n👤 tg${ctx.from.id}\n\n${escapeHtml(String(t?.last_message || '').slice(0, 500))}`)
                 .catch(() => {});
         } catch { /* не критично */ }
+    });
+
+    // Фото в диалоге тикета: клиент присылает скрин/фото проблемы
+    bot.on('message:photo', async (ctx, next) => {
+        const tid = ticketDialog.get(ctx.from.id);
+        if (!tid) return next();
+        const photos = ctx.message.photo || [];
+        const fileId = photos.length ? photos[photos.length - 1].file_id : null;
+        if (!fileId) return next();
+        const caption = String(ctx.message.caption || '').slice(0, 1000);
+
+        if (tid === 'new') {
+            const { id } = ticketsService.createTicket(ctx.from.id, caption || '📷 Фото');
+            ticketDialog.set(ctx.from.id, id);
+            ticketsService.addMediaMessage(ctx.from.id, { media_type: 'photo', file_id: fileId, caption: '' });
+            await ctx.reply(`✅ <b>Обращение #${id} создано</b> с фото. Админ увидит его в панели.\n⏱ Ответ в течение 24 часов.`, { parse_mode: 'HTML' });
+        } else {
+            ticketsService.addMediaMessage(ctx.from.id, { media_type: 'photo', file_id: fileId, caption });
+            await ctx.reply(`📷 Фото передано в обращение #${tid}`);
+        }
+        // Админу — само фото + подпись
+        try {
+            const { notifyAdmin } = require('./notifier');
+            const { getAll: gAll } = require('../routes/settings');
+            const who = `👤 ${ctx.from.first_name || ''} @${ctx.from.username || '—'} · обращение #${tid === 'new' ? 'новое' : tid}`;
+            await notifyAdmin(gAll(), `📷 <b>Фото в обращении</b>\n${who}${caption ? '\n' + escapeHtml(caption) : ''}`);
+            await bot.api.sendPhoto(gAll().tg_admin_chat_id, fileId,
+                { caption: `обращение #${tid === 'new' ? 'новое' : tid}`, ...(caption ? {} : {}) })
+                .catch(() => {});
+        } catch { /* не критично */ }
+    });
+
+    // Документ (PDF и пр.) в диалоге тикета
+    bot.on('message:document', async (ctx, next) => {
+        const tid = ticketDialog.get(ctx.from.id);
+        if (!tid) return next();
+        const doc = ctx.message.document;
+        if (!doc?.file_id) return next();
+        const caption = String(ctx.message.caption || '').slice(0, 1000);
+
+        if (tid === 'new') {
+            const { id } = ticketsService.createTicket(ctx.from.id, caption || `📄 ${doc.file_name || 'Документ'}`);
+            ticketDialog.set(ctx.from.id, id);
+            ticketsService.addMediaMessage(ctx.from.id, {
+                media_type: 'document', file_id: doc.file_id, file_name: doc.file_name || null, caption: '',
+            });
+            await ctx.reply(`✅ <b>Обращение #${id} создано</b> с файлом. Админ увидит его в панели.\n⏱ Ответ в течение 24 часов.`, { parse_mode: 'HTML' });
+        } else {
+            ticketsService.addMediaMessage(ctx.from.id, {
+                media_type: 'document', file_id: doc.file_id, file_name: doc.file_name || null, caption,
+            });
+            await ctx.reply(`📄 Файл передан в обращение #${tid}`);
+        }
+        // Админу — сам документ + подпись
+        try {
+            const { notifyAdmin } = require('./notifier');
+            const { getAll: gAll } = require('../routes/settings');
+            const who = `👤 ${ctx.from.first_name || ''} @${ctx.from.username || '—'} · обращение #${tid === 'new' ? 'новое' : tid}`;
+            await notifyAdmin(gAll(), `📄 <b>Файл в обращении</b>\n${who}\n${escapeHtml(doc.file_name || 'файл')}${caption ? '\n' + escapeHtml(caption) : ''}`);
+            await bot.api.sendDocument(gAll().tg_admin_chat_id, doc.file_id,
+                { caption: `обращение #${tid === 'new' ? 'новое' : tid}` }).catch(() => {});
+        } catch { /* не критично */ }
+    });
+
+    // ── Админ: тикеты ──
+    bot.callbackQuery('admin:tickets', async (ctx) => {
+        if (!isAdmin(ctx)) return ctx.answerCallbackQuery('⛔ Только для админа');
+        await ctx.answerCallbackQuery();
+        const open = db.prepare(
+            "SELECT * FROM tickets WHERE status = 'open' ORDER BY updated_at DESC LIMIT 10"
+        ).all();
+        const answered = db.prepare(
+            "SELECT * FROM tickets WHERE status = 'answered' ORDER BY updated_at DESC LIMIT 5"
+        ).all();
+        let text = '🎫 <b>Тикеты поддержки</b>\n\n';
+        if (open.length === 0 && answered.length === 0) {
+            text += 'Обращений нет — всё спокойно ✅';
+            return ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: adminKeyboard() });
+        }
+        if (open.length) {
+            text += '⏳ <b>Ждут ответа:</b>\n' + open.map((t) =>
+                `#${t.id} — ${t.username ? '@' + t.username : 'tg' + t.telegram_id}: ${escapeHtml((t.last_message || '').slice(0, 60))}`
+            ).join('\n') + '\n\n';
+        }
+        if (answered.length) {
+            text += '✔ <b>Ответ отправлен (ждём клиента):</b>\n' + answered.map((t) =>
+                `#${t.id} — ${t.username ? '@' + t.username : 'tg' + t.telegram_id}`
+            ).join('\n') + '\n';
+        }
+        const kb = new InlineKeyboard();
+        for (const t of [...open, ...answered]) kb.text(`💬 #${t.id}`, `admin:tv:${t.id}`).row();
+        kb.text('⬅️ В админку', 'admin:back');
+        await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb }).catch(async () => {
+            await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb });
+        });
+    });
+
+    bot.callbackQuery(/^admin:tv:(\d+)$/, async (ctx) => {
+        if (!isAdmin(ctx)) return ctx.answerCallbackQuery('⛔ Только для админа');
+        await ctx.answerCallbackQuery();
+        const id = Number(ctx.match[1]);
+        const t = db.prepare(
+            `SELECT t.*, bu.username, bu.first_name FROM tickets t
+             LEFT JOIN bot_users bu ON bu.telegram_id = t.telegram_id WHERE t.id = ?`
+        ).get(id);
+        if (!t) return ctx.answerCallbackQuery({ text: 'Не найдено', show_alert: true });
+        const msgs = ticketsService.ticketMessages(id);
+        const history = msgs.slice(-8).map((m) =>
+            (m.sender === 'admin' ? '🛟 <b>Поддержка:</b> ' : '👤 <b>Клиент:</b> ') + escapeHtml(m.text))
+            .join('\n\n') || '(нет сообщений)';
+        const kb = new InlineKeyboard()
+            .text('💬 Ответить', `admin:treply:${id}`).row()
+            .text('✅ Закрыть обращение', `admin:tclose:${id}`).row()
+            .text('⬅️ К тикетам', 'admin:tickets');
+        await ctx.editMessageText(
+            `🎫 <b>Обращение #${id}</b>\n👤 ${t.username ? '@' + t.username : 'tg' + t.telegram_id}\n` +
+            `Статус: ${t.status === 'open' ? '⏳ ждёт ответа' : t.status === 'answered' ? '✔ ответ отправлен' : 'закрыто'}\n\n${history}`,
+            { parse_mode: 'HTML', reply_markup: kb }
+        ).catch(async () => {
+            await ctx.reply(`🎫 Обращение #${id} — откройте через «🎫 Тикеты»`, { parse_mode: 'HTML' });
+        });
+    });
+
+    // Ответ админа из бота: следующий текст уйдёт клиенту
+    bot.callbackQuery(/^admin:treply:(\d+)$/, async (ctx) => {
+        if (!isAdmin(ctx)) return ctx.answerCallbackQuery('⛔ Только для админа');
+        const id = Number(ctx.match[1]);
+        const t = db.prepare("SELECT id FROM tickets WHERE id = ? AND status IN ('open', 'answered')").get(id);
+        if (!t) return ctx.answerCallbackQuery({ text: 'Обращение закрыто', show_alert: true });
+        await ctx.answerCallbackQuery('Пишите ответ следующим сообщением');
+        ticketReplyState.set(ctx.from.id, id);
+    });
+
+    bot.callbackQuery(/^admin:tclose:(\d+)$/, async (ctx) => {
+        if (!isAdmin(ctx)) return ctx.answerCallbackQuery('⛔ Только для админа');
+        const id = Number(ctx.match[1]);
+        const ok = ticketsService.closeTicket(id, true);
+        await ctx.answerCallbackQuery(ok ? '✅ Закрыто, клиент уведомлён' : 'Уже закрыто');
+        try {
+            const msgs = ticketsService.ticketMessages(id);
+            const history = msgs.slice(-8).map((m) =>
+                (m.sender === 'admin' ? '🛟 <b>Поддержка:</b> ' : '👤 <b>Клиент:</b> ') + escapeHtml(m.text))
+                .join('\n\n') || '(нет сообщений)';
+            await ctx.editMessageText(
+                `🎫 <b>Обращение #${id}</b> — закрыто\n\n${history}`,
+                { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('⬅️ К тикетам', 'admin:tickets') }
+            );
+        } catch { /* сообщение могло не измениться */ }
+    });
+
+    bot.callbackQuery('admin:back', async (ctx) => {
+        await ctx.answerCallbackQuery();
+        return ctx.editMessageText(adminStatsText(), { parse_mode: 'HTML', reply_markup: adminKeyboard() });
     });
 
     // QR-код ссылки подключения: купил с ноутбука — навёл камеру телефона

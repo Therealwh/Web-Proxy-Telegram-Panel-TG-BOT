@@ -56,6 +56,24 @@ function addUserMessage(telegramId, text) {
     return ticket.id;
 }
 
+/** Медиа от клиента (фото/PDF) в открытый тикет. @returns {number|null} id тикета */
+function addMediaMessage(telegramId, media) {
+    const ticket = db.prepare(
+        "SELECT id FROM tickets WHERE telegram_id = ? AND status IN ('open', 'answered') ORDER BY id DESC LIMIT 1"
+    ).get(telegramId);
+    if (!ticket) return null;
+    db.prepare(
+        `INSERT INTO ticket_messages (ticket_id, sender, text, media_type, file_id, file_name)
+         VALUES (?, 'client', ?, ?, ?, ?)`
+    ).run(ticket.id, media.caption || '', media.media_type, media.file_id, media.file_name || null);
+    const preview = media.file_type === 'photo' ? '📷 Фото' : `📄 ${media.file_name || 'Файл'}`;
+    db.prepare(
+        "UPDATE tickets SET status = 'open', updated_at = datetime('now'), last_message = ?, last_sender = 'client' WHERE id = ?"
+    ).run(preview, ticket.id);
+    logger.info('Тикет: медиа от клиента', { ticketId: ticket.id, type: media.media_type });
+    return ticket.id;
+}
+
 /** Сообщение админа (из панели или из бота). @returns {number|null} id тикета */
 function addAdminMessage(ticketId, text, notifyUser = true) {
     const clean = String(text || '').trim().slice(0, 4000);
@@ -157,5 +175,5 @@ function ticketMessages(ticketId) {
 
 module.exports = {
     createTicket, addUserMessage, addAdminMessage, closeTicket,
-    listTickets, ticketMessages, FIRST_RESPONSE_NOTE,
+    listTickets, ticketMessages, addMediaMessage, FIRST_RESPONSE_NOTE,
 };
