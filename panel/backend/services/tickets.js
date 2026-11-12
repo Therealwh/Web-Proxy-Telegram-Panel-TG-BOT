@@ -12,6 +12,11 @@
 const db = require('../db');
 const logger = require('../utils/logger');
 
+/** Экранирование HTML для пользовательских текстов в HTML-сообщениях. */
+function escapeHtml(s) {
+    return String(s ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+}
+
 /** Автоответ клиенту при создании обращения. */
 const FIRST_RESPONSE_NOTE = 'Администрация отвечает в течение 24 часов — обычно гораздо быстрее.';
 
@@ -69,7 +74,7 @@ function addAdminMessage(ticketId, text, notifyUser = true) {
         const bot = require('./bot');
         if (bot.isRunning()) {
             bot.sendMessageTo(ticket.telegram_id,
-                `💬 <b>Ответ поддержки</b> по обращению #${ticketId}:\n\n${clean}\n\n` +
+                `💬 <b>Ответ поддержки</b> по обращению #${ticketId}:\n\n${escapeHtml(clean)}\n\n` +
                 `Ответить можно в этом же диалоге — «🛟 Поддержка» → «✍️ Написать в поддержку».`
             ).catch((e) => logger.warn('Тикет: уведомление клиенту не отправлено', { ticketId, error: e.message }));
         }

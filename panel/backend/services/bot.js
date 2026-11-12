@@ -83,6 +83,11 @@ function clearAwaitingAmount(tgId) {
 /** Юзернейм поддержки. */
 const SUPPORT_USERNAME = '@tggatetopsupport';
 
+/** Экранирование HTML для пользовательских текстов в HTML-сообщениях. */
+function escapeHtml(s) {
+    return String(s ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+}
+
 /** Красивое приветствие по умолчанию (меняется в панели). */
 const DEFAULT_WELCOME =
     `👋 <b>Привет, {имя}!</b>\n\n` +
@@ -1827,7 +1832,11 @@ bot.on('message:text', async (ctx, next) => {
     });
 
     bot.command('promocancel', async (ctx) => {
-        if (promoInput.delete(ctx.from.id)) await ctx.reply('❌ Ввод промокода отменён');
+        const hadPromo = promoInput.delete(ctx.from.id);
+        const hadTicket = ticketDialog.delete(ctx.from.id);
+        if (hadPromo) await ctx.reply('❌ Ввод промокода отменён');
+        else if (hadTicket) await ctx.reply('❌ Диалог обращения закрыт — сообщение не отправлено');
+        else await ctx.reply('Нечего отменять');
     });
 
     // Текст-сообщение в режиме ввода промокода (до остальных обработчиков текста)
@@ -1865,11 +1874,11 @@ bot.on('message:text', async (ctx, next) => {
 
     // Войти в существующее обращение
     bot.callbackQuery('ticketopen', async (ctx) => {
-        await ctx.answerCallbackQuery();
         const t = db.prepare(
             "SELECT id, status FROM tickets WHERE telegram_id = ? AND status IN ('open', 'answered', 'closed') ORDER BY id DESC LIMIT 1"
         ).get(ctx.from.id);
         if (!t) return ctx.answerCallbackQuery({ text: 'Обращение не найдено', show_alert: true });
+        await ctx.answerCallbackQuery();
         ticketDialog.set(ctx.from.id, t.id);
         const msgs = ticketsService.ticketMessages(t.id);
         const history = msgs.slice(-5).map((m) =>
@@ -1889,11 +1898,16 @@ bot.on('message:text', async (ctx, next) => {
         const tid = ticketDialog.get(ctx.from.id)
             || db.prepare("SELECT id FROM tickets WHERE telegram_id = ? AND status IN ('open', 'answered') ORDER BY id DESC LIMIT 1")
                 .get(ctx.from.id)?.id;
-        if (!tid) return ctx.answerCallbackQuery({ text: 'Нет открытого обращения', show_alert: true });
+        if (!tid || typeof tid !== 'number') {
+            ticketDialog.delete(ctx.from.id);
+            return ctx.answerCallbackQuery({ text: 'Нет открытого обращения', show_alert: true });
+        }
         await ctx.answerCallbackQuery('Закрываю…');
         ticketDialog.delete(ctx.from.id);
         if (ticketsService.closeTicket(tid, false)) {
             await ctx.reply(`✅ Обращение #${tid} закрыто. Спасибо!`);
+        } else {
+            await ctx.reply(`Обращение #${tid} уже закрыто.`);
         }
     });
 
@@ -1902,6 +1916,8 @@ bot.on('message:text', async (ctx, next) => {
     bot.on('message:text', async (ctx, next) => {
         const tid = ticketDialog.get(ctx.from.id);
         if (!tid) return next();
+        // Админ в режиме рассылки — не перехватываем текст
+        if (isAdmin(ctx) && broadcastState.has(ctx.from.id)) return next();
 
         // Создание нового обращения: tid === 'new' → первое сообщение создаёт тикет
         if (tid === 'new') {

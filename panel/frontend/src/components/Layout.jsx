@@ -5,6 +5,7 @@ import { HardDrive,
     LayoutDashboard, Users, BarChart3, ScrollText, Settings, QrCode, Globe,
     Globe2, KeyRound, Bot, RefreshCw, Code2, Moon, Sun, LogOut, Menu, X, Activity, Shield,
     Webhook, ClipboardList, Stethoscope, SlidersHorizontal, FileText, Gift, Server,
+    MessageSquare,
 } from 'lucide-react';
 import { useAuthStore, useThemeStore, useLangStore } from '../store';
 import { get, post, put } from '../api';

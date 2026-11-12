@@ -53,8 +53,9 @@ export default function Tickets() {
             }
         }, 30000);
         return () => clearInterval(tm);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [openId]);
+        // load() читает актуальные search/statusFilter из замыкания рендера —
+        // пересоздаём интервал при их смене (см. deps ниже)
+    }, [openId, search, statusFilter]);
 
     const send = async () => {
         if (!reply.trim() || !dialog) return;
