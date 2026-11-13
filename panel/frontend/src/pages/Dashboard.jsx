@@ -9,7 +9,7 @@ import {
     AlertTriangle, CheckCircle2, Lock, RefreshCw, Signal, Timer, Wallet,
 } from 'lucide-react';
 import { get, post } from '../api';
-import { toast, useLangStore } from '../store';
+import { toast, useAuthStore, useLangStore } from '../store';
 import { useT } from '../i18n';
 import { connectLive } from '../ws';
 import {
@@ -47,6 +47,7 @@ function Kpi({ label, value, sub, spark, color }) {
 export default function Dashboard() {
     const t = useT();
     const lang = useLangStore((s) => s.lang);
+    const accessToken = useAuthStore((st) => st.accessToken);
 
     // --- Данные ---
     const [dash, setDash] = useState(null);        // /stats/dashboard
@@ -239,7 +240,8 @@ export default function Dashboard() {
         bad: { border: 'border-red-500/50 bg-red-500/5', dot: 'bg-red-500', text: 'text-red-600 dark:text-red-400' },
     }[level];
 
-    // Платежи к подтверждению: свежие (<24 ч) — яркие сверху, старше суток — приглушённые внизу
+    // Платежи к подтверждению: с чеком — яркие сверху (превью чека),
+    // без чека — приглушённые ниже с таймером до автоотмены (24 ч после «Я оплатил»)
     const STALE_HOURS = 24;
     const nowMs = Date.now();
     const parseTs = (s) => {
@@ -259,10 +261,25 @@ export default function Dashboard() {
         .map((p) => {
             const ts = parseTs(p.created_at);
             const ageH = ts != null ? (nowMs - ts) / 3.6e6 : null;
-            return { ...p, stale: ageH != null && ageH >= STALE_HOURS, ageH };
+            const isManual = p.provider === 'manual';
+            const markedMs = parseTs(p.paid_marked_at);
+            // Таймер автоотмены: только у ручных платежей без чека после «Я оплатил»
+            const leftH = (isManual && !p.receipt_file_id && markedMs != null)
+                ? STALE_HOURS - (nowMs - markedMs) / 3.6e6
+                : null;
+            return {
+                ...p,
+                stale: ageH != null && ageH >= STALE_HOURS,
+                ageH,
+                isManual,
+                hasReceipt: !!p.receipt_file_id,
+                receiptIsPhoto: p.receipt_media_type !== 'document',
+                leftH,
+            };
         })
         .sort((a, b) => {
-            if (a.stale !== b.stale) return a.stale ? 1 : -1;
+            if (a.hasReceipt !== b.hasReceipt) return a.hasReceipt ? -1 : 1; // с чеком — сверху
+            if (a.leftH != null && b.leftH != null) return a.leftH - b.leftH; // вот-вот отменится — первым
             if (a.ageH == null || b.ageH == null) return (a.ageH == null ? 1 : 0) - (b.ageH == null ? 1 : 0);
             return a.stale ? b.ageH - a.ageH : a.ageH - b.ageH;
         });
@@ -288,10 +305,12 @@ export default function Dashboard() {
         }
     };
 
-    const approvePayment = async (id) => {
+    const approvePayment = async (p) => {
+        // Ручной платёж без чека подтверждаем осознанно — клиент мог ещё не прислать оплату
+        if (p.isManual && !p.hasReceipt && !window.confirm(t('dashboard.confirmNoReceipt'))) return;
         try {
-            await post(`/payments/${id}/confirm`);
-            toast.success(t('dashboard.approved', { id }));
+            await post(`/payments/${p.id}/confirm`);
+            toast.success(t('dashboard.approved', { id: p.id }));
             loadPayments();
         } catch (e) {
             toast.error(e.message);
@@ -640,25 +659,45 @@ export default function Dashboard() {
                         )}
                     </Card>
 
-                    {/* Платежи к подтверждению */}
+                    {/* Платежи к подтверждению: с чеком — сверху с превью, без чека — приглушённо */}
                     <Card title={t('dashboard.pendingTitle')}>
                         {pending.length === 0 ? (
                             <p className="text-sm text-slate-500 py-2 text-center">{t('dashboard.activeEmpty')}</p>
                         ) : (
                             <div className="space-y-2.5">
                                 {pending.map((p) => (
-                                    <div key={p.id} className={`flex items-center gap-2 text-sm rounded-lg px-1 ${p.stale ? 'opacity-50' : 'bg-emerald-50/60 dark:bg-emerald-500/5'}`}>
-                                        <Wallet size={15} className={`shrink-0 ${p.stale ? 'text-slate-400' : 'text-emerald-500'}`} />
+                                    <div key={p.id} className={`flex items-center gap-2 text-sm rounded-lg px-1 ${p.hasReceipt ? 'bg-emerald-50/60 dark:bg-emerald-500/5' : 'opacity-60'}`}>
+                                        {/* Превью чека: фото картинкой, PDF кнопкой */}
+                                        {p.hasReceipt ? (
+                                            p.receiptIsPhoto ? (
+                                                <a href={`/api/payments/${p.id}/receipt?token=${accessToken}`} target="_blank" rel="noreferrer" className="shrink-0">
+                                                    <img src={`/api/payments/${p.id}/receipt?token=${accessToken}`}
+                                                         alt="" loading="lazy"
+                                                         className="h-10 w-10 rounded-md object-cover border border-slate-200 dark:border-slate-700" />
+                                                </a>
+                                            ) : (
+                                                <a href={`/api/payments/${p.id}/receipt?token=${accessToken}`} target="_blank" rel="noreferrer"
+                                                   className="shrink-0 h-10 w-10 rounded-md bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-lg"
+                                                   title={t('dashboard.receiptPdf')}>📄</a>
+                                            )
+                                        ) : (
+                                            <Wallet size={15} className={`shrink-0 ${p.isManual ? 'text-slate-400' : 'text-amber-500'}`} />
+                                        )}
                                         <div className="min-w-0 flex-1">
                                             <div className="font-medium truncate flex items-center gap-1.5">
                                                 <span className="truncate">{p.username || t('dashboard.topupFallback')}</span>
-                                                {!p.stale && <span className="shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400">{t('dashboard.pendingFresh')}</span>}
+                                                {p.hasReceipt
+                                                    ? <span className="shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400">{t('dashboard.pendingFresh')}</span>
+                                                    : (p.isManual && <span className="shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400">{t('dashboard.noReceipt')}</span>)}
                                                 {p.stale && <span className="shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500 dark:bg-slate-700/60 dark:text-slate-400">{t('dashboard.pendingStale')}</span>}
                                             </div>
-                                            <div className="text-xs text-slate-400">#{p.id}{p.ageH != null && <> · {ageText(p.ageH, t)}</>}</div>
+                                            <div className="text-xs text-slate-400">
+                                                #{p.id}{p.ageH != null && <> · {ageText(p.ageH, t)}</>}
+                                                {!p.hasReceipt && p.leftH != null && p.leftH > 0 && <> · {t('dashboard.hoursLeft', { n: Math.max(1, Math.ceil(p.leftH)) })}</>}
+                                            </div>
                                         </div>
                                         <span className="font-bold shrink-0">{p.amount}</span>
-                                        <button className="btn-ghost !min-h-0 !px-2 !py-1 text-xs text-emerald-600" onClick={() => approvePayment(p.id)}>
+                                        <button className="btn-ghost !min-h-0 !px-2 !py-1 text-xs text-emerald-600" onClick={() => approvePayment(p)}>
                                             {t('dashboard.approve')}
                                         </button>
                                         <button className="btn-ghost !min-h-0 !px-2 !py-1 text-xs text-red-500" onClick={() => cancelPayment(p.id)}>

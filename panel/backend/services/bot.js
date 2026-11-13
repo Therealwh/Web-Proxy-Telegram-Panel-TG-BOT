@@ -35,6 +35,13 @@ const refPending = new Map();
 const broadcastState = new Map();
 // Ожидание чека: tgId -> paymentId
 const receiptState = new Map();
+// Ответ админа клиенту по платежу: tgId админа -> paymentId (следующий текст уйдёт клиенту)
+const payMsgState = new Map();
+// Подтверждение платежа БЕЗ чека: tgId админа -> paymentId (второе нажатие подтверждает)
+const payConfirmWarn = new Map();
+
+/** Через сколько «подтвердить без чека» сбрасывается (защита от случайного двойного нажатия). */
+const PAY_CONFIRM_WARN_TTL_MS = 2 * 60 * 1000;
 
 // Ожидание ввода промокода: tgId -> timestamp запроса (TTL 10 минут)
 const promoInput = new Map();
@@ -283,7 +290,12 @@ function adminStatsText() {
 
 function adminKeyboard() {
     const kb = new InlineKeyboard();
-    kb.text('👥 Клиенты', 'admin:clients').text('💰 Платежи', 'admin:payments').row();
+    kb.text('👥 Клиенты', 'admin:clients').row();
+    // Ручные платежи, ждущие решения (показываем счётчик, пока они есть)
+    const pendingPays = db.prepare(
+        "SELECT COUNT(*) AS c FROM payments WHERE status = 'pending' AND provider = 'manual'"
+    ).get().c;
+    kb.text(pendingPays ? `💳 Оплаты (${pendingPays})` : '💳 Оплаты', 'admin:payments').row();
     const openTickets = db.prepare("SELECT COUNT(*) AS c FROM tickets WHERE status = 'open'").get().c;
     kb.text(openTickets ? `🎫 Тикеты (${openTickets} ждут)` : '🎫 Тикеты', 'admin:tickets').row();
     kb.text('📢 Рассылка', 'admin:broadcast').row();
@@ -905,45 +917,99 @@ function restoreReceiptDeletions() {
     }
 }
 
-/** Приём чека: фото/PDF пересылаются админу. */
+/** Назначение платежа по записи БД: покупка / продление / пополнение. */
+function paymentPurpose(p) {
+    if (p.tariff_id && p.client_id) return '♻️ Продление прокси';
+    if (p.tariff_id) return '📦 Покупка тарифа';
+    return '💰 Пополнение баланса';
+}
+
+/**
+ * Приём чека: вложение сохраняется на платеже (file_id) и сразу уходит
+ * админу — фото картинкой, PDF документом. Уведомление админу приходит
+ * ТОЛЬКО здесь: «Я оплатил» без чека админа не будит.
+ */
 async function handleReceipt(ctx) {
-    const paymentId = receiptState.get(ctx.from.id);
-    if (!paymentId) return;
+    let paymentId = receiptState.get(ctx.from.id);
+    if (!paymentId) {
+        // Fallback: состояние «Я оплатил» живёт в памяти и теряется при
+        // рестарте панели. Чтобы чек не потерялся молча (и не привёл к
+        // автоотмене через 24 ч), прикрепляем его к последнему ручному
+        // платежу, где клиент недавно жал «Я оплатил».
+        const fb = db.prepare(
+            `SELECT id FROM payments
+             WHERE telegram_id = ? AND status = 'pending' AND provider = 'manual'
+               AND paid_marked_at IS NOT NULL
+               AND paid_marked_at >= datetime('now', '-3 days')
+             ORDER BY paid_marked_at DESC LIMIT 1`
+        ).get(ctx.from.id);
+        if (!fb) return; // чек без заказа — как раньше, молча игнорируем
+        paymentId = fb.id;
+    }
     receiptState.delete(ctx.from.id);
+
+    const payment = db.prepare('SELECT * FROM payments WHERE id = ?').get(paymentId);
+    if (!payment || payment.status !== 'pending') {
+        return ctx.reply(`ℹ️ Заказ #${paymentId} уже обработан — чек не нужен.`, { parse_mode: 'HTML' });
+    }
+
+    // Достаём вложение: фото (лучшее качество) или документ
+    let mediaType = null, fileId = null, fileName = null;
+    if (ctx.message.photo) {
+        mediaType = 'photo';
+        fileId = ctx.message.photo[ctx.message.photo.length - 1].file_id;
+    } else if (ctx.message.document) {
+        mediaType = 'document';
+        fileId = ctx.message.document.file_id;
+        fileName = ctx.message.document.file_name || null;
+    }
+    if (!mediaType || !fileId) return;
+
+    // Атомарно сохраняем чек на платеже: повторная присылка не перезапишет
+    // уже обработанный заказ (гонка с подтверждением/отменой админом)
+    const saved = db.prepare(
+        `UPDATE payments SET receipt_media_type = ?, receipt_file_id = ?, receipt_file_name = ?,
+                receipt_sent_at = datetime('now')
+         WHERE id = ? AND status = 'pending'`
+    ).run(mediaType, fileId, fileName, paymentId);
+    if (saved.changes === 0) {
+        return ctx.reply(`ℹ️ Заказ #${paymentId} уже обработан — чек не нужен.`, { parse_mode: 'HTML' });
+    }
 
     const settings = getAll();
     const admin = Number(settings.tg_admin_chat_id) || null;
     const from = ctx.from;
-    const caption =
-        `🧾 <b>Чек по заказу #${paymentId}</b>\n` +
-        `👤 От: ${from.username ? '@' + from.username : from.first_name} (ID ${from.id})\n\n` +
-        `⚠️ Проверьте оплату и подтвердите: /admin → 💰 Платежи`;
 
     try {
+        const fresh = db.prepare('SELECT * FROM payments WHERE id = ?').get(paymentId);
+        const kb = new InlineKeyboard()
+            .text('✅ Подтвердить оплату', `admin:pconfirm:${paymentId}`)
+            .text('❌ Отклонить', `admin:pcancel:${paymentId}`);
+        const caption =
+            `🧾 <b>Чек по заказу #${paymentId}</b>\n` +
+            `${paymentPurpose(fresh)} — <b>${fresh.amount} ${currencySign(fresh.currency)}</b>\n` +
+            `👤 От: ${from.username ? '@' + escapeHtml(from.username) : escapeHtml(from.first_name || '')} (ID ${from.id})\n\n` +
+            `⚠️ Проверьте оплату и подтвердите или отклоните.`;
+
+        /* Чек содержит реквизиты плательщика: сутки в чате админа
+         * достаточно для проверки, дольше — лишняя выдержка ПДн. */
+        const RECEIPT_TTL = 24 * 3600;
+        const notifier = require('./notifier');
+        let sent = null;
         if (admin && bot) {
-            /* Чек содержит реквизиты плательщика: сутки в чате админа
-             * достаточно для проверки, дольше — лишняя выдержка ПДн. */
-            const RECEIPT_TTL = 24 * 3600;
-            let sent = null;
-            if (ctx.message.photo) {
-                const best = ctx.message.photo[ctx.message.photo.length - 1].file_id;
-                sent = await bot.api.sendPhoto(admin, best, { caption, parse_mode: 'HTML' });
-            } else if (ctx.message.document) {
-                sent = await bot.api.sendDocument(admin, ctx.message.document.file_id, { caption, parse_mode: 'HTML' });
-            }
-            if (sent) {
-                scheduleReceiptDelete(sent.chat.id, sent.message_id, RECEIPT_TTL);
-                await ctx.reply(
-                    `✅ <b>Чек получен!</b> Администратор проверит оплату — доступ придёт в этот чат.\nЗаказ #${paymentId}\n\n` +
-                    `<i>Чек удалится из чата администратора через сутки.</i>`,
-                    { parse_mode: 'HTML' }
-                );
-            } else {
-                await ctx.reply(`✅ <b>Чек получен!</b> Администратор проверит оплату — доступ придёт в этот чат.\nЗаказ #${paymentId}`, { parse_mode: 'HTML' });
-            }
-        } else {
-            await ctx.reply(`✅ <b>Чек получен!</b> Администратор проверит оплату — доступ придёт в этот чат.\nЗаказ #${paymentId}`, { parse_mode: 'HTML' });
+            sent = mediaType === 'photo'
+                ? await notifier.notifyAdminPhoto(settings, fileId, caption, { parse_mode: 'HTML', reply_markup: kb })
+                : await notifier.notifyAdminDocument(settings, fileId, caption, { parse_mode: 'HTML', reply_markup: kb });
         }
+        if (sent) {
+            scheduleReceiptDelete(sent.chat.id, sent.message_id, RECEIPT_TTL);
+        }
+        const adminLine = sent ? '\n<i>Чек удалится из чата администратора через сутки.</i>' : '';
+        await ctx.reply(
+            `✅ <b>Чек получен!</b> Администратор проверит оплату — доступ придёт в этот чат.\nЗаказ #${paymentId}${adminLine}`,
+            { parse_mode: 'HTML' }
+        );
+        logger.info('Чек получен и отправлен админу', { paymentId, mediaType, admin: !!sent });
     } catch (e) {
         logger.error('Не удалось переслать чек админу', { error: e.message, paymentId });
         await ctx.reply('⚠️ Не удалось передать чек. Отправьте его в поддержку ' + SUPPORT_USERNAME);
@@ -1792,12 +1858,29 @@ bot.on('message:text', async (ctx, next) => {
             payment ? `${payment.amount} ${currencySign(payment.currency)}` : null);
     });
 
-    // «Я оплатил» → просим чек
+    // «Я оплатил» → просим чек. Без чека админ ничего не получает:
+    // уведомление уйдёт только вместе с присланным скрином/PDF.
     bot.callbackQuery(/^paid:(\d+)$/, async (ctx) => {
         const paymentId = Number(ctx.match[1]);
+        // Отметка «Я оплатил» = старт 24-часового срока на чек (потом автоотмена).
+        // Только свой ручной платёж: у шлюзов (CryptoBot/ЮKassa/Stars) подтверждение
+        // автоматическое, чек не нужен (provider IS NULL — легаси-ручные).
+        const marked = db.prepare(
+            `UPDATE payments SET paid_marked_at = datetime('now')
+             WHERE id = ? AND status = 'pending' AND telegram_id = ?
+               AND (provider = 'manual' OR provider IS NULL)`
+        ).run(paymentId, ctx.from.id);
+        if (marked.changes === 0) {
+            return ctx.answerCallbackQuery({ text: 'Заказ не найден или уже обработан', show_alert: true });
+        }
         receiptState.set(ctx.from.id, paymentId);
         await ctx.answerCallbackQuery();
-        await ctx.reply('🧾 Прикрепите <b>скриншот или PDF чека</b> одним сообщением — я перешлю его администратору.', { parse_mode: 'HTML' });
+        await ctx.reply(
+            '🧾 Прикрепите <b>скриншот или PDF чека</b> одним сообщением в этот чат — я перешлю его администратору.\n\n' +
+            '⚠️ <b>Без чека подтверждения оплаты НЕ БУДЕТ:</b> начисления и покупки не сработают, ' +
+            'а заказ автоматически отменится через 24 часа.',
+            { parse_mode: 'HTML' }
+        );
     });
 
     // ═══ 5. Тест 3 часа, мой доступ, поддержка ═══
@@ -1942,7 +2025,22 @@ bot.on('message:text', async (ctx, next) => {
 
         if (v.promo.kind === 'days') {
             const days = v.promo.days;
-            const r = await promoService.applyDaysPromo(v.promo, tgId).catch((e) => ({ ok: false, error: e.message }));
+            // Несколько прокси — выбор, к какому применить дни (один — сразу)
+            const targets = promoService.daysPromoTargets(v.promo, tgId);
+            if (targets.length > 1) {
+                const kb = new InlineKeyboard();
+                for (const t of targets) {
+                    const icon = t.status === 'active' ? '🟢' : '🔴';
+                    kb.text(`${icon} ${proxyTitle(t.username)} · до ${t.expires_at ? fmtMSK(t.expires_at, false) : '∞'}`,
+                        `promosel:${encodeURIComponent(v.promo.code)}:${t.id}`).row();
+                }
+                return ctx.reply(
+                    `🎁 <b>Промокод на +${days} дн.</b>\n\nВыберите прокси, к которому применить дни:`,
+                    { parse_mode: 'HTML', reply_markup: kb }
+                );
+            }
+            const targetId = targets.length === 1 ? targets[0].id : null;
+            const r = await promoService.applyDaysPromo(v.promo, tgId, targetId).catch((e) => ({ ok: false, error: e.message }));
             if (!r.ok) return ctx.reply(`❌ ${r.error}`, { parse_mode: 'HTML' });
             if (r.created) {
                 const links = clientLinks(db.prepare('SELECT * FROM clients WHERE username = ?').get(r.created));
@@ -1953,6 +2051,14 @@ bot.on('message:text', async (ctx, next) => {
                     parse_mode: 'HTML', disable_web_page_preview: true,
                     reply_markup: connectKeyboard(db.prepare('SELECT * FROM clients WHERE username = ?').get(r.created)),
                 });
+            }
+            // Выбранный прокси: «♻️ Прокси X продлён на +N дней — до ДАТА»
+            if (r.target) {
+                return ctx.reply(
+                    `🎁 <b>Промокод активирован!</b>\n\n` +
+                    `♻️ Прокси <b>${proxyTitle(r.target)}</b> продлён на <b>+${days} дн.</b> — до <b>${fmtMSK(r.until, false)}</b>`,
+                    { parse_mode: 'HTML' }
+                );
             }
             return ctx.reply(
                 `🎁 <b>Промокод активирован!</b>\n\n` +
@@ -2004,6 +2110,36 @@ bot.on('message:text', async (ctx, next) => {
         promoInput.delete(ctx.from.id);
         const code = String(ctx.message.text || '').trim();
         await applyPromoFlow(ctx, code);
+    });
+
+    // Выбор прокси для days-промокода (когда у пользователя несколько):
+    // дни добавляются только к выбранному, а не ко всем
+    bot.callbackQuery(/^promosel:([A-Za-z0-9_-]+):(\d+)$/, async (ctx) => {
+        const code = ctx.match[1].toUpperCase();
+        const clientId = Number(ctx.match[2]);
+        const tgId = ctx.from.id;
+        const promo = promoService.getPromo(code);
+        if (!promo || promo.kind !== 'days') {
+            return ctx.answerCallbackQuery({ text: 'Промокод не найден', show_alert: true });
+        }
+        // Повторная валидация: срок/лимиты могли истечь, пока выбирали
+        const v = promoService.validate(code, tgId);
+        if (!v.ok) return ctx.answerCallbackQuery({ text: v.error, show_alert: true });
+        const a = promoService.checkAudience(v.promo, tgId);
+        if (!a.ok) return ctx.answerCallbackQuery({ text: a.error, show_alert: true });
+        // Прокси должен принадлежать пользователю (в applyDaysPromo своя проверка
+        // на принадлежность набору аудитории — здесь отсекаем чужие id сразу)
+        const target = db.prepare('SELECT * FROM clients WHERE id = ? AND telegram_id = ?').get(clientId, tgId);
+        if (!target) return ctx.answerCallbackQuery({ text: 'Прокси не найден', show_alert: true });
+        await ctx.answerCallbackQuery('Применяю...');
+        const r = await promoService.applyDaysPromo(v.promo, tgId, clientId)
+            .catch((e) => ({ ok: false, error: e.message }));
+        if (!r.ok) return ctx.reply(`❌ ${r.error}`, { parse_mode: 'HTML' });
+        return ctx.reply(
+            `🎁 <b>Промокод активирован!</b>\n\n` +
+            `♻️ Прокси <b>${proxyTitle(target.username)}</b> продлён на <b>+${promo.days} дн.</b> — до <b>${fmtMSK(r.until, false)}</b>`,
+            { parse_mode: 'HTML' }
+        );
     });
 
     // ── Тикеты поддержки ──
@@ -2078,6 +2214,26 @@ bot.on('message:text', async (ctx, next) => {
         const added = ticketsService.addAdminMessage(id, ctx.message.text, true);
         if (added) await ctx.reply(`✅ Ответ по обращению #${id} отправлен клиенту.`);
         else await ctx.reply('⚠️ Обращение не найдено или уже закрыто.');
+    });
+
+    // Сообщение клиенту по платежу (кнопка «💬 Написать клиенту» в «💳 Оплаты»)
+    bot.on('message:text', async (ctx, next) => {
+        if (!isAdmin(ctx) || !payMsgState.has(ctx.from.id)) return next();
+        // Слэш-команды не уходим клиенту: ими отменяют/переключают режимы
+        if (String(ctx.message.text || '').startsWith('/')) return next();
+        const clientTgId = payMsgState.get(ctx.from.id);
+        payMsgState.delete(ctx.from.id);
+        try {
+            await bot.api.sendMessage(
+                clientTgId,
+                `💬 <b>Сообщение от поддержки:</b>\n${escapeHtml(ctx.message.text)}`,
+                { parse_mode: 'HTML' }
+            );
+            await ctx.reply('✅ Сообщение отправлено клиенту.');
+        } catch (e) {
+            logger.warn('Сообщение клиенту по платежу не отправлено', { error: e.message });
+            await ctx.reply('⚠️ Не удалось отправить — клиент мог заблокировать бота.');
+        }
     });
 
     bot.on('message:text', async (ctx, next) => {
@@ -2295,24 +2451,218 @@ bot.on('message:text', async (ctx, next) => {
         await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb });
     });
 
+    // ── Админ: решения по ручным платежам («💳 Оплаты») ──
+    // Срок на чек до автоотмены — синхронно с scheduler.cancelNoReceiptPayments
+    const MANUAL_PAY_TTL_H = 24;
+
+    /** Ручные платежи, ждущие решения: с чеком сверху, без чека ниже. */
+    function manualPaymentsList() {
+        return db.prepare(
+            `SELECT p.*, t.name AS tariff_name,
+                    bu.username AS tg_username, bu.first_name AS tg_first_name
+             FROM payments p
+             LEFT JOIN tariffs t ON t.id = p.tariff_id
+             LEFT JOIN bot_users bu ON bu.telegram_id = p.telegram_id
+             WHERE p.status = 'pending' AND p.provider = 'manual'
+             ORDER BY (p.receipt_file_id IS NULL), p.created_at DESC
+             LIMIT 15`
+        ).all();
+    }
+
+    /** Как зовут клиента в списке/карточке. */
+    function payClientName(p) {
+        return p.tg_first_name || (p.tg_username ? '@' + p.tg_username : '') || `tg${p.telegram_id ?? '—'}`;
+    }
+
+    /** Часов до автоотмены платежа без чека (null — не применимо). */
+    function payHoursLeft(p, nowMs) {
+        if (p.receipt_file_id || !p.paid_marked_at) return null;
+        const s = String(p.paid_marked_at);
+        const t = new Date(s.includes('T') ? s : s.replace(' ', 'T') + 'Z').getTime();
+        if (Number.isNaN(t)) return null;
+        return MANUAL_PAY_TTL_H - (nowMs - t) / 3.6e6;
+    }
+
+    /** Экран списка ручных платежей (edit — правим сообщение, иначе — новое). */
+    async function showPayList(ctx, edit = true) {
+        const rows = manualPaymentsList();
+        const nowMs = Date.now();
+        let text = '💳 <b>Ручные платежи — ждут решения</b>\n\n';
+        if (rows.length === 0) {
+            text += 'Новых заказов нет — всё обработано ✅';
+        } else {
+            text += rows.map((p) => {
+                const badge = p.receipt_file_id ? '🧾 чек есть' : '⚠️ чек не отправлен';
+                const left = payHoursLeft(p, nowMs);
+                const ttl = left != null
+                    ? (left > 0 ? ` · ⏳ осталось ${Math.max(1, Math.ceil(left))}ч до отмены` : ' · отмена вот-вот')
+                    : '';
+                return `#${p.id} — <b>${p.amount} ${currencySign(p.currency)}</b> · ${escapeHtml(payClientName(p))}\n${paymentPurpose(p)} · ${badge}${ttl}`;
+            }).join('\n\n');
+            text += '\n\n<i>Платёж без чека отменится сам через 24 ч после «Я оплатил».</i>';
+        }
+        const kb = new InlineKeyboard();
+        for (const p of rows) {
+            kb.text(`${p.receipt_file_id ? '🧾' : '⚠️'} #${p.id} — ${p.amount} ${currencySign(p.currency)}`, `admin:pay:${p.id}`).row();
+        }
+        kb.text('⬅️ В админку', 'admin:back');
+        const extra = { parse_mode: 'HTML', reply_markup: kb };
+        if (edit) {
+            await ctx.editMessageText(text, extra).catch(async (e) => {
+                if (String(e.message || '').includes('message is not modified')) return;
+                await ctx.reply(text, extra).catch(() => {});
+            });
+        } else {
+            await ctx.reply(text, extra);
+        }
+    }
+
+    /** Карточка платежа из БД (со именем клиента и тарифа). */
+    function payCardRow(id) {
+        return db.prepare(
+            `SELECT p.*, t.name AS tariff_name,
+                    bu.username AS tg_username, bu.first_name AS tg_first_name
+             FROM payments p
+             LEFT JOIN tariffs t ON t.id = p.tariff_id
+             LEFT JOIN bot_users bu ON bu.telegram_id = p.telegram_id
+             WHERE p.id = ?`
+        ).get(id);
+    }
+
+    /** Текст карточки платежа. */
+    function payCardText(p) {
+        const nowMs = Date.now();
+        const left = payHoursLeft(p, nowMs);
+        const receiptLine = p.receipt_file_id
+            ? (p.receipt_media_type === 'photo' ? '🧾 Чек: фото' : `🧾 Чек: документ ${escapeHtml(p.receipt_file_name || '')}`)
+            : '⚠️ <b>Чек не отправлен</b>';
+        const ttlLine = left != null
+            ? `\n⏳ До автоотмены: ${left > 0 ? `${Math.max(1, Math.ceil(left))} ч` : 'отмена вот-вот'}`
+            : '';
+        // Строки SQLite («YYYY-MM-DD HH:MM:SS») — UTC: без 'Z' они парсятся
+        // как локальное время и уезжают на часовой пояс сервера
+        const dbDate = (s) => (typeof s === 'string' && !s.includes('T') ? s.replace(' ', 'T') + 'Z' : s);
+        return (
+            `💳 <b>Заказ #${p.id}</b> — <b>${p.amount} ${currencySign(p.currency)}</b>\n` +
+            `${paymentPurpose(p)}${p.tariff_name ? ` «${escapeHtml(p.tariff_name)}»` : ''}\n` +
+            `👤 ${escapeHtml(payClientName(p))}${p.tg_username ? ` (@${escapeHtml(p.tg_username)})` : ''} · tg${p.telegram_id ?? '—'}\n` +
+            `🗓 Создан: ${p.created_at ? fmtMSK(dbDate(p.created_at), false) : '—'}\n` +
+            (p.paid_marked_at ? `✅ «Я оплатил»: ${fmtMSK(dbDate(p.paid_marked_at), false)}\n` : '') +
+            `${receiptLine}${ttlLine}`
+        );
+    }
+
     bot.callbackQuery('admin:payments', async (ctx) => {
         if (!(await adminGuard(ctx))) return;
         await ctx.answerCallbackQuery();
-        const pending = db.prepare(
-            `SELECT p.id, p.amount, p.currency, p.telegram_id, t.name AS tariff
-             FROM payments p LEFT JOIN tariffs t ON t.id = p.tariff_id
-             WHERE p.status = 'pending' ORDER BY p.created_at DESC LIMIT 10`
-        ).all();
-        if (pending.length === 0) {
-            const kb = new InlineKeyboard().text('⬅️ Назад', 'admin:stats');
-            return ctx.editMessageText('✅ Все платежи подтверждены.', { reply_markup: kb });
+        await showPayList(ctx, true);
+    });
+
+    // Карточка платежа: чек, сообщение клиенту, подтверждение/отмена
+    bot.callbackQuery(/^admin:pay:(\d+)$/, async (ctx) => {
+        if (!(await adminGuard(ctx))) return;
+        const p = payCardRow(Number(ctx.match[1]));
+        if (!p || p.status !== 'pending') {
+            return ctx.answerCallbackQuery({ text: 'Платёж уже обработан', show_alert: true });
         }
+        await ctx.answerCallbackQuery();
         const kb = new InlineKeyboard();
-        for (const p of pending) {
-            kb.text(`✅ #${p.id} — ${p.amount} ${currencySign(p.currency)}${p.telegram_id ? ` (TG ${p.telegram_id})` : ''}`, `confirm:${p.id}`).row();
+        if (p.receipt_file_id) kb.text('📄 Показать чек', `admin:preceipt:${p.id}`).row();
+        kb.text('💬 Написать клиенту', `admin:pmsg:${p.id}`).row()
+            .text('✅ Подтвердить оплату', `admin:pconfirm:${p.id}`).row()
+            .text('❌ Отменить платёж', `admin:pcancel:${p.id}`).row()
+            .text('⬅️ К списку', 'admin:payments');
+        await ctx.editMessageText(payCardText(p), { parse_mode: 'HTML', reply_markup: kb }).catch(async (e) => {
+            if (String(e.message || '').includes('message is not modified')) return;
+            await ctx.reply(payCardText(p), { parse_mode: 'HTML', reply_markup: kb }).catch(() => {});
+        });
+    });
+
+    // Показать чек: фото картинкой, PDF документом (file_id — без аплоада)
+    bot.callbackQuery(/^admin:preceipt:(\d+)$/, async (ctx) => {
+        if (!(await adminGuard(ctx))) return;
+        const p = db.prepare('SELECT id, receipt_media_type, receipt_file_id, receipt_file_name FROM payments WHERE id = ?')
+            .get(Number(ctx.match[1]));
+        if (!p || !p.receipt_file_id) return ctx.answerCallbackQuery({ text: 'Чека нет', show_alert: true });
+        await ctx.answerCallbackQuery('Отправляю чек...');
+        const settings = getAll();
+        const notifier = require('./notifier');
+        const caption = `🧾 Чек по заказу #${p.id}`;
+        const sent = p.receipt_media_type === 'photo'
+            ? await notifier.notifyAdminPhoto(settings, p.receipt_file_id, caption)
+            : await notifier.notifyAdminDocument(settings, p.receipt_file_id, caption);
+        if (!sent) {
+            await ctx.reply('⚠️ Не удалось отправить чек — проверьте токен бота и Chat ID админа.').catch(() => {});
+        } else {
+            // Копия чека в чате админа — с тем же TTL по ПДн, что и первая
+            scheduleReceiptDelete(sent.chat.id, sent.message_id, 24 * 3600);
         }
-        kb.text('⬅️ Назад', 'admin:stats');
-        await ctx.editMessageText('💰 <b>Ожидают подтверждения</b>:', { parse_mode: 'HTML', reply_markup: kb });
+    });
+
+    // Подтвердить оплату: тот же completePayment, что и в панели
+    // (идемпотентность — атомарный claim по статусу внутри)
+    bot.callbackQuery(/^admin:pconfirm:(\d+)$/, async (ctx) => {
+        if (!(await adminGuard(ctx))) return;
+        const paymentId = Number(ctx.match[1]);
+        const p = db.prepare('SELECT id, status, receipt_file_id FROM payments WHERE id = ?').get(paymentId);
+        if (!p || p.status !== 'pending') return ctx.answerCallbackQuery('Уже обработан');
+        // Платёж без чека подтверждаем осознанно: первое нажатие —
+        // предупреждение, повторное в течение 2 минут — подтверждение
+        if (!p.receipt_file_id && payConfirmWarn.get(ctx.from.id) !== paymentId) {
+            payConfirmWarn.set(ctx.from.id, paymentId);
+            const timer = setTimeout(() => {
+                if (payConfirmWarn.get(ctx.from.id) === paymentId) payConfirmWarn.delete(ctx.from.id);
+            }, PAY_CONFIRM_WARN_TTL_MS);
+            if (timer.unref) timer.unref();
+            return ctx.answerCallbackQuery({
+                text: '⚠️ Чек не отправлен. Нажмите ещё раз, чтобы подтвердить без чека.',
+                show_alert: true,
+            });
+        }
+        payConfirmWarn.delete(ctx.from.id);
+        await ctx.answerCallbackQuery('Подтверждаю...');
+        try {
+            const paymentsRoute = require('../routes/payments');
+            await paymentsRoute.completePayment(paymentId);
+            logger.info('Платёж подтверждён из бота', { paymentId });
+            await showPayList(ctx, true); // возврат к списку — элемент исчез
+        } catch (e) {
+            logger.error('Ошибка подтверждения платежа из бота', { paymentId, error: e.message });
+            await ctx.reply(`⚠️ Платёж #${paymentId}: ${e.message}`).catch(() => {});
+        }
+    });
+
+    // Отменить платёж: клиенту — «отклонён», админу — список без элемента
+    bot.callbackQuery(/^admin:pcancel:(\d+)$/, async (ctx) => {
+        if (!(await adminGuard(ctx))) return;
+        const paymentId = Number(ctx.match[1]);
+        const p = db.prepare('SELECT * FROM payments WHERE id = ?').get(paymentId);
+        if (!p || p.status !== 'pending') return ctx.answerCallbackQuery('Уже обработан');
+        // Атомарный claim: двойное нажатие / гонка с панелью не задвоят отмену
+        const claim = db.prepare("UPDATE payments SET status = 'cancelled' WHERE id = ? AND status = 'pending'").run(paymentId);
+        if (claim.changes === 0) return ctx.answerCallbackQuery('Уже обработан');
+        await ctx.answerCallbackQuery('❌ Отменено');
+        if (p.telegram_id) {
+            await bot.api.sendMessage(
+                p.telegram_id,
+                `❌ <b>Платёж #${paymentId} отклонён</b>\n\nЕсли вы оплачивали — свяжитесь с поддержкой: ${SUPPORT_USERNAME}`,
+                { parse_mode: 'HTML' }
+            ).catch((e) => logger.warn('Клиенту об отклонении не отправлено', { paymentId, error: e.message }));
+        }
+        logger.info('Платёж отклонён из бота', { paymentId });
+        await showPayList(ctx, true);
+    });
+
+    // «Написать клиенту»: следующий текст админа уходит клиенту в бот
+    bot.callbackQuery(/^admin:pmsg:(\d+)$/, async (ctx) => {
+        if (!(await adminGuard(ctx))) return;
+        const p = db.prepare('SELECT telegram_id FROM payments WHERE id = ?').get(Number(ctx.match[1]));
+        if (!p || !p.telegram_id) return ctx.answerCallbackQuery({ text: 'У платежа нет клиента', show_alert: true });
+        await ctx.answerCallbackQuery('Напишите сообщение — уйдёт клиенту');
+        // Взаимоисключающие режимы: без этого текст «рассылки» ушёл бы одному
+        // клиенту, а следующий — всем (или наоборот)
+        broadcastState.delete(ctx.from.id);
+        payMsgState.set(ctx.from.id, p.telegram_id);
     });
 
     bot.callbackQuery(/^confirm:(\d+)$/, async (ctx) => {
@@ -2335,6 +2685,8 @@ bot.on('message:text', async (ctx, next) => {
     bot.callbackQuery('admin:broadcast', async (ctx) => {
         if (!(await adminGuard(ctx))) return;
         await ctx.answerCallbackQuery();
+        // Взаимоисключающие режимы (см. admin:pmsg)
+        payMsgState.delete(ctx.from.id);
         broadcastState.set(ctx.from.id, true);
         await ctx.editMessageText(
             '📢 <b>Рассылка по всем клиентам</b>\n\nПришлите текст следующим сообщением (HTML разрешён).\nОтмена: /cancel',
@@ -2344,6 +2696,7 @@ bot.on('message:text', async (ctx, next) => {
 
     bot.command('cancel', async (ctx) => {
         if (broadcastState.delete(ctx.from.id)) await ctx.reply('❌ Рассылка отменена');
+        if (payMsgState.delete(ctx.from.id)) await ctx.reply('❌ Сообщение клиенту отменено');
     });
 
     // Текст от админа в режиме рассылки (иначе — передаём дальше по цепочке)
@@ -2436,4 +2789,4 @@ const isRunning = () => bot !== null;
 /** Telegram Bot API для фоновых задач планировщика (null — бот выключен). */
 const getApi = () => (bot ? bot.api : null);
 
-module.exports = { start, stop, isRunning, getApi, tariffsKeyboard, getBotSettings, issueAccessFor, notifyDeposit, sendMessageTo, broadcastNewLinks, sendFileTo, totalBalance };
+module.exports = { start, stop, isRunning, getApi, tariffsKeyboard, getBotSettings, issueAccessFor, notifyDeposit, sendMessageTo, broadcastNewLinks, sendFileTo, totalBalance, SUPPORT_USERNAME };

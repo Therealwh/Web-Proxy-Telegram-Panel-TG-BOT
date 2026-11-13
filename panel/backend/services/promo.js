@@ -1,7 +1,8 @@
 /**
- * @fileoverview Промокоды v2: два типа — «дни» (мгновенный подарок)
- * и «скидка %» (активируется на следующую покупку), аудитория
- * «новеньким/всем», защита «1 человек — 1 раз» через promo_uses.
+ * @fileoverview Промокоды v3: два типа — «дни» (мгновенный подарок)
+ * и «скидка %» (активируется на следующую покупку), аудитории
+ * «новеньким / стареньким / всем», защита «1 человек — 1 раз» через
+ * promo_uses, выбор прокси при продлении (targetClientId).
  * @module services/promo
  */
 
@@ -46,6 +47,16 @@ function hasActiveProxy(telegramId) {
     ).get(telegramId);
 }
 
+/**
+ * Есть ли у пользователя КУПЛЕННЫЙ прокси (любого статуса).
+ * Тестовые (test<tgId>) не считаются — они бесплатны и не признак «старенького».
+ */
+function hasBoughtProxy(telegramId) {
+    return !!db.prepare(
+        "SELECT 1 FROM clients WHERE telegram_id = ? AND username NOT GLOB 'test[0-9]*' LIMIT 1"
+    ).get(telegramId);
+}
+
 /** Есть ли у пользователя успешные покупки (для аудитории «новеньким» на скидку). */
 function hasPayments(telegramId) {
     return !!db.prepare(
@@ -77,45 +88,107 @@ function validate(code, telegramId) {
 
 /**
  * Проверка правил аудитории.
- * kind='days':  audience 'new' — у пользователя НЕТ активного прокси; 'all' — есть хотя бы один активный.
- * kind='percent': audience 'new' — у пользователя нет успешных покупок; 'all' — без ограничений.
+ * kind='days':
+ *   'new' — у пользователя НЕТ активного прокси;
+ *   'all' — есть хотя бы один активный;
+ *   'old' — есть купленный прокси (активный или истёкший, тесты не считаются).
+ * kind='percent':
+ *   'new' — нет успешных покупок;
+ *   'all' — без ограничений;
+ *   'old' — есть хотя бы один купленный клиент в панели.
  */
 function checkAudience(promo, telegramId) {
     const isNew = promo.audience === 'new';
+    const isOld = promo.audience === 'old';
     if (promo.kind === 'days') {
         const has = hasActiveProxy(telegramId);
         if (isNew && has) return { ok: false, error: 'Этот промокод только для новых пользователей — у вас уже есть активный прокси' };
+        if (isOld) {
+            if (!hasBoughtProxy(telegramId)) {
+                return { ok: false, error: 'Этот промокод для «стареньких» — у кого уже есть купленный прокси' };
+            }
+            return { ok: true };
+        }
         if (!isNew && !has) return { ok: false, error: 'Нет активного прокси для продления — промокод для действующих пользователей' };
         return { ok: true };
     }
     const paid = hasPayments(telegramId);
     if (isNew && paid) return { ok: false, error: 'Этот промокод только для первой покупки' };
+    if (isOld && !hasBoughtProxy(telegramId)) {
+        return { ok: false, error: 'Этот промокод для «стареньких» — у кого уже есть купленный прокси' };
+    }
     return { ok: true };
 }
 
 /**
- * Применяет промокод-«дни»: new → создаёт прокси на N дней,
- * all → продлевает ВСЕ активные прокси пользователя на N дней.
- * Записывает использование. Вызывать после validate+checkAudience.
- * @returns {Promise<{ok, error?, created?: string, extended?: number, until?: string}>}
+ * Прокси-кандидаты для days-промокода (для экрана выбора в боте).
+ * 'new' → пусто (создаётся новый прокси);
+ * 'all' → активные прокси (как раньше продлевались все);
+ * 'old' → купленные прокси любого статуса (истёкшие продлятся и активируются).
+ * @returns {Array<{id, username, expires_at, status}>}
  */
-async function applyDaysPromo(promo, telegramId) {
+function daysPromoTargets(promo, telegramId) {
+    if (!promo || promo.kind !== 'days' || promo.audience === 'new') return [];
+    if (promo.audience === 'old') {
+        return db.prepare(
+            "SELECT id, username, expires_at, status FROM clients WHERE telegram_id = ? AND username NOT GLOB 'test[0-9]*' ORDER BY id"
+        ).all(telegramId);
+    }
+    return db.prepare(
+        "SELECT id, username, expires_at, status FROM clients WHERE telegram_id = ? AND status = 'active' ORDER BY id"
+    ).all(telegramId);
+}
+
+/**
+ * Применяет промокод-«дни»:
+ *   new → создаёт прокси на N дней;
+ *   all → продлевает ВСЕ активные прокси (или один — если задан targetClientId);
+ *   old → продлевает купленные прокси (активные и истёкшие; истёкший
+ *         продлевается и активируется; тестовые не трогаем).
+ * Записывает использование. Вызывать после validate+checkAudience.
+ * @param {object} promo - запись промокода
+ * @param {number} telegramId
+ * @param {number|null} [targetClientId] - продлить только этот прокси
+ *   (выбор в боте, когда у пользователя несколько). Должен принадлежать
+ *   пользователю и входить в набор аудитории — иначе отказ.
+ * @returns {Promise<{ok, error?, created?: string, extended?: number, until?: string, target?: string}>}
+ */
+async function applyDaysPromo(promo, telegramId, targetClientId = null) {
     const telemt = require('./telemtApi');
     const nodesService = require('./nodes');
     const days = Math.min(MAX_DAYS, Math.max(1, Number(promo.days) || 0));
     if (!days) return { ok: false, error: 'У промокода не задано количество дней' };
 
-    const proxies = db.prepare(
-        "SELECT * FROM clients WHERE telegram_id = ? AND status = 'active'"
-    ).all(telegramId);
-
     // Аудитория — дублируем здесь: прямой вызов мимо checkAudience не должен
     // ни создать прокси действующему, ни отказать новому без прокси
-    if (promo.audience === 'new' && proxies.length > 0) {
-        return { ok: false, error: 'Этот промокод только для новых пользователей' };
+    if (promo.audience === 'new') {
+        const active = db.prepare(
+            "SELECT COUNT(*) AS c FROM clients WHERE telegram_id = ? AND status = 'active'"
+        ).get(telegramId).c;
+        if (active > 0) return { ok: false, error: 'Этот промокод только для новых пользователей' };
+    }
+    const isOld = promo.audience === 'old';
+    const proxies = isOld
+        ? db.prepare(
+            "SELECT * FROM clients WHERE telegram_id = ? AND username NOT GLOB 'test[0-9]*' ORDER BY id"
+        ).all(telegramId)
+        : db.prepare(
+            "SELECT * FROM clients WHERE telegram_id = ? AND status = 'active' ORDER BY id"
+        ).all(telegramId);
+    if (isOld && proxies.length === 0) {
+        return { ok: false, error: 'Нет купленного прокси для продления' };
     }
     if (promo.audience === 'all' && proxies.length === 0) {
         return { ok: false, error: 'Нет активного прокси для продления' };
+    }
+
+    // Выбор конкретного прокси: только свой и только из набора аудитории
+    let targets = proxies;
+    if (targetClientId != null) {
+        targets = proxies.filter((p) => p.id === Number(targetClientId));
+        if (targets.length === 0) {
+            return { ok: false, error: 'Этот прокси нельзя продлить этим промокодом' };
+        }
     }
 
     // Резервируем использование ДО сетевых вызовов (TOCTOU: два параллельных
@@ -159,9 +232,10 @@ async function applyDaysPromo(promo, telegramId) {
             return { ok: true, created: username, until: expires };
         }
 
-        // Всем: продлеваем каждый активный прокси (на узле конкретного прокси)
+        // Продлеваем каждый целевой прокси (на узле конкретного прокси).
+        // Истёкшие (аудитория 'old') продлеваются и активируются заново.
         const untils = [];
-        for (const p of proxies) {
+        for (const p of targets) {
             const base = p.expires_at && new Date(p.expires_at) > new Date()
                 ? new Date(p.expires_at) : new Date();
             const newExpiry = new Date(base.getTime() + days * 86400000).toISOString();
@@ -169,8 +243,13 @@ async function applyDaysPromo(promo, telegramId) {
             db.prepare("UPDATE clients SET expires_at = ?, status = 'active' WHERE id = ?").run(newExpiry, p.id);
             untils.push(newExpiry);
         }
-        logger.info('Промокод: продлены прокси', { code: promo.code, count: proxies.length, days });
-        return { ok: true, extended: proxies.length, until: untils.sort().pop() };
+        logger.info('Промокод: продлены прокси', { code: promo.code, count: targets.length, days, audience: promo.audience });
+        return {
+            ok: true,
+            extended: targets.length,
+            until: untils.sort().pop(),
+            target: targets.length === 1 ? targets[0].username : undefined,
+        };
     } catch (e) {
         // Откат резерва: применение не состоялось
         rollbackUse(promo.code, telegramId);
@@ -236,6 +315,6 @@ function discountedPrice(price, promo) {
 
 module.exports = {
     generateCode, getPromo, validate, checkAudience,
-    applyDaysPromo, activatePercent, consumePercent, discountedPrice,
-    usesCount, usedByUser, hasActiveProxy,
+    daysPromoTargets, applyDaysPromo, activatePercent, consumePercent, discountedPrice,
+    usesCount, usedByUser, hasActiveProxy, hasBoughtProxy,
 };

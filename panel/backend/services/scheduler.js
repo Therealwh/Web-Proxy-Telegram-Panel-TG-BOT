@@ -433,6 +433,47 @@ function checkQuotaReset() {
 }
 
 
+/**
+ * Автоотмена ручных платежей без чека: клиент нажал «✅ Я оплатил»,
+ * но за 24 часа не прислал скрин/PDF — заказ отменяется, клиент получает
+ * одно уведомление. Админ спама не получает, «Платежи к подтверждению»
+ * панель не засоряют.
+ */
+function cancelNoReceiptPayments() {
+    const rows = db.prepare(
+        `SELECT * FROM payments
+         WHERE status = 'pending' AND provider = 'manual'
+           AND paid_marked_at IS NOT NULL AND receipt_file_id IS NULL
+           AND paid_marked_at <= datetime('now', '-24 hours')`
+    ).all();
+    for (const p of rows) {
+        // Атомарный claim: повторный прогон и гонка с решением админа не задвоят
+        const claim = db.prepare(
+            "UPDATE payments SET status = 'cancelled' WHERE id = ? AND status = 'pending'"
+        ).run(p.id);
+        if (claim.changes === 0) continue;
+        logger.info('Платёж отменён автоматически — чек не пришёл за 24 ч', { paymentId: p.id, telegramId: p.telegram_id });
+        eventLog.logEvent('cancelled', '⏰ Заказ отменён — чек не пришёл за 24 ч',
+            `#${p.id} · ${p.amount} ${p.currency} · tg${p.telegram_id ?? '—'}`, 'info', p.telegram_id);
+        // Клиенту — одно уведомление (после успешного claim повторов не будет)
+        if (p.telegram_id) {
+            try {
+                const bot = require('./bot');
+                const botSettings = bot.getBotSettings();
+                const token = botSettings.bot_token || getAll().tg_bot_token;
+                if (token) {
+                    notifier.sendMessage(token, p.telegram_id,
+                        '⏰ <b>Срок оплаты вышел</b> — чек не был отправлен за 24 часа, заказ отменён.\n\n' +
+                        'Создайте заказ заново и пришлите чек — доступ откроют после проверки.'
+                    ).catch(() => {});
+                }
+            } catch (e) {
+                logger.warn('Не удалось уведомить клиента об автоотмене', { paymentId: p.id, error: e.message });
+            }
+        }
+    }
+}
+
 /** Синхронизация лимитов из Telemt: заполняет пустые max_ips/quota_bytes
  *  (клиенты, купленные/продлённые до того, как панель начала их сохранять). */
 async function syncLimits() {
@@ -499,10 +540,12 @@ function start() {
     setInterval(() => faketls.check().catch(() => {}), 6 * 60 * 60 * 1000).unref();
     setTimeout(() => faketls.check().catch(() => {}), 5000).unref();
 
-    // Ежечасно: напоминания, диск, автопродление, дожим тестов, syncLimits
+    // Ежечасно: напоминания, диск, автопродление, дожим тестов, syncLimits,
+    // автоотмена платежей без чека (24 ч после «Я оплатил»)
     setInterval(() => {
         try { checkExpiring(); } catch (e) { logger.error(e); }
         try { checkDisk(); } catch (e) { logger.error(e); }
+        try { cancelNoReceiptPayments(); } catch (e) { logger.error(e); }
         syncLimits().catch((e) => logger.warn('syncLimits', { error: e.message }));
         autoRenew().catch((e) => logger.error('Ошибка автопродления', { error: e.message }));
         try { testFollowup(); } catch (e) { logger.error(e); }
@@ -517,6 +560,7 @@ function start() {
     // Первый прогон через 2 минуты после старта
     setTimeout(() => {
         try { checkExpiring(); } catch (e) { logger.error(e); }
+        try { cancelNoReceiptPayments(); } catch (e) { logger.error(e); }
         disableExpired().catch(() => {});
         cleanupTestClients().catch(() => {});
         try { checkQuotaReset(); } catch (e) { logger.error(e); }

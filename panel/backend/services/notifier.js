@@ -72,17 +72,109 @@ async function sendDocument(token, chatId, buffer, filename) {
 }
 
 /**
+ * Отправляет фото по file_id (без повторного аплоада — файл уже в Telegram).
+ * @param {string} token
+ * @param {number|string} chatId
+ * @param {string} fileId - file_id из Telegram
+ * @param {string} [caption]
+ * @param {object} [extra] - доп. поля (reply_markup и т.п.)
+ * @returns {object} отправленное сообщение (нужно для последующего удаления)
+ */
+async function sendPhotoByFileId(token, chatId, fileId, caption, extra = {}) {
+    const res = await fetch(`https://api.telegram.org/bot${token}/sendPhoto`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            chat_id: chatId, photo: fileId,
+            ...(caption ? { caption } : {}),
+            ...extra,
+        }),
+        signal: AbortSignal.timeout(15000),
+    });
+    if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(`Telegram API: ${body.description || res.status}`);
+    }
+    return (await res.json()).result;
+}
+
+/**
+ * Отправляет документ по file_id.
+ * @param {string} token
+ * @param {number|string} chatId
+ * @param {string} fileId - file_id из Telegram
+ * @param {string} [caption]
+ * @param {object} [extra] - доп. поля (reply_markup и т.п.)
+ * @returns {object} отправленное сообщение
+ */
+async function sendDocumentByFileId(token, chatId, fileId, caption, extra = {}) {
+    const res = await fetch(`https://api.telegram.org/bot${token}/sendDocument`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            chat_id: chatId, document: fileId,
+            ...(caption ? { caption } : {}),
+            ...extra,
+        }),
+        signal: AbortSignal.timeout(15000),
+    });
+    if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(`Telegram API: ${body.description || res.status}`);
+    }
+    return (await res.json()).result;
+}
+
+/**
  * Уведомление админу (настройки: tg_bot_token + tg_admin_chat_id).
  * Тихо игнорируется, если не настроено.
  * @param {object} settings - настройки панели
  * @param {string} text - текст сообщения
+ * @returns {object|null} отправленное сообщение (null — не удалось/не настроено)
  */
 async function notifyAdmin(settings, text) {
-    if (!settings.tg_bot_token || !settings.tg_admin_chat_id) return;
+    if (!settings.tg_bot_token || !settings.tg_admin_chat_id) return null;
     try {
-        await sendMessage(settings.tg_bot_token, settings.tg_admin_chat_id, text);
+        return await sendMessage(settings.tg_bot_token, settings.tg_admin_chat_id, text);
     } catch (err) {
         logger.warn('Не удалось отправить уведомление админу в TG', { error: err.message });
+        return null;
+    }
+}
+
+/**
+ * Фото админу по file_id (чек и т.п.). Тихо игнорируется, если не настроено.
+ * @param {object} settings - настройки панели
+ * @param {string} fileId - file_id из Telegram
+ * @param {string} [caption]
+ * @param {object} [extra] - доп. поля (reply_markup и т.п.)
+ * @returns {object|null} отправленное сообщение (null — не удалось/не настроено)
+ */
+async function notifyAdminPhoto(settings, fileId, caption, extra = {}) {
+    if (!settings.tg_bot_token || !settings.tg_admin_chat_id) return null;
+    try {
+        return await sendPhotoByFileId(settings.tg_bot_token, settings.tg_admin_chat_id, fileId, caption, extra);
+    } catch (err) {
+        logger.warn('Не удалось отправить фото админу в TG', { error: err.message });
+        return null;
+    }
+}
+
+/**
+ * Документ админу по file_id (PDF-чек и т.п.). Тихо игнорируется, если не настроено.
+ * @param {object} settings - настройки панели
+ * @param {string} fileId - file_id из Telegram
+ * @param {string} [caption]
+ * @param {object} [extra] - доп. поля (reply_markup и т.п.)
+ * @returns {object|null} отправленное сообщение (null — не удалось/не настроено)
+ */
+async function notifyAdminDocument(settings, fileId, caption, extra = {}) {
+    if (!settings.tg_bot_token || !settings.tg_admin_chat_id) return null;
+    try {
+        return await sendDocumentByFileId(settings.tg_bot_token, settings.tg_admin_chat_id, fileId, caption, extra);
+    } catch (err) {
+        logger.warn('Не удалось отправить документ админу в TG', { error: err.message });
+        return null;
     }
 }
 
@@ -109,4 +201,9 @@ async function sendQrToClient(client, maskDomain) {
     }
 }
 
-module.exports = { sendMessage, sendPhoto, sendDocument, notifyAdmin, sendQrToClient };
+module.exports = {
+    sendMessage, sendPhoto, sendDocument,
+    sendPhotoByFileId, sendDocumentByFileId,
+    notifyAdmin, notifyAdminPhoto, notifyAdminDocument,
+    sendQrToClient,
+};

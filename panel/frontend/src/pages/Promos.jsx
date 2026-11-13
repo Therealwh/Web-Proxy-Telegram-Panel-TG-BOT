@@ -56,7 +56,8 @@ export default function Promos() {
     const kindLabel = (p) => p.kind === 'days'
         ? t('promos.kindDays', { n: p.days })
         : (p.discount_percent ? t('promos.kindPercent', { n: p.discount_percent }) : t('promos.kindFixed', { n: p.discount_fixed }));
-    const audienceLabel = (p) => p.audience === 'new' ? t('promos.audNew') : t('promos.audAll');
+    const audienceLabel = (p) => p.audience === 'new' ? t('promos.audNew')
+        : p.audience === 'old' ? t('promos.audOld') : t('promos.audAll');
 
     return (
         <div className="space-y-4">
@@ -97,6 +98,7 @@ export default function Promos() {
                     <Field label={t('promos.fAudience')} hint={t('promos.fAudienceHint')}>
                         <select className="input" value={form.audience} onChange={(e) => upd({ audience: e.target.value })}>
                             <option value="new">{t('promos.audNew')}</option>
+                            <option value="old">{t('promos.audOld')}</option>
                             <option value="all">{t('promos.audAll')}</option>
                         </select>
                     </Field>

@@ -178,6 +178,100 @@ test('percent/new: только для первой покупки', () => {
     assert.strictEqual(promo.checkAudience(promo.getPromo('FIRST'), 100).ok, true, 'у 100 покупок нет');
 });
 
+// ═══ v3: аудитория «старенькие» (old) ═══
+
+test('days/old: доступен купившим, новичкам и «только тест» — отказ', async () => {
+    const db = makeDb(); seed(db);
+    const promo = inject(db);
+    // 300 — только бесплатный тестовый прокси (не «старенький»)
+    db.prepare("INSERT INTO clients (username, secret, telegram_id, status) VALUES ('test300', 's', 300, 'active')").run();
+    addDaysPromo(db, 'OLD5', 'old', 5);
+
+    assert.strictEqual(promo.checkAudience(promo.getPromo('OLD5'), 200).ok, true, '200 купил прокси');
+    assert.strictEqual(promo.checkAudience(promo.getPromo('OLD5'), 100).ok, false, '100 ничего не покупал');
+    assert.strictEqual(promo.checkAudience(promo.getPromo('OLD5'), 300).ok, false, 'тестовый прокси не считается');
+
+    const r = await promo.applyDaysPromo(promo.getPromo('OLD5'), 200);
+    assert.strictEqual(r.ok, true);
+    assert.strictEqual(r.extended, 1);
+    const denied = await promo.applyDaysPromo(promo.getPromo('OLD5'), 100).catch(() => ({ ok: false }));
+    assert.strictEqual(denied.ok, false, 'новичку применить нельзя');
+});
+
+test('days/old: истёкший прокси продлевается и активируется', async () => {
+    const db = makeDb(); seed(db);
+    const promo = inject(db);
+    db.prepare(
+        "INSERT INTO clients (username, secret, telegram_id, status, expires_at) VALUES ('tg200x2', 's2', 200, 'expired', '2020-01-01T00:00:00Z')"
+    ).run();
+    addDaysPromo(db, 'OLDEX', 'old', 10);
+
+    const targets = promo.daysPromoTargets(promo.getPromo('OLDEX'), 200);
+    assert.strictEqual(targets.length, 2, 'в наборе активный и истёкший');
+    const expired = targets.find((t) => t.username === 'tg200x2');
+    const r = await promo.applyDaysPromo(promo.getPromo('OLDEX'), 200, expired.id);
+    assert.strictEqual(r.ok, true);
+    assert.strictEqual(r.target, 'tg200x2', 'продлён именно выбранный');
+    const row = db.prepare('SELECT status, expires_at FROM clients WHERE username = ?').get('tg200x2');
+    assert.strictEqual(row.status, 'active', 'истёкший активирован');
+    const days = (new Date(row.expires_at) - new Date()) / 86400000;
+    assert.ok(days > 9.9 && days < 10.1, `срок ≈ 10 дней (${days})`);
+    // Второй (активный) прокси не тронут
+    const other = db.prepare('SELECT expires_at FROM clients WHERE username = ?').get('tg200x1');
+    assert.strictEqual(other.expires_at, null, 'невыбранный прокси не продлен');
+});
+
+test('days/old: чужой targetClientId отклоняется', async () => {
+    const db = makeDb(); seed(db);
+    const promo = inject(db);
+    addDaysPromo(db, 'OLDOWN', 'old', 5);
+    const r = await promo.applyDaysPromo(promo.getPromo('OLDOWN'), 200, 99999);
+    assert.strictEqual(r.ok, false, 'чужой/несуществующий прокси нельзя выбрать');
+});
+
+test('days/all: targetClientId продлевает только выбранный прокси', async () => {
+    const db = makeDb(); seed(db);
+    const promo = inject(db);
+    const second = db.prepare(
+        "INSERT INTO clients (username, secret, telegram_id, status) VALUES ('tg200x2', 's2', 200, 'active')"
+    ).run();
+    addDaysPromo(db, 'ALLCHOICE', 'all', 5);
+    const targets = promo.daysPromoTargets(promo.getPromo('ALLCHOICE'), 200);
+    assert.strictEqual(targets.length, 2);
+    const r = await promo.applyDaysPromo(promo.getPromo('ALLCHOICE'), 200, second.lastInsertRowid);
+    assert.strictEqual(r.ok, true);
+    assert.strictEqual(r.extended, 1, 'продлён один прокси');
+    assert.strictEqual(r.target, 'tg200x2');
+});
+
+test('daysPromoTargets: new → пусто, old → без тестов, all → только активные', () => {
+    const db = makeDb(); seed(db);
+    const promo = inject(db);
+    db.prepare("INSERT INTO clients (username, secret, telegram_id, status) VALUES ('test200', 'st', 200, 'active')").run();
+    db.prepare("INSERT INTO clients (username, secret, telegram_id, status, expires_at) VALUES ('tg200x9', 's9', 200, 'expired', '2020-01-01')").run();
+
+    assert.deepStrictEqual(promo.daysPromoTargets({ kind: 'days', audience: 'new' }, 200), []);
+    const oldTargets = promo.daysPromoTargets({ kind: 'days', audience: 'old' }, 200);
+    assert.ok(oldTargets.every((t) => !t.username.startsWith('test')), 'тесты исключены');
+    assert.ok(oldTargets.some((t) => t.status === 'expired'), 'истёкшие включены');
+    const allTargets = promo.daysPromoTargets({ kind: 'days', audience: 'all' }, 200);
+    assert.ok(allTargets.every((t) => t.status === 'active'), 'только активные');
+});
+
+test('percent/old: скидка тем, у кого есть купленный прокси', () => {
+    const db = makeDb(); seed(db);
+    const promo = inject(db);
+    db.prepare("INSERT INTO clients (username, secret, telegram_id, status) VALUES ('test300', 's', 300, 'active')").run();
+    addPercentPromo(db, 'OLD20', 'old', 20);
+
+    assert.strictEqual(promo.checkAudience(promo.getPromo('OLD20'), 200).ok, true, '200 купил');
+    assert.strictEqual(promo.checkAudience(promo.getPromo('OLD20'), 100).ok, false, '100 не покупал');
+    assert.strictEqual(promo.checkAudience(promo.getPromo('OLD20'), 300).ok, false, 'только тест — не считается');
+
+    const act = promo.activatePercent(promo.getPromo('OLD20'), 200);
+    assert.strictEqual(act.ok, true);
+});
+
 test('discountedPrice: процент и фиксированная, не ниже нуля', () => {
     const db = makeDb();
     const promo = inject(db);

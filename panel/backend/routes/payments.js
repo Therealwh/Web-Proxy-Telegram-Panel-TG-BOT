@@ -44,7 +44,10 @@ async function completePayment(paymentId) {
         "UPDATE payments SET status = 'success', paid_at = datetime('now') WHERE id = ?"
     ).run(paymentId);
     const backToPending = (e) => {
-        db.prepare("UPDATE payments SET status = 'pending', paid_at = NULL WHERE id = ? AND status = 'issuing'")
+        // paid_marked_at обновляем: платёж вернулся в очередь (деньги есть,
+        // доступа нет) — автоотмена «без чека за 24 ч» не должна сработать,
+        // пока админ/вебхук повторяют выдачу
+        db.prepare("UPDATE payments SET status = 'pending', paid_at = NULL, paid_marked_at = datetime('now') WHERE id = ? AND status = 'issuing'")
             .run(paymentId);
         logger.error('Выдача доступа не удалась — платёж возвращён в очередь', { paymentId, error: e.message });
     };
@@ -280,18 +283,61 @@ router.post('/:id/confirm', requireAuth, async (req, res, next) => {
     }
 });
 
-// --- Отмена платежа (покупатель не оплатил) ---
-router.post('/:id/cancel', requireAuth, (req, res, next) => {
+// --- Отмена платежа (покупатель не оплатил / отклонён админом) ---
+router.post('/:id/cancel', requireAuth, async (req, res, next) => {
     try {
+        const paymentId = Number(req.params.id);
+        const payment = db.prepare('SELECT * FROM payments WHERE id = ?').get(paymentId);
         const result = db.prepare(
             "UPDATE payments SET status = 'cancelled' WHERE id = ? AND status = 'pending'"
-        ).run(Number(req.params.id));
+        ).run(paymentId);
         if (result.changes === 0) throw httpError(404, 'Платёж не найден или уже обработан');
-        logger.info('Платёж отменён администратором', { paymentId: req.params.id });
+        logger.info('Платёж отменён администратором', { paymentId });
+        // Клиенту — уведомление об отклонении (платёж мог быть уже с чеком)
+        if (payment && payment.telegram_id) {
+            try {
+                const bot = require('../services/bot');
+                if (bot.isRunning()) {
+                    await bot.sendMessageTo(payment.telegram_id,
+                        `❌ <b>Платёж #${paymentId} отклонён</b>\n\nЕсли вы оплачивали — свяжитесь с поддержкой: ${bot.SUPPORT_USERNAME}`);
+                }
+            } catch (e) { logger.warn('Не удалось уведомить клиента об отклонении', { paymentId, error: e.message }); }
+        }
         res.json({ ok: true });
     } catch (err) {
         next(err);
     }
+});
+
+// --- Чек платежа (фото/PDF) — проксируется из Telegram (JWT; для <img> — ?token=) ---
+router.get('/:id/receipt', requireAuth, async (req, res, next) => {
+    try {
+        const payment = db.prepare(
+            'SELECT receipt_media_type, receipt_file_id, receipt_file_name FROM payments WHERE id = ?'
+        ).get(Number(req.params.id));
+        if (!payment || !payment.receipt_file_id) {
+            return res.status(404).json({ error: 'Чек не найден' });
+        }
+        const bot = require('../services/bot');
+        if (!bot.isRunning()) return res.status(503).json({ error: 'Бот не запущен' });
+        const token = bot.getBotSettings().bot_token;
+        if (!token) return res.status(503).json({ error: 'Бот не настроен' });
+
+        const file = await bot.getApi().getFile(payment.receipt_file_id);
+        const tgRes = await fetch(`https://api.telegram.org/file/bot${token}/${file.file_path}`);
+        if (!tgRes.ok) return res.status(502).json({ error: 'Не удалось скачать из Telegram' });
+
+        const isPdf = payment.receipt_media_type === 'document'
+            && (payment.receipt_file_name || '').toLowerCase().endsWith('.pdf');
+        if (isPdf) res.setHeader('Content-Type', 'application/pdf');
+        else if (payment.receipt_media_type === 'document') res.setHeader('Content-Type', 'application/octet-stream');
+        else res.setHeader('Content-Type', 'image/jpeg');
+        if (payment.receipt_file_name) {
+            res.setHeader('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(payment.receipt_file_name)}`);
+        }
+        res.setHeader('Cache-Control', 'private, max-age=3600');
+        res.send(Buffer.from(await tgRes.arrayBuffer()));
+    } catch (err) { next(err); }
 });
 
 // --- Промокоды ---
@@ -311,7 +357,7 @@ router.post('/promo', requireAuth, (req, res, next) => {
         const schema = z.object({
             code: z.string().regex(/^[A-Z0-9_-]{3,32}$/i, 'Код: 3-32 символа (латиница, цифры)').optional(),
             kind: z.enum(['percent', 'days']).default('percent'),
-            audience: z.enum(['all', 'new']).default('all'),
+            audience: z.enum(['all', 'new', 'old']).default('all'),
             discount_percent: z.number().min(1).max(99).nullable().optional(),
             discount_fixed: z.number().min(1).nullable().optional(),
             days: z.number().int().min(1).max(3650).nullable().optional(),
