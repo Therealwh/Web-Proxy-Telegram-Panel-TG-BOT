@@ -236,7 +236,19 @@ router.get('/active', async (req, res, next) => {    try {
 });
 
 // --- Полная сводка для дашборда ---
-router.get('/dashboard', async (req, res) => {
+router.get('/dashboard', async (req, res, next) => {
+    // Синхронные DB-агрегаты ниже могут бросить (например, SQLITE_CORRUPT —
+    // инцидент 14.11: порча страницы роняла процесс целиком, все клиенты
+    // получали 502). Оборачиваем: ошибка статистики — это 500, не падение.
+    try {
+        await dashboardPayload(req, res);
+    } catch (err) {
+        logger.error('Ошибка сборки дашборда', { error: err.message });
+        next(err);
+    }
+});
+
+async function dashboardPayload(req, res) {
     const [serverLoad, ssl] = await Promise.all([getServerLoad(), sslExpiry()]);
 
     let telemtStatus = { ok: false };
@@ -297,7 +309,7 @@ router.get('/dashboard', async (req, res) => {
         ssl,
         protocols,
     });
-});
+}
 
 // --- Трафик по дням (для графиков на отдельных страницах) ---
 router.get('/traffic', (req, res) => {

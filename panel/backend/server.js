@@ -51,6 +51,38 @@ const openapiSpec = require('./public-api/docs/openapi');
 const app = express();
 const server = http.createServer(app);
 
+// ---------------------------------------------------------------------------
+// Живучесть: необработанная ошибка в одном async-роуте не должна убивать
+// весь процесс (инцидент 14.11.2026: SQLITE_CORRUPT в агрегате дашборда
+// давал крэш-луп — клиенты получали 502 на всё, включая бот и оплату).
+// Политика: логируем и живём дальше; падающий запрос вернёт 500, остальные
+// работают. systemd-рестарт остаётся крайней мерой.
+// ---------------------------------------------------------------------------
+let uncaughtCount = 0;
+let uncaughtWindowStart = Date.now();
+process.on('unhandledRejection', (err) => {
+    logger.error('Необработанный rejection — процесс продолжает работу', {
+        error: err?.message, stack: err?.stack,
+    });
+});
+process.on('uncaughtException', (err) => {
+    // Flood-guard: если исключения сыпятся потоком (>50 за 5 минут) —
+    // выходим осознанно, systemd перезапустит чистый процесс
+    const now = Date.now();
+    if (now - uncaughtWindowStart > 5 * 60 * 1000) {
+        uncaughtWindowStart = now;
+        uncaughtCount = 0;
+    }
+    uncaughtCount += 1;
+    if (uncaughtCount > 50) {
+        logger.error('uncaughtException flood — выхожу для чистого рестарта', { error: err?.message });
+        process.exit(1);
+    }
+    logger.error('Необработанное исключение — процесс продолжает работу', {
+        error: err?.message, stack: err?.stack,
+    });
+});
+
 // Доверяем proxy-заголовкам от Nginx (реальный IP клиента)
 app.set('trust proxy', 'loopback');
 
