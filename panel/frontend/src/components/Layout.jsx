@@ -127,7 +127,18 @@ export default function Layout() {
         };
         tick();
         const timer = setInterval(tick, 120000);
-        return () => clearInterval(timer);
+        // Страницы, которые меняют платежи (продажи/аналитика), просят
+        // обновить бейдж сразу — не ждать следующего 2-минутного цикла
+        const onPaymentsUpdated = () => {
+            get('/payments').then((d) => setBadges((s) => ({
+                ...s, pending: (d.payments || []).filter((p) => p.status === 'pending').length,
+            }))).catch(() => {});
+        };
+        window.addEventListener('tggate:payments-updated', onPaymentsUpdated);
+        return () => {
+            clearInterval(timer);
+            window.removeEventListener('tggate:payments-updated', onPaymentsUpdated);
+        };
     }, []);
 
     // Уведомление о доступных обновлениях при входе в панель
