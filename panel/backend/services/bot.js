@@ -925,6 +925,33 @@ function paymentPurpose(p) {
 }
 
 /**
+ * Пересылает чек админу от имени бота продаж.
+ * ВАЖНО: file_id чека принадлежит боту продаж (клиент присылал чек ему) —
+ * другой бот (токен уведомлений tg_bot_token) такой file_id отправить не
+ * может: Telegram вернёт «wrong file identifier». Поэтому шлём токеном бота
+ * продаж через notifier.sendPhotoByFileId / sendDocumentByFileId.
+ * @param {object} settings - настройки панели (нужен tg_admin_chat_id)
+ * @param {{media_type: string, file_id: string}} receipt - чек из платежа
+ * @param {string} caption
+ * @param {object} [extra] - доп. поля (parse_mode, reply_markup и т.п.)
+ * @returns {object|null} отправленное сообщение (null — не удалось/не настроено)
+ */
+async function sendReceiptMedia(settings, receipt, caption, extra = {}) {
+    const admin = Number(settings.tg_admin_chat_id) || null;
+    const botToken = getBotSettings().bot_token || settings.tg_bot_token;
+    if (!admin || !botToken) return null;
+    const notifier = require('./notifier');
+    try {
+        return receipt.media_type === 'photo'
+            ? await notifier.sendPhotoByFileId(botToken, admin, receipt.file_id, caption, extra)
+            : await notifier.sendDocumentByFileId(botToken, admin, receipt.file_id, caption, extra);
+    } catch (e) {
+        logger.warn('Не удалось переслать чек админу', { error: e.message });
+        return null;
+    }
+}
+
+/**
  * Приём чека: вложение сохраняется на платеже (file_id) и сразу уходит
  * админу — фото картинкой, PDF документом. Уведомление админу приходит
  * ТОЛЬКО здесь: «Я оплатил» без чека админа не будит.
@@ -994,12 +1021,10 @@ async function handleReceipt(ctx) {
         /* Чек содержит реквизиты плательщика: сутки в чате админа
          * достаточно для проверки, дольше — лишняя выдержка ПДн. */
         const RECEIPT_TTL = 24 * 3600;
-        const notifier = require('./notifier');
         let sent = null;
         if (admin && bot) {
-            sent = mediaType === 'photo'
-                ? await notifier.notifyAdminPhoto(settings, fileId, caption, { parse_mode: 'HTML', reply_markup: kb })
-                : await notifier.notifyAdminDocument(settings, fileId, caption, { parse_mode: 'HTML', reply_markup: kb });
+            sent = await sendReceiptMedia(settings, { media_type: mediaType, file_id: fileId }, caption,
+                { parse_mode: 'HTML', reply_markup: kb });
         }
         if (sent) {
             scheduleReceiptDelete(sent.chat.id, sent.message_id, RECEIPT_TTL);
@@ -2578,7 +2603,8 @@ bot.on('message:text', async (ctx, next) => {
         });
     });
 
-    // Показать чек: фото картинкой, PDF документом (file_id — без аплоада)
+    // Показать чек: фото картинкой, PDF документом (file_id — без аплоада).
+    // Шлём токеном бота продаж: file_id выдан именно ему клиентом.
     bot.callbackQuery(/^admin:preceipt:(\d+)$/, async (ctx) => {
         if (!(await adminGuard(ctx))) return;
         const p = db.prepare('SELECT id, receipt_media_type, receipt_file_id, receipt_file_name FROM payments WHERE id = ?')
@@ -2586,13 +2612,10 @@ bot.on('message:text', async (ctx, next) => {
         if (!p || !p.receipt_file_id) return ctx.answerCallbackQuery({ text: 'Чека нет', show_alert: true });
         await ctx.answerCallbackQuery('Отправляю чек...');
         const settings = getAll();
-        const notifier = require('./notifier');
         const caption = `🧾 Чек по заказу #${p.id}`;
-        const sent = p.receipt_media_type === 'photo'
-            ? await notifier.notifyAdminPhoto(settings, p.receipt_file_id, caption)
-            : await notifier.notifyAdminDocument(settings, p.receipt_file_id, caption);
+        const sent = await sendReceiptMedia(settings, { media_type: p.receipt_media_type, file_id: p.receipt_file_id }, caption);
         if (!sent) {
-            await ctx.reply('⚠️ Не удалось отправить чек — проверьте токен бота и Chat ID админа.').catch(() => {});
+            await ctx.reply('⚠️ Не удалось отправить чек — проверьте токен бота продаж и Chat ID админа (логи панели покажут причину).').catch(() => {});
         } else {
             // Копия чека в чате админа — с тем же TTL по ПДн, что и первая
             scheduleReceiptDelete(sent.chat.id, sent.message_id, 24 * 3600);

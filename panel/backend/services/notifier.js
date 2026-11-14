@@ -143,40 +143,11 @@ async function notifyAdmin(settings, text) {
 }
 
 /**
- * Фото админу по file_id (чек и т.п.). Тихо игнорируется, если не настроено.
- * @param {object} settings - настройки панели
- * @param {string} fileId - file_id из Telegram
- * @param {string} [caption]
- * @param {object} [extra] - доп. поля (reply_markup и т.п.)
- * @returns {object|null} отправленное сообщение (null — не удалось/не настроено)
+ * Отправка media по file_id — ВНИМАНИЕ: file_id валиден только для бота,
+ * который этот файл получил. Чеки клиентов приходят боту продаж — их надо
+ * слать токеном бота продаж (см. bot.sendReceiptMedia), а не токеном
+ * уведомлений: Telegram вернёт «wrong file identifier».
  */
-async function notifyAdminPhoto(settings, fileId, caption, extra = {}) {
-    if (!settings.tg_bot_token || !settings.tg_admin_chat_id) return null;
-    try {
-        return await sendPhotoByFileId(settings.tg_bot_token, settings.tg_admin_chat_id, fileId, caption, extra);
-    } catch (err) {
-        logger.warn('Не удалось отправить фото админу в TG', { error: err.message });
-        return null;
-    }
-}
-
-/**
- * Документ админу по file_id (PDF-чек и т.п.). Тихо игнорируется, если не настроено.
- * @param {object} settings - настройки панели
- * @param {string} fileId - file_id из Telegram
- * @param {string} [caption]
- * @param {object} [extra] - доп. поля (reply_markup и т.п.)
- * @returns {object|null} отправленное сообщение (null — не удалось/не настроено)
- */
-async function notifyAdminDocument(settings, fileId, caption, extra = {}) {
-    if (!settings.tg_bot_token || !settings.tg_admin_chat_id) return null;
-    try {
-        return await sendDocumentByFileId(settings.tg_bot_token, settings.tg_admin_chat_id, fileId, caption, extra);
-    } catch (err) {
-        logger.warn('Не удалось отправить документ админу в TG', { error: err.message });
-        return null;
-    }
-}
 
 /**
  * Отправляет клиенту QR-коды обоих протоколов.
@@ -204,6 +175,6 @@ async function sendQrToClient(client, maskDomain) {
 module.exports = {
     sendMessage, sendPhoto, sendDocument,
     sendPhotoByFileId, sendDocumentByFileId,
-    notifyAdmin, notifyAdminPhoto, notifyAdminDocument,
+    notifyAdmin,
     sendQrToClient,
 };

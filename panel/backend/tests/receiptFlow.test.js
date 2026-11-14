@@ -52,12 +52,32 @@ describe('«Я оплатил» без чека — админ не уведом
         assert.match(b, /24 часа/, 'нет предупреждения об автоотмене');
     });
 
-    test('админ-уведомление с чеком уходит через notifier (file_id)', () => {
+    test('админ-уведомление с чеком уходит от бота продаж (file_id)', () => {
         const b = block(BOT, 'async function handleReceipt', '/**\n * Запускает бота.');
-        assert.match(b, /notifyAdminPhoto\(/, 'фото должно уходить через notifier');
-        assert.match(b, /notifyAdminDocument\(/, 'PDF должен уходить через notifier');
+        // Регрессия v1.41.0: чек уходил токеном бота УВЕДОМЛЕНИЙ (tg_bot_token),
+        // а file_id принадлежит боту продаж — Telegram отвечал
+        // «wrong file identifier», админ чек не получал
+        assert.match(b, /sendReceiptMedia\(/, 'чек должен уходить через хелпер с токеном бота продаж');
+        assert.doesNotMatch(b, /notifyAdminPhoto|notifyAdminDocument/,
+            'обёртки notifyAdmin* шлют от бота уведомлений — с чужим file_id они не работают');
         assert.match(b, /UPDATE payments SET receipt_media_type/, 'чек не сохраняется на платеже');
         assert.match(b, /scheduleReceiptDelete\(sent\.chat\.id,\s*sent\.message_id/, 'TTL-удаление чека потерялось');
+    });
+
+    test('хелпер sendReceiptMedia шлёт токеном бота продаж', () => {
+        const b = block(BOT, 'async function sendReceiptMedia', '/**\n * Приём чека');
+        assert.match(b, /getBotSettings\(\)\.bot_token/, 'нужен токен бота продаж, а не уведомлений');
+        assert.match(b, /sendPhotoByFileId\(/, 'фото — по file_id');
+        assert.match(b, /sendDocumentByFileId\(/, 'PDF — по file_id');
+        assert.match(b, /tg_admin_chat_id/, 'нет адресата');
+        assert.match(b, /catch \(e\)/, 'ошибки должны глотаться с логом, не роняя обработчик');
+    });
+
+    test('«Показать чек» из карточки тоже идёт через бота продаж', () => {
+        const b = block(BOT, '/^admin:preceipt:(\\d+)$/', '// Подтвердить оплату');
+        assert.match(b, /sendReceiptMedia\(/, 'повторный показ чека должен идти токеном бота продаж');
+        assert.doesNotMatch(b, /notifyAdminPhoto|notifyAdminDocument/);
+        assert.match(b, /scheduleReceiptDelete\(sent\.chat\.id,\s*sent\.message_id/, 'TTL-удаление копии чека потерялось');
     });
 
     test('чек без активного заказа не теряется молча после рестарта', () => {
@@ -68,13 +88,9 @@ describe('«Я оплатил» без чека — админ не уведом
     test('notifier умеет отправку по file_id', () => {
         assert.match(NOTIFIER, /function sendPhotoByFileId\(/);
         assert.match(NOTIFIER, /function sendDocumentByFileId\(/);
-        assert.match(NOTIFIER, /function notifyAdminPhoto\(/);
-        assert.match(NOTIFIER, /function notifyAdminDocument\(/);
-        // Тихие обёртки не должны бросать: чек не должен ронять обработку
-        for (const fn of ['notifyAdminPhoto', 'notifyAdminDocument']) {
-            const b = block(NOTIFIER, `function ${fn}(`, '\n/**');
-            assert.match(b, /catch \(err\)/, `${fn} должна глотать ошибки`);
-        }
+        // Регрессия v1.41.0: обёртки notifyAdmin* шлы чек токеном бота
+        // уведомлений — удалены, чтобы никто не повторил ошибку
+        assert.doesNotMatch(NOTIFIER, /function notifyAdminPhoto|function notifyAdminDocument/);
     });
 });
 
