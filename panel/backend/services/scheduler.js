@@ -18,6 +18,7 @@ const nodes = require('./nodes');
 const broadcasts = require('./broadcasts');
 const eventLog = require('./eventLog');
 const autoCleanup = require('./autoCleanup');
+const dbHealth = require('./dbHealth');
 
 // Счётчик последовательных сбоев сервисов (для алертов без спама)
 let downStreak = 0;
@@ -356,6 +357,15 @@ async function autoBackup() {
         }
         logger.info('Автобэкап создан', { dest });
 
+        // Верификация свежего бэкапа: инцидент 14.11 показал, что копия
+        // может сняться с уже повреждённой БД — такой бэкап опасно
+        // считать страховкой. Битый файл не удаляем, только кричим.
+        try {
+            dbHealth.verifyLatestBackup();
+        } catch (e) {
+            logger.warn('Верификация автобэкапа не удалась', { error: e.message });
+        }
+
         // Копия бэкапа админу в Telegram: хранится в мессенджере, место на диске не тратит
         if (settings.backup_tg_enabled && settings.tg_admin_chat_id) {
             try {
@@ -577,6 +587,20 @@ function start() {
         autoBackup();
         setInterval(autoBackup, 24 * 60 * 60 * 1000).unref();
     }, next330 - now).unref();
+
+    // Ежедневно в 04:10: integrity_check живой БД + верификация автобэкапа.
+    // Проверка блокирует event loop на время прогона — потому ночью.
+    const dbHealthSchedule = () => {
+        const next = new Date();
+        next.setHours(4, 10, 0, 0);
+        if (next <= new Date()) next.setDate(next.getDate() + 1);
+        return next - new Date();
+    };
+    const dbHealthTimer = setTimeout(() => {
+        dbHealth.runDailyCheck();
+        setInterval(() => dbHealth.runDailyCheck(), 24 * 60 * 60 * 1000).unref();
+    }, dbHealthSchedule());
+    dbHealthTimer.unref();
 
     logger.info('Планировщик фоновых задач запущен');
 }

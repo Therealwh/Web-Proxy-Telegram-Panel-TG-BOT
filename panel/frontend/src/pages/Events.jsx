@@ -6,7 +6,7 @@ import { useLangStore } from '../store';
 import { useT } from '../i18n';
 import { Card, PageHeader, Skeleton } from '../components/ui';
 
-const ICONS = { purchase: '🛒', renewal: '🔄', deposit: '💰', error: '⚠️', cleanup: '🧹', issue: '📦', cancelled: '🚫' };
+const ICONS = { purchase: '🛒', renewal: '🔄', deposit: '💰', error: '⚠️', cleanup: '🧹', issue: '📦', cancelled: '🚫', dbcheck: '🩺' };
 
 export default function Events() {
     const [events, setEvents] = useState(null);

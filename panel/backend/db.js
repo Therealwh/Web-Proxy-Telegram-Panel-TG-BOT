@@ -141,4 +141,16 @@ function runMigrations() {
 
 runMigrations();
 
+// Контроль целостности при старте: порча диска должна быть видна сразу,
+// а не по 502 в браузере (инцидент 14.11.2026). Warn-only: панель
+// запускается и так, алерты и ежедневные проверки — у scheduler/dbHealth.
+try {
+    const bootIssues = db.prepare('PRAGMA quick_check').pluck().all();
+    if (bootIssues.length !== 1 || bootIssues[0] !== 'ok') {
+        logger.error('БД повреждена при старте (quick_check)', { issues: bootIssues.slice(0, 5) });
+    }
+} catch (e) {
+    logger.error('Не удалось проверить целостность БД при старте', { error: e.message });
+}
+
 module.exports = db;
