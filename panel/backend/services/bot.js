@@ -178,7 +178,7 @@ function connectKeyboard(client) {
     const kb = new InlineKeyboard();
     if (links.web_https) kb.url('🌐 Подключить Web Proxy', links.web_https).row();
     if (links.mtproto_https) kb.url('🔌 Подключить MTProto', links.mtproto_https);
-    if (links.mtproto_faketls_https) kb.url('🛡 MTProto Fake TLS (обход DPI)', links.mtproto_faketls_https);
+    if (links.mtproto_faketls_https) kb.url('🛡 MTProto Fake TLS', links.mtproto_faketls_https);
     kb.row();
     return kb;
 }
@@ -480,20 +480,22 @@ const selected = clients.find((c) => c.id === selectedId) || null;
         // из кнопки-ссылки нельзя.
         kb.text('📋 Ссылки текстом', `links:${selected.id}`);
         kb.text('📷 QR-код', `qr:${selected.id}`).row();
-        kb.text('🌍 Локация', `nodeloc:${selected.id}`);
-        kb.text('💳 Пополнить', 'topup');
-        kb.text('🎁 Промокод', 'promo');
+        // ── Управление прокси: максимум 2 кнопки в ряду — на узких экранах
+        // 5-в-ряд обрезались до «Лок…», «Поп…» ──
         kb.text('♻️ Продлить', `renew:${selected.id}`);
+        kb.text('🌍 Сменить локацию', `nodeloc:${selected.id}`).row();
         if (settings.auto_renew_enabled) {
-            kb.text(selected.auto_renew ? '♻️ Автопродление: ✅' : '♻️ Автопродление: ❌', `autorenew:${selected.id}`);
+            kb.text(selected.auto_renew ? '♻️ Автопродление: ✅' : '♻️ Автопродление: ❌', `autorenew:${selected.id}`).row();
         }
+        // ── Аккаунт ──
+        kb.text('💳 Пополнить счёт', 'topup');
+        kb.text('🎁 Промокод', 'promo').row();
         styleButtons(kb, [
             ['Пополнить', 'primary'],
             ['Продлить', 'success'],
             ['Автопродление: ✅', 'success'],
             ['Автопродление: ❌', 'danger'],
         ]);
-        kb.row();
         const miniUrlCard = miniAppUrl();
         if (miniUrlCard) kb.webApp('📱 Приложение', miniUrlCard);
         kb.text('⬅️ Все мои прокси', 'my');
