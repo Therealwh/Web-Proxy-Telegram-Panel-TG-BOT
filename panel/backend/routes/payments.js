@@ -111,6 +111,8 @@ async function completePayment(paymentId) {
                     });
                 } catch (e) { logger.warn('Рефералка: продление', { error: e.message }); }
             }
+            // Живая карточка заказа в боте: «оплачено» (не критично, если карточки нет)
+            try { require('../services/bot').markOrderCard(paymentId, 'success'); } catch { /* не критично */ }
             logger.info('Прокси продлён', { paymentId, username: client.username });
             return payment;
         }
@@ -150,6 +152,8 @@ async function completePayment(paymentId) {
         eventLog.logEvent('deposit', '💰 Пополнение баланса',
             `+${payment.amount} ${payment.currency} · tg${payment.telegram_id}`,
             'info', payment.telegram_id);
+        // Живая карточка заказа в боте: «баланс пополнен»
+        try { require('../services/bot').markOrderCard(paymentId, 'success'); } catch { /* не критично */ }
         logger.info('Баланс пополнен', { paymentId, amount: payment.amount });
         return payment;
     }
@@ -184,6 +188,8 @@ async function completePayment(paymentId) {
         catch (e) { logger.warn('Промокод: не удалось списать применение', { error: e.message }); }
     }
     fireWebhook('payment.success', { payment_id: paymentId, amount: payment.amount, currency: payment.currency });
+    // Живая карточка заказа в боте: «оплачено — доступ выдан»
+    try { require('../services/bot').markOrderCard(paymentId, 'success'); } catch { /* не критично */ }
     logger.info('Платёж подтверждён', { paymentId, provider: payment.provider });
     return payment;
 }
@@ -293,6 +299,8 @@ router.post('/:id/cancel', requireAuth, async (req, res, next) => {
         ).run(paymentId);
         if (result.changes === 0) throw httpError(404, 'Платёж не найден или уже обработан');
         logger.info('Платёж отменён администратором', { paymentId });
+        // Живая карточка заказа в боте: «платёж отклонён» (уведомление текстом выше дублирует)
+        try { require('../services/bot').markOrderCard(paymentId, 'cancelled'); } catch { /* не критично */ }
         // Клиенту — уведомление об отклонении (платёж мог быть уже с чеком)
         if (payment && payment.telegram_id) {
             try {

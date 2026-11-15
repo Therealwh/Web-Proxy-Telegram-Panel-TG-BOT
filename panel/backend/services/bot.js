@@ -318,7 +318,8 @@ function styleButtons(kb, mapping) {
     return kb;
 }
 
-/** Строка с баром остатка срока подписки: «⏳ 12 дн. (40%) + ▓▓▓░░░░░░░». */
+/** Строка с баром остатка срока подписки: «⏳ 🟢 12 дн. (40%) + ▓▓▓░░░░░░░».
+ *  Цветовой индикатор по остатку: 🟢 ≥50%, 🟡 ≥20%, 🔴 <20%. */
 function expiryBarLine(selected) {
     if (!selected.expires_at || !selected.created_at) return '';
     const created = new Date(selected.created_at).getTime();
@@ -329,7 +330,8 @@ function expiryBarLine(selected) {
     const filled = Math.round((pct / 100) * 10);
     const days = Math.ceil(left / 86400000);
     const bar = '█'.repeat(filled) + '░'.repeat(10 - filled);
-    return `\n⏳ Осталось: <b>${days} дн.</b> (${pct}%)\n<code>${bar}</code>\n`;
+    const dot = pct >= 50 ? '🟢' : pct >= 20 ? '🟡' : '🔴';
+    return `\n⏳ ${dot} Осталось: <b>${days} дн.</b> (${pct}%)\n<code>${bar}</code>\n`;
 }
 
 /** Каталог с визуальными ассетами бота (обложка /start, гайды). */
@@ -365,7 +367,7 @@ async function sendAsset(chatId, assetKey, fileName, caption, extra = {}) {
     } catch (e) {
         logger.warn('Картинка-ассет не отправилась — текстовый fallback', { assetKey, error: e.message });
         if (caption) {
-            try { await bot.api.sendMessage(chatId, caption, extra); } catch { /* не критично */ }
+            try { return await bot.api.sendMessage(chatId, caption, extra); } catch { /* не критично */ }
         }
         return null;
     }
@@ -459,7 +461,9 @@ const selected = clients.find((c) => c.id === selectedId) || null;
         if (limit > 0) {
             const left = Math.max(0, limit - used);
             const pct = Math.min(100, Math.round((used / limit) * 100));
-            text += `📊 <b>Трафик:</b> ${usageBar(pct)} ${pct}%\n` +
+            // Цветовой индикатор по расходу: 🟢 ≤50%, 🟡 ≤85%, 🔴 >85%
+            const dot = pct <= 50 ? '🟢' : pct <= 85 ? '🟡' : '🔴';
+            text += `📊 ${dot} <b>Трафик:</b> ${usageBar(pct)} ${pct}%\n` +
                 `&#160;&#160;&#160;${fmtGB(used)} из ${fmtGB(limit)} · осталось ${fmtGB(left)}\n`;
             if (pct >= 90) text += '⚠️ Трафик почти израсходован — продлите или докупите пакет.\n';
         }
@@ -802,9 +806,9 @@ function subscribeScreen() {
 async function sendManualInstructions(ctx, paymentId, amountText) {
     const s = getBotSettings();
     const rows = [];
-    if (s.pay_card) rows.push(`💳 Карта: <code>${s.pay_card}</code>`);
-    if (s.pay_phone) rows.push(`📱 Телефон (СБП): <code>${s.pay_phone}</code>`);
-    if (s.pay_bank) rows.push(`🏦 Банк: <code>${s.pay_bank}</code>`);
+    if (s.pay_card) rows.push(`💳 Карта: <code>${escapeHtml(s.pay_card)}</code>`);
+    if (s.pay_phone) rows.push(`📱 Телефон (СБП): <code>${escapeHtml(s.pay_phone)}</code>`);
+    if (s.pay_bank) rows.push(`🏦 Банк: <code>${escapeHtml(s.pay_bank)}</code>`);
 
     const kb = new InlineKeyboard().text('✅ Я оплатил', `paid:${paymentId}`);
     const requisites = rows.length > 0
@@ -816,11 +820,32 @@ async function sendManualInstructions(ctx, paymentId, amountText) {
         `🧾 Заказ: <b>#${paymentId}</b>${amountText ? `\n💵 Сумма: <b>${amountText}</b>` : ''}\n\n` +
         `${requisites}\n\n` +
         `После перевода нажмите «✅ Я оплатил» и отправьте скриншот или PDF чека.`;
+    /* Это и есть «живая карточка заказа»: сообщение привязывается к платежу
+     * и дальше обновляется по состояниям (ждём чек → получен → итог).
+     * Брендовая обложка + текст в подписи; при сбое sendAsset сам уходит
+     * в текстовый fallback и возвращает его сообщение. */
+    let sent = null;
     try {
-        await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb });
+        sent = await sendAsset(ctx.chat.id, 'pay', 'banner-pay.png', text,
+            { parse_mode: 'HTML', reply_markup: kb });
     } catch (e) {
-        logger.warn('Инструкция оплаты: HTML не прошёл, отправляю как текст', { error: e.message });
-        await ctx.reply(text.replace(/<[^>]*>/g, ''), { reply_markup: kb });
+        logger.warn('Карточка оплаты: обложка не отправилась', { paymentId, error: e.message });
+    }
+    if (!sent) {
+        try {
+            sent = await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb });
+        } catch (e2) {
+            logger.warn('Инструкция оплаты: HTML не прошёл, отправляю как текст', { error: e2.message });
+            sent = await ctx.reply(text.replace(/<[^>]*>/g, ''), { reply_markup: kb }).catch(() => null);
+        }
+    }
+    if (sent?.message_id) {
+        try {
+            db.prepare('UPDATE payments SET status_chat_id = ?, status_message_id = ? WHERE id = ?')
+                .run(sent.chat.id, sent.message_id, paymentId);
+        } catch (e) {
+            logger.warn('Не удалось привязать карточку заказа', { paymentId, error: e.message });
+        }
     }
 }
 
@@ -922,6 +947,89 @@ function paymentPurpose(p) {
     if (p.tariff_id && p.client_id) return '♻️ Продление прокси';
     if (p.tariff_id) return '📦 Покупка тарифа';
     return '💰 Пополнение баланса';
+}
+
+// ═══ Живая карточка заказа ═══
+// Одно сообщение проходит состояния: оплата → чек → проверка → итог.
+// chat/message id карточки хранятся в payments (миграция 034) — переживают рестарт.
+
+const ORDER_STATES = {
+    awaiting_receipt: (p) => {
+        const s = getBotSettings();
+        const rows = [];
+        if (s.pay_card) rows.push(`💳 Карта: <code>${escapeHtml(s.pay_card)}</code>`);
+        if (s.pay_phone) rows.push(`📱 СБП: <code>${escapeHtml(s.pay_phone)}</code>`);
+        if (s.pay_bank) rows.push(`🏦 Банк: <code>${escapeHtml(s.pay_bank)}</code>`);
+        return (
+            `⏳ <b>Ждём чек по заказу #${p.id}</b>\n\n` +
+            `${paymentPurpose(p)} — <b>${p.amount} ${currencySign(p.currency)}</b>\n` +
+            (rows.length ? `${rows.join('\n')}\n\n` : '\n') +
+            `⚠️ <b>Пришлите скриншот или PDF чека в этот чат</b> — без подтверждения оплаты ` +
+            `начисления и покупки НЕ БУДЕТ, а заказ автоматически отменится через 24 часа.`
+        );
+    },
+    receipt_received: (p) =>
+        `🧾 <b>Чек получен — администратор проверяет оплату</b>\n\n` +
+        `Заказ #${p.id} · ${paymentPurpose(p)} — <b>${p.amount} ${currencySign(p.currency)}</b>\n` +
+        `⏳ Доступ придёт в этот чат — обычно это занимает немного времени.`,
+    success: (p) => {
+        const head = p.tariff_id
+            ? (p.client_id ? '✅ <b>Оплата подтверждена — прокси продлён!</b>'
+                           : '✅ <b>Оплата подтверждена — доступ выдан!</b>')
+            : `✅ <b>Баланс пополнен на ${p.amount} ${currencySign(p.currency)}!</b>`;
+        return `${head}\n\n` +
+            `Заказ #${p.id} · ${paymentPurpose(p)} — <b>${p.amount} ${currencySign(p.currency)}</b>\n` +
+            `Данные и дальнейшие шаги — в сообщениях выше 👆`;
+    },
+    cancelled: (p) =>
+        `❌ <b>Платёж #${p.id} отклонён</b>\n\n` +
+        `Если вы оплачивали — свяжитесь с поддержкой: ${SUPPORT_USERNAME}`,
+    expired: (p) =>
+        `⏰ <b>Срок оплаты вышел — заказ #${p.id} отменён</b>\n\n` +
+        `Чек не был отправлен за 24 часа.\nСоздайте заказ заново и пришлите чек — доступ откроют после проверки.`,
+};
+
+/**
+ * Обновляет живую карточку заказа (если она привязана к платежу).
+ * Не бросает и не уведомляет админа — это чисто клиентская визуализация.
+ * @param {number} paymentId
+ * @param {'awaiting_receipt'|'receipt_received'|'success'|'cancelled'|'expired'} state
+ * @returns {Promise<boolean>} true — карточка обновлена
+ */
+async function markOrderCard(paymentId, state) {
+    try {
+        const p = db.prepare(
+            'SELECT id, amount, currency, tariff_id, client_id, status, status_chat_id, status_message_id FROM payments WHERE id = ?'
+        ).get(paymentId);
+        if (!p || !p.status_message_id || !p.status_chat_id || !bot) return false;
+        // Guard от гонки: «ждём чек» не должно перезаписать уже финальное
+        // состояние (клиент мог нажать «Я оплатил» вплотную к подтверждению)
+        if (state === 'awaiting_receipt' && p.status !== 'pending') return false;
+        const builder = ORDER_STATES[state];
+        if (!builder) return false;
+        const text = builder(p);
+        try {
+            await bot.api.editMessageText(p.status_chat_id, p.status_message_id, text, { parse_mode: 'HTML' });
+        } catch (e) {
+            const msg = String(e.message || '');
+            if (msg.includes('message is not modified')) return true;
+            // Карточка отправлена как ФОТО (брендовая обложка): у медиа-сообщений
+            // текст редактируется только через editMessageCaption
+            if (/no text in the message|can't be edited/i.test(msg)) {
+                await bot.api.editMessageCaption(p.status_chat_id, p.status_message_id,
+                    { caption: text, parse_mode: 'HTML' })
+                    .catch((e2) => {
+                        if (!String(e2.message || '').includes('message is not modified')) throw e2;
+                    });
+                return true;
+            }
+            throw e;
+        }
+        return true;
+    } catch (e) {
+        logger.warn('Карточка заказа не обновлена', { paymentId, state, error: e.message });
+        return false;
+    }
 }
 
 /**
@@ -1029,11 +1137,15 @@ async function handleReceipt(ctx) {
         if (sent) {
             scheduleReceiptDelete(sent.chat.id, sent.message_id, RECEIPT_TTL);
         }
-        const adminLine = sent ? '\n<i>Чек удалится из чата администратора через сутки.</i>' : '';
-        await ctx.reply(
-            `✅ <b>Чек получен!</b> Администратор проверит оплату — доступ придёт в этот чат.\nЗаказ #${paymentId}${adminLine}`,
-            { parse_mode: 'HTML' }
-        );
+        // Живая карточка заказа → «чек получен, администратор проверяет»
+        const cardOk = await markOrderCard(paymentId, 'receipt_received');
+        if (!cardOk) {
+            const adminLine = sent ? '\n<i>Чек удалится из чата администратора через сутки.</i>' : '';
+            await ctx.reply(
+                `✅ <b>Чек получен!</b> Администратор проверит оплату — доступ придёт в этот чат.\nЗаказ #${paymentId}${adminLine}`,
+                { parse_mode: 'HTML' }
+            );
+        }
         logger.info('Чек получен и отправлен админу', { paymentId, mediaType, admin: !!sent });
     } catch (e) {
         logger.error('Не удалось переслать чек админу', { error: e.message, paymentId });
@@ -1370,6 +1482,10 @@ bot.on('message:text', async (ctx, next) => {
     );
 
     bot.hears(['👤 Личный кабинет', '📱 Личный кабинет'], async (ctx) => {
+        // Брендовая обложка кабинета: отдельным фото над текстом (не спамим
+        // уведомлением), данные и кнопки — в сообщении ниже
+        sendAsset(ctx.chat.id, 'cabinet', 'banner-cabinet.png')
+            .catch((e) => logger.warn('Обложка кабинета не отправилась', { error: e.message }));
         const view = await cabinetView(ctx);
         await ctx.reply(view.text, { parse_mode: 'HTML', reply_markup: view.kb, disable_web_page_preview: true });
     });
@@ -1899,13 +2015,17 @@ bot.on('message:text', async (ctx, next) => {
             return ctx.answerCallbackQuery({ text: 'Заказ не найден или уже обработан', show_alert: true });
         }
         receiptState.set(ctx.from.id, paymentId);
-        await ctx.answerCallbackQuery();
-        await ctx.reply(
-            '🧾 Прикрепите <b>скриншот или PDF чека</b> одним сообщением в этот чат — я перешлю его администратору.\n\n' +
-            '⚠️ <b>Без чека подтверждения оплаты НЕ БУДЕТ:</b> начисления и покупки не сработают, ' +
-            'а заказ автоматически отменится через 24 часа.',
-            { parse_mode: 'HTML' }
-        );
+        // Живая карточка заказа переходит в «ждём чек» (объяснение — внутри неё)
+        const cardOk = await markOrderCard(paymentId, 'awaiting_receipt');
+        await ctx.answerCallbackQuery(cardOk ? { text: '⏳ Ожидаем чек' } : undefined);
+        if (!cardOk) {
+            await ctx.reply(
+                '🧾 Прикрепите <b>скриншот или PDF чека</b> одним сообщением в этот чат — я перешлю его администратору.\n\n' +
+                '⚠️ <b>Без чека подтверждения оплаты НЕ БУДЕТ:</b> начисления и покупки не сработают, ' +
+                'а заказ автоматически отменится через 24 часа.',
+                { parse_mode: 'HTML' }
+            ).catch(() => {});
+        }
     });
 
     // ═══ 5. Тест 3 часа, мой доступ, поддержка ═══
@@ -2068,10 +2188,17 @@ bot.on('message:text', async (ctx, next) => {
             const r = await promoService.applyDaysPromo(v.promo, tgId, targetId).catch((e) => ({ ok: false, error: e.message }));
             if (!r.ok) return ctx.reply(`❌ ${r.error}`, { parse_mode: 'HTML' });
             if (r.created) {
-                const links = clientLinks(db.prepare('SELECT * FROM clients WHERE username = ?').get(r.created));
-                let text = `🎁 <b>Промокод активирован!</b>\n\n` +
+                const text = `🎁 <b>Промокод активирован!</b>\n\n` +
                     `📦 Новый прокси: <b>${proxyTitle(r.created)}</b>\n📅 Действует до: <b>${fmtMSK(r.until, false)}</b>\n\n` +
                     `Подключайся кнопками ниже:`;
+                // Брендовая обложка + текст в подписи (fallback — обычное сообщение)
+                let sent = null;
+                try {
+                    sent = await sendAsset(ctx.chat.id, 'promo', 'banner-promo.png', text,
+                        { parse_mode: 'HTML', disable_web_page_preview: true,
+                          reply_markup: connectKeyboard(db.prepare('SELECT * FROM clients WHERE username = ?').get(r.created)) });
+                } catch { /* fallback ниже */ }
+                if (sent) return;
                 return ctx.reply(text, {
                     parse_mode: 'HTML', disable_web_page_preview: true,
                     reply_markup: connectKeyboard(db.prepare('SELECT * FROM clients WHERE username = ?').get(r.created)),
@@ -2079,9 +2206,15 @@ bot.on('message:text', async (ctx, next) => {
             }
             // Выбранный прокси: «♻️ Прокси X продлён на +N дней — до ДАТА»
             if (r.target) {
+                const text = `🎁 <b>Промокод активирован!</b>\n\n` +
+                    `♻️ Прокси <b>${proxyTitle(r.target)}</b> продлён на <b>+${days} дн.</b> — до <b>${fmtMSK(r.until, false)}</b>`;
+                let sent = null;
+                try {
+                    sent = await sendAsset(ctx.chat.id, 'promo', 'banner-promo.png', text, { parse_mode: 'HTML' });
+                } catch { /* fallback ниже */ }
+                if (sent) return;
                 return ctx.reply(
-                    `🎁 <b>Промокод активирован!</b>\n\n` +
-                    `♻️ Прокси <b>${proxyTitle(r.target)}</b> продлён на <b>+${days} дн.</b> — до <b>${fmtMSK(r.until, false)}</b>`,
+                    `${text}`,
                     { parse_mode: 'HTML' }
                 );
             }
@@ -2665,6 +2798,8 @@ bot.on('message:text', async (ctx, next) => {
         const claim = db.prepare("UPDATE payments SET status = 'cancelled' WHERE id = ? AND status = 'pending'").run(paymentId);
         if (claim.changes === 0) return ctx.answerCallbackQuery('Уже обработан');
         await ctx.answerCallbackQuery('❌ Отменено');
+        // Живая карточка заказа у клиента → «отклонён»
+        markOrderCard(paymentId, 'cancelled').catch(() => {});
         if (p.telegram_id) {
             await bot.api.sendMessage(
                 p.telegram_id,
@@ -2812,4 +2947,4 @@ const isRunning = () => bot !== null;
 /** Telegram Bot API для фоновых задач планировщика (null — бот выключен). */
 const getApi = () => (bot ? bot.api : null);
 
-module.exports = { start, stop, isRunning, getApi, tariffsKeyboard, getBotSettings, issueAccessFor, notifyDeposit, sendMessageTo, broadcastNewLinks, sendFileTo, totalBalance, SUPPORT_USERNAME };
+module.exports = { start, stop, isRunning, getApi, tariffsKeyboard, getBotSettings, issueAccessFor, notifyDeposit, sendMessageTo, broadcastNewLinks, sendFileTo, totalBalance, SUPPORT_USERNAME, markOrderCard };

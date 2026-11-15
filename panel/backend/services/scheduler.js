@@ -466,6 +466,8 @@ function cancelNoReceiptPayments() {
         eventLog.logEvent('cancelled', '⏰ Заказ отменён — чек не пришёл за 24 ч',
             `#${p.id} · ${p.amount} ${p.currency} · tg${p.telegram_id ?? '—'}`, 'info', p.telegram_id);
         // Клиенту — одно уведомление (после успешного claim повторов не будет)
+        // и живая карточка заказа → «срок вышел»
+        try { require('./bot').markOrderCard(p.id, 'expired'); } catch { /* не критично */ }
         if (p.telegram_id) {
             try {
                 const bot = require('./bot');

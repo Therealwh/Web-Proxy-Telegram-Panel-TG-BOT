@@ -170,6 +170,61 @@ describe('решения по платежам из админ-меню бота
     });
 });
 
+describe('живая карточка заказа (v1.43)', () => {
+    test('машина состояний: все статусы и редактирование одного сообщения', () => {
+        const states = block(BOT, 'const ORDER_STATES', 'async function markOrderCard');
+        for (const state of ['awaiting_receipt', 'receipt_received', 'success', 'cancelled', 'expired']) {
+            assert.ok(states.includes(`${state}:`), `нет состояния ${state}`);
+        }
+        const edit = block(BOT, 'async function markOrderCard', '/**\n * Пересылает чек админу');
+        assert.match(edit, /status_chat_id/, 'нет адресата карточки');
+        assert.match(edit, /status_message_id/, 'нет id сообщения');
+        assert.match(edit, /editMessageText/, 'карточка должна редактироваться, а не слаться заново');
+        // Регрессия: карточка — ФОТО (обложка), у медиа-сообщений текст
+        // редактируется только через editMessageCaption
+        assert.match(edit, /editMessageCaption/, 'нет fallback на editMessageCaption для фото-карточки');
+        assert.match(edit, /awaiting_receipt' && p\.status !== 'pending'/, 'нет guard от гонки с подтверждением');
+        // Карточка — чисто клиентская визуализация: админ ничего не получает
+        assert.doesNotMatch(edit, /notifyAdmin|sendPhoto|sendDocument/, 'карточка не должна уведомлять админа');
+    });
+
+    test('карточка привязывается к платежу при отправке реквизитов', () => {
+        const b = block(BOT, 'async function sendManualInstructions', '/** Назначение платежа');
+        assert.match(b, /status_chat_id = \?, status_message_id = \?/, 'chat/message id не сохраняются');
+        assert.match(b, /banner-pay\.png/, 'нет брендовой обложки');
+    });
+
+    test('completePayment и обе отмены обновляют карточку', () => {
+        const renewal = block(PAYMENTS, "Живая карточка заказа в боте: «оплачено»", "logger.info('Прокси продлён'");
+        assert.match(renewal, /markOrderCard\(paymentId, 'success'\)/);
+        const deposit = block(PAYMENTS, 'Пополнение баланса', "logger.info('Баланс пополнен'");
+        assert.match(deposit, /markOrderCard\(paymentId, 'success'\)/);
+        const cancel = block(PAYMENTS, 'Живая карточка заказа в боте: «платёж отклонён»', 'Клиенту — уведомление');
+        assert.match(cancel, /markOrderCard\(paymentId, 'cancelled'\)/);
+        const botCancel = block(BOT, '/^admin:pcancel:(\\d+)$/', '/^admin:pmsg:(\\d+)$/');
+        assert.match(botCancel, /markOrderCard\(paymentId, 'cancelled'\)/);
+    });
+
+    test('автоотмена в планировщике тоже обновляет карточку', () => {
+        const b = block(SCHED, 'function cancelNoReceiptPayments', '/** Синхронизация лимитов');
+        assert.match(b, /markOrderCard\(p\.id, 'expired'\)/, 'карточка не уходит в «срок вышел»');
+    });
+
+    test('обложки кабинета и промокода подключены', () => {
+        assert.match(BOT, /sendAsset\(ctx\.chat\.id, 'cabinet', 'banner-cabinet\.png'/, 'нет обложки кабинета');
+        assert.match(BOT, /sendAsset\(ctx\.chat\.id, 'promo', 'banner-promo\.png'/, 'нет обложки промокода');
+    });
+
+    test('цветные индикаторы срока и трафика в кабинете', () => {
+        const b = block(BOT, 'function expiryBarLine', '/** Каталог с визуальными ассетами');
+        assert.match(b, /🟢/, 'нет зелёного индикатора срока');
+        assert.match(b, /🟡/, 'нет жёлтого индикатора срока');
+        assert.match(b, /🔴/, 'нет красного индикатора срока');
+        const traffic = block(BOT, 'Расход трафика', '// Подсказка «что делать» вместо голого статуса');
+        assert.match(traffic, /🟢|🟡|🔴/, 'нет цветового индикатора трафика');
+    });
+});
+
 describe('промокоды v3 в боте', () => {
     test('выбор прокси для days-промокода', () => {
         assert.match(BOT, /promosel:/, 'нет inline-клавиатуры выбора прокси');

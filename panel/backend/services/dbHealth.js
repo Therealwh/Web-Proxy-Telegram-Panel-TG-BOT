@@ -17,12 +17,14 @@ const logger = require('../utils/logger');
 
 /**
  * quick_check на переданном соединении.
+ * Через pragma() (не prepare): не оставляет JS-обёрток Statement — их
+ * отложенный GC-деструктор на Windows может абортнуть процесс.
  * @param {import('better-sqlite3').Database} database
  * @returns {{ok: boolean, issues: string[]}} issues — ['ok'] или список проблем
  */
 function checkDatabase(database) {
-    const rows = database.prepare('PRAGMA quick_check').pluck().all();
-    const issues = rows.map(String);
+    const rows = database.pragma('quick_check');
+    const issues = rows.map((r) => String(Object.values(r)[0]));
     return { ok: issues.length === 1 && issues[0] === 'ok', issues };
 }
 
@@ -89,7 +91,8 @@ async function runDailyCheck() {
         const started = Date.now();
         // integrity_check на живой БД блокирует event loop на время проверки —
         // поэтому запуск один раз в сутки ночью (04:10), не на каждый чих.
-        const issues = db.prepare('PRAGMA integrity_check').pluck().all().map(String);
+        // pragma() — без JS-обёрток Statement (см. checkDatabase).
+        const issues = db.pragma('integrity_check').map((r) => String(Object.values(r)[0]));
         const liveOk = issues.length === 1 && issues[0] === 'ok';
         const durationMs = Date.now() - started;
 

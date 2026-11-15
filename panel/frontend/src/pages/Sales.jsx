@@ -5,7 +5,7 @@ import { BarChart3, Wallet } from 'lucide-react';
 import { get, post } from '../api';
 import { toast, useAuthStore } from '../store';
 import { useT } from '../i18n';
-import { Card, Skeleton, PageHeader, chartTheme } from '../components/ui';
+import { Card, Modal, Skeleton, PageHeader, chartTheme } from '../components/ui';
 
 /** Компактная карточка-метрика */
 function Metric({ value, label, accent }) {
@@ -29,6 +29,7 @@ export default function Sales() {
     const [days, setDays] = useState(30);
     const [data, setData] = useState(null);
     const [pay, setPay] = useState(null);          // /payments — блок «к подтверждению»
+    const [lightbox, setLightbox] = useState(null); // чек в лайтбоксе: { ...платёж }
     const accessToken = useAuthStore((st) => st.accessToken);
     const t = useT();
 
@@ -96,14 +97,16 @@ export default function Sales() {
     };
 
     const cancelPayment = async (id) => {
-        if (!window.confirm(t('dashboard.confirmCancel', { id }))) return;
+        if (!window.confirm(t('dashboard.confirmCancel', { id }))) return false;
         try {
             await post(`/payments/${id}/cancel`);
             toast.success(t('dashboard.cancelled', { id }));
             loadPayments();
             window.dispatchEvent(new CustomEvent('tggate:payments-updated')); // бейдж в меню
+            return true;
         } catch (e) {
             toast.error(e.message);
+            return false;
         }
     };
 
@@ -138,19 +141,19 @@ export default function Sales() {
                                              ${p.hasReceipt
                                                  ? 'border-emerald-200 bg-emerald-50/60 dark:border-emerald-500/20 dark:bg-emerald-500/5'
                                                  : 'border-slate-100 opacity-70 dark:border-slate-800'}`}>
-                                {/* Превью чека: фото картинкой, PDF кнопкой */}
+                                {/* Превью чека: клик открывает лайтбокс с одобрением/отклонением */}
                                 {p.hasReceipt ? (
                                     p.receiptIsPhoto ? (
-                                        <a href={`/api/payments/${p.id}/receipt?token=${accessToken}`} target="_blank" rel="noreferrer"
-                                           className="shrink-0" title={t('dashboard.openReceipt')} aria-label={t('dashboard.openReceipt')}>
+                                        <button type="button" onClick={() => setLightbox(p)}
+                                                className="shrink-0 cursor-zoom-in" title={t('dashboard.openReceipt')} aria-label={t('dashboard.openReceipt')}>
                                             <img src={`/api/payments/${p.id}/receipt?token=${accessToken}`}
                                                  alt="" loading="lazy"
                                                  className="h-11 w-11 rounded-lg object-cover border border-slate-200 dark:border-slate-700" />
-                                        </a>
+                                        </button>
                                     ) : (
-                                        <a href={`/api/payments/${p.id}/receipt?token=${accessToken}`} target="_blank" rel="noreferrer"
-                                           className="shrink-0 h-11 w-11 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-xl"
-                                           title={t('dashboard.receiptPdf')} aria-label={t('dashboard.openReceipt')}>📄</a>
+                                        <button type="button" onClick={() => setLightbox(p)}
+                                                className="shrink-0 h-11 w-11 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-xl cursor-zoom-in"
+                                                title={t('dashboard.receiptPdf')} aria-label={t('dashboard.openReceipt')}>📄</button>
                                     )
                                 ) : (
                                     <div className="shrink-0 h-11 w-11 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
@@ -275,6 +278,51 @@ export default function Sales() {
                     </div>
                 </div>
             </Card>
+
+            {/* Лайтбокс чека: просмотр + решение не выходя из модалки */}
+            <Modal open={!!lightbox} onClose={() => setLightbox(null)} wide
+                  title={lightbox ? `${t('dashboard.pendingTitle').replace('⏳ ', '')} — #${lightbox.id}` : ''}>
+                {lightbox && (
+                    <div className="space-y-3">
+                        <div className="text-sm text-slate-500 dark:text-slate-400">
+                            {lightbox.username || t('dashboard.topupFallback')} · {lightbox.tariff_name || t('dashboard.topupFallback')} ·{' '}
+                            <span className="font-bold text-slate-700 dark:text-slate-200">{lightbox.amount}</span>
+                        </div>
+                        {lightbox.receiptIsPhoto ? (
+                            <a href={`/api/payments/${lightbox.id}/receipt?token=${accessToken}`} target="_blank" rel="noreferrer"
+                               title={t('dashboard.openReceipt')}>
+                                <img src={`/api/payments/${lightbox.id}/receipt?token=${accessToken}`}
+                                     alt={t('dashboard.openReceipt')}
+                                     className="max-h-[62vh] w-full object-contain rounded-xl border border-slate-200 dark:border-slate-700" />
+                            </a>
+                        ) : (
+                            <iframe src={`/api/payments/${lightbox.id}/receipt?token=${accessToken}`}
+                                    title={t('dashboard.receiptPdf')}
+                                    className="w-full h-[62vh] rounded-xl border border-slate-200 dark:border-slate-700 bg-white" />
+                        )}
+                        <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                            <a href={`/api/payments/${lightbox.id}/receipt?token=${accessToken}`} target="_blank" rel="noreferrer"
+                               className="text-xs text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 underline">
+                                {t('dashboard.receiptPdf').replace('📄 ', '')} →
+                            </a>
+                            <div className="flex gap-2">
+                                <button className="btn-secondary !min-h-0 !py-2 text-sm text-red-500"
+                                        onClick={async () => {
+                                            // Закрываем модалку только если отмена состоялась
+                                            // (в confirm юзер мог передумать)
+                                            if (await cancelPayment(lightbox.id) !== false) setLightbox(null);
+                                        }}>
+                                    {t('dashboard.cancel')}
+                                </button>
+                                <button className="btn-primary !min-h-0 !py-2 text-sm"
+                                        onClick={() => { approvePayment(lightbox); setLightbox(null); }}>
+                                    {t('dashboard.approve')}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+            </Modal>
         </div>
     );
 }
