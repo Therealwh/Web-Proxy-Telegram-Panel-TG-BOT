@@ -1482,12 +1482,23 @@ bot.on('message:text', async (ctx, next) => {
     );
 
     bot.hears(['👤 Личный кабинет', '📱 Личный кабинет'], async (ctx) => {
-        // Брендовая обложка кабинета: отдельным фото над текстом (не спамим
-        // уведомлением), данные и кнопки — в сообщении ниже
-        sendAsset(ctx.chat.id, 'cabinet', 'banner-cabinet.png')
-            .catch((e) => logger.warn('Обложка кабинета не отправилась', { error: e.message }));
         const view = await cabinetView(ctx);
-        await ctx.reply(view.text, { parse_mode: 'HTML', reply_markup: view.kb, disable_web_page_preview: true });
+        /* Брендовая обложка + живые данные в подписи прямо под ней (баланс,
+         * срок, список прокси). await — чтобы фото гарантированно приехало
+         * раньше текста. Если текст не влез в лимит подписи (1024) — обложка
+         * отдельно, текст следом; без ассета — обычное сообщение. */
+        const fitsCaption = view.text.length <= 980;
+        let sent = null;
+        try {
+            sent = await sendAsset(ctx.chat.id, 'cabinet', 'banner-cabinet.png',
+                fitsCaption ? view.text : undefined,
+                { parse_mode: 'HTML', reply_markup: view.kb, disable_web_page_preview: true });
+        } catch (e) {
+            logger.warn('Обложка кабинета не отправилась', { error: e.message });
+        }
+        if (!sent) {
+            await ctx.reply(view.text, { parse_mode: 'HTML', reply_markup: view.kb, disable_web_page_preview: true });
+        }
     });
 
     // «⬅️ Назад» из экранов кабинета — правим сообщение на месте
