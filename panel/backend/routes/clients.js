@@ -119,14 +119,17 @@ router.post('/mtproto-reconnect', async (req, res, next) => {
             return res.status(503).json({ error: 'Бот не запущен — включите его в настройках бота' });
         }
 
-        // Владельцы, у которых есть хотя бы один включённый MTProto-прокси
+        // Владельцы, у которых есть хотя бы один включённый MTProto-прокси.
+        // SELECT * — clientLinks() требует поля строки (secret, mtproto_enabled,
+        // web_enabled, node_id) для сборки ссылок; узкий список полей давал
+        // пустые ссылки и рассылку «0 из N».
         const owners = db.prepare(
             `SELECT DISTINCT telegram_id FROM clients
              WHERE mtproto_enabled = 1 AND telegram_id IS NOT NULL
              ORDER BY telegram_id`
         ).all().map((r) => r.telegram_id);
         const proxies = db.prepare(
-            `SELECT username, telegram_id FROM clients
+            `SELECT * FROM clients
              WHERE mtproto_enabled = 1 AND telegram_id IS NOT NULL
              ORDER BY telegram_id, id`
         ).all();
