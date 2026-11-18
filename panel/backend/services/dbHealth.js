@@ -163,6 +163,48 @@ function eventAlert(text) {
     } catch { /* уведомления не критичны */ }
 }
 
+// ═══ Канарка: быстрый quick_check каждые 15 минут на отдельном readonly-соединении ═══
+// Задача — поймать МОМЕНТ порчи с точностью до минут (инциденты 14.11 и 18.11
+// были известны только с точностью до суток). Читатель WAL не блокирует запись.
+let canaryTimer = null;
+let canaryAlerted = false; // алерт — один раз на эпизод порчи, не спамим
+
+function canaryTick() {
+    try {
+        const ro = new Database(config.dbPath, { readonly: true, fileMustExist: true });
+        const issues = ro.pragma('quick_check').map((r) => String(Object.values(r)[0]));
+        ro.close();
+        const ok = issues.length === 1 && issues[0] === 'ok';
+        if (ok) {
+            if (canaryAlerted) {
+                logger.info('Канарка: БД снова чиста (после восстановления)');
+                canaryAlerted = false;
+            }
+            return;
+        }
+        const at = new Date().toISOString();
+        logger.error('Канарка: БД повреждена', { at, issues: issues.slice(0, 3) });
+        if (!canaryAlerted) {
+            canaryAlerted = true;
+            eventAlert(`🚨 <b>Канарка: БД повреждена!</b>\n\nМомент фиксации: <code>${escapeHtml(at)}</code>\n` +
+                `<code>${escapeHtml(issues.slice(0, 3).join('\n'))}</code>\n\n` +
+                `Проверь логи панели за это время и события хоста.`);
+        }
+    } catch (e) {
+        logger.warn('Канарка: проверка не удалась', { error: e.message });
+    }
+}
+
+/**
+ * Запускает канарку (раз в 15 минут). Вызывается из scheduler.start().
+ */
+function startCanary() {
+    if (canaryTimer) return;
+    canaryTimer = setInterval(canaryTick, 15 * 60 * 1000);
+    canaryTimer.unref();
+    logger.info('Канарка БД запущена (quick_check каждые 15 мин)');
+}
+
 /** Событие в ленту (падение не критично). */
 function eventLogSafe(event, title, details, level = 'info') {
     try {
@@ -183,4 +225,5 @@ module.exports = {
     findLatestBackup,
     verifyLatestBackup,
     runDailyCheck,
+    startCanary,
 };

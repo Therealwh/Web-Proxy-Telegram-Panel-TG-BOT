@@ -604,6 +604,10 @@ function start() {
     }, dbHealthSchedule());
     dbHealthTimer.unref();
 
+    // Канарка: quick_check каждые 15 минут на readonly-соединении —
+    // ловит момент порчи с точностью до минут (инциденты 14.11/18.11)
+    dbHealth.startCanary();
+
     logger.info('Планировщик фоновых задач запущен');
 }
 
