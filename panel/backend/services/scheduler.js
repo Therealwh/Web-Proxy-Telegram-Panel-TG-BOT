@@ -515,6 +515,32 @@ async function syncLimits() {
     }
 }
 
+/** Ежедневный полный бэкап всех файлов панели (через root-хелпер):
+ *  сборка → верификация → ротация внутри full-backup.sh. */
+async function runFullBackup() {
+    try {
+        if (!config.helperUrl || !config.helperSecret) return;
+        const res = await fetch(`${config.helperUrl}/run`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ secret: config.helperSecret, key: 'full-backup' }),
+            signal: AbortSignal.timeout(150000),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.ok) {
+            logger.error('Полный бэкап не удался', { error: data.error });
+            notifier.notifyAdmin(getAll(),
+                `⚠️ <b>Полный бэкап не удался</b>: ${data.error || 'ошибка хелпера'}`).catch(() => {});
+            return;
+        }
+        logger.info('Полный бэкап создан', { file: data.file, size: data.size });
+    } catch (e) {
+        logger.error('Полный бэкап: ошибка', { error: e.message });
+        notifier.notifyAdmin(getAll(),
+            `⚠️ <b>Полный бэкап не удался</b>: ${e.message}`).catch(() => {});
+    }
+}
+
 /** Запускает все фоновые задачи с их интервалами. */
 function start() {
     // Проверка доступности каждые 5 минут
@@ -607,6 +633,20 @@ function start() {
     // Канарка: quick_check каждые 15 минут на readonly-соединении —
     // ловит момент порчи с точностью до минут (инциденты 14.11/18.11)
     dbHealth.startCanary();
+
+    // Полный бэкап всех файлов: ежедневно в 05:10 (после integrity 04:10
+    // и cron-очистки 04:30). Через хелпер — скрипту нужны root-права.
+    const fullBackupSchedule = () => {
+        const next = new Date();
+        next.setHours(5, 10, 0, 0);
+        if (next <= new Date()) next.setDate(next.getDate() + 1);
+        return next - new Date();
+    };
+    const fullBackupTimer = setTimeout(() => {
+        runFullBackup();
+        setInterval(runFullBackup, 24 * 60 * 60 * 1000).unref();
+    }, fullBackupSchedule());
+    fullBackupTimer.unref();
 
     logger.info('Планировщик фоновых задач запущен');
 }

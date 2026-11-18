@@ -39,6 +39,7 @@ const SCRIPTS = {
     warp: path.join(SCRIPTS_DIR, 'warp.sh'),
     cleanup: path.join(SCRIPTS_DIR, 'cleanup-disk.sh'),
     'disk-stats': path.join(SCRIPTS_DIR, 'disk-stats.sh'),
+    'full-backup': path.join(SCRIPTS_DIR, 'full-backup.sh'),
 };
 
 /** Секрет из install.env (генерируется установщиком/install-helper.sh). */
@@ -153,6 +154,28 @@ const server = http.createServer((req, res) => {
                 log(`zapret2 ${action} завершено: ${err ? 'ОШИБКА: ' + (stderr || err.message).slice(0, 500) : 'успех'}`);
             });
             return res.end(JSON.stringify({ ok: true }));
+        }
+
+        // Полный бэкап всех файлов панели: root-скрипт (сборка, верификация
+        // и ротация внутри), JSON-отчёт возвращается панели для показа в
+        // карточке «Резервное копирование». Мьютекс busy: два параллельных
+        // tar на 1CPU недопустимы. Запуск копии из /tmp (git checkout при
+        // обновлении панели не должен подменять исполняемый файл на середине).
+        if (parsed.key === 'full-backup') {
+            busy = true;
+            const staged = stageScript(script);
+            log('full-backup: запуск копии скрипта');
+            execFile('bash', [staged], { timeout: 240000 }, (err, stdout, stderr) => {
+                busy = false;
+                fs.unlink(staged, () => {});
+                if (err) {
+                    log('full-backup: ОШИБКА: ' + (stderr || err.message).slice(0, 300));
+                    res.statusCode = 500;
+                    return res.end(JSON.stringify({ ok: false, error: 'full-backup failed' }));
+                }
+                res.end(String(stdout || '{}'));
+            });
+            return;
         }
 
         // Статистика диска: короткий скрипт, stdout возвращается сразу.

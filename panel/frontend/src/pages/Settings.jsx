@@ -321,8 +321,69 @@ export default function Settings() {
                 <WebDomainCard />
                 <WebProfilesLimitCard />
                 <BackupCard />
+                <FullBackupCard />
             </div>
         </div>
+    );
+}
+
+/** Карточка полного бэкапа всех файлов: БД + конфиги + код + обложки.
+ *  Создаётся root-хелпером, верифицируется, ротация хранит 2 последних.
+ *  Скачивается вручную или заливается в Telegram ежедневно. */
+function FullBackupCard() {
+    const [list, setList] = useState(null);
+    const [busy, setBusy] = useState(false);
+    const accessToken = sessionStorage.getItem('tggate_token');
+    const t = useT();
+
+    const load = () => get('/backup/full').then((d) => setList(d.backups || [])).catch(() => {});
+    useEffect(() => { load(); }, []);
+
+    const create = async () => {
+        setBusy(true);
+        try {
+            const r = await post('/backup/full/create');
+            toast.success(t('settings.fullCreated', { f: r.file, s: Math.round((r.size || 0) / 1048576) }));
+            load();
+        } catch (e) {
+            toast.error(e.message);
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    const fmtSize = (b) => (b >= 1048576 ? `${(b / 1048576).toFixed(1)} МБ` : `${Math.round(b / 1024)} КБ`);
+
+    return (
+        <Card title={t('settings.fullTitle')} subtitle={t('settings.fullSub')}>
+            {!list ? (
+                <Skeleton className="h-16" />
+            ) : list.length === 0 ? (
+                <p className="text-sm text-slate-500 py-2 text-center">{t('settings.fullEmpty')}</p>
+            ) : (
+                <div className="space-y-2">
+                    {list.map((b) => (
+                        <div key={b.file} className="flex items-center gap-2 text-sm">
+                            <span className={`shrink-0 text-xs font-bold px-1.5 py-0.5 rounded-full ${b.verified ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400' : 'bg-red-100 text-red-600 dark:bg-red-500/15 dark:text-red-400'}`}>
+                                {b.verified ? '✓ цел' : '✗ битый'}
+                            </span>
+                            <span className="truncate flex-1">{b.file}</span>
+                            <span className="shrink-0 text-xs text-slate-400">{fmtSize(b.size)}</span>
+                            <a href={`/api/backup/full/${b.file}/download?token=${encodeURIComponent(accessToken)}`}
+                               className="btn-ghost !min-h-0 !px-2 !py-1 text-xs shrink-0">
+                                ⬇️
+                            </a>
+                        </div>
+                    ))}
+                </div>
+            )}
+            <div className="flex flex-wrap gap-2 mt-3">
+                <button className="btn-secondary" onClick={create} disabled={busy}>
+                    {busy ? t('settings.fullCreating') : t('settings.fullCreate')}
+                </button>
+            </div>
+            <p className="text-xs text-slate-400 mt-3">{t('settings.fullNote')}</p>
+        </Card>
     );
 }
 
