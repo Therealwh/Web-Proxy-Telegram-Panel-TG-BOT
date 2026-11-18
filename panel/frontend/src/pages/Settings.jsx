@@ -21,7 +21,7 @@ const CATEGORIES = (t) => [
     {
         id: 'network', Icon: Globe, title: t('settings.catNetwork'),
         fields: [
-            { key: 'mask_domain', label: t('settings.fMaskDomain'), hint: t('settings.fMaskHint') },
+            { key: 'mask_domain', label: t('settings.fMaskDomain'), hint: t('settings.fMaskHint'), mtprotoReconnect: true },
             { key: 'ad_tag_global', label: t('settings.fAdTag'), hint: t('settings.fAdTagHint') },
             { key: 'web_proxy_enabled', label: t('settings.fWebOn'), type: 'toggle' },
             { key: 'mtproto_enabled', label: t('settings.fMtprotoOn'), type: 'toggle' },
@@ -532,7 +532,36 @@ function SettingField({ f, settings, setValue, commit, revert, changed, status, 
                     {t('settings.sendBackupNow')}
                 </button>
             )}
+            {f.mtprotoReconnect && <MtprotoReconnectButton />}
         </div>
+    );
+}
+
+/** Кнопка разослать клиентам с MTProto инструкцию переподключения
+ *  (после смены маскировочного домена старые ee-ссылки перестают работать). */
+function MtprotoReconnectButton() {
+    const [busy, setBusy] = useState(false);
+    const t = useT();
+
+    const send = async () => {
+        if (!confirm(t('settings.mtprotoReconnectConfirm'))) return;
+        setBusy(true);
+        try {
+            const r = await post('/clients/mtproto-reconnect', {});
+            if (r.total === 0) toast.info(t('settings.mtprotoNone'));
+            else toast.success(t('settings.mtprotoSent', { ok: r.sent, total: r.total, fail: r.failed }));
+        } catch (e) {
+            toast.error(e.message);
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    return (
+        <button className="btn-secondary !min-h-0 !py-1.5 text-xs mt-2" onClick={send} disabled={busy}>
+            {busy && <Loader2 size={14} className="animate-spin inline mr-1" />}
+            {t('settings.mtprotoReconnectBtn')}
+        </button>
     );
 }
 

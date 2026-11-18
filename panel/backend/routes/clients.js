@@ -102,6 +102,92 @@ function enrichClient(row) {
     };
 }
 
+// --- Рассылка переподключения MTProto (смена маскировочного домена) ---------
+// Уходит ТОЛЬКО клиентам, у которых есть включённый MTProto-прокси:
+// каждому — одно сообщение со всеми его свежими MTProto-ссылками
+// (секрет пересобирается с актуальным mask_domain из настроек).
+let mtprotoReconnectInFlight = false;
+
+router.post('/mtproto-reconnect', async (req, res, next) => {
+    if (mtprotoReconnectInFlight) {
+        return res.status(409).json({ error: 'Рассылка уже выполняется — подождите' });
+    }
+    mtprotoReconnectInFlight = true;
+    try {
+        const bot = require('../services/bot');
+        if (!bot.isRunning()) {
+            return res.status(503).json({ error: 'Бот не запущен — включите его в настройках бота' });
+        }
+
+        // Владельцы, у которых есть хотя бы один включённый MTProto-прокси
+        const owners = db.prepare(
+            `SELECT DISTINCT telegram_id FROM clients
+             WHERE mtproto_enabled = 1 AND telegram_id IS NOT NULL
+             ORDER BY telegram_id`
+        ).all().map((r) => r.telegram_id);
+        const proxies = db.prepare(
+            `SELECT username, telegram_id FROM clients
+             WHERE mtproto_enabled = 1 AND telegram_id IS NOT NULL
+             ORDER BY telegram_id, id`
+        ).all();
+
+        const byUser = new Map();
+        for (const p of proxies) {
+            if (!byUser.has(p.telegram_id)) byUser.set(p.telegram_id, []);
+            byUser.get(p.telegram_id).push(p);
+        }
+
+        const proxyName = (username) => {
+            const m = /x(\d+)$/.exec(String(username || ''));
+            return m ? `Мой прокси №${m[1]}` : username;
+        };
+
+        let sent = 0;
+        let failed = 0;
+        for (const tgId of owners) {
+            const mine = byUser.get(tgId) || [];
+            if (mine.length === 0) continue; // владелец без активных прокси (тест удалён и т.п.)
+
+            let links = '';
+            for (const cl of mine) {
+                const L = clientLinks(cl);
+                const url = L.mtproto_faketls_https || L.mtproto_https;
+                if (url) {
+                    const name = proxyName(cl.username);
+                    links += `\n📦 <a href="${url}">${name}</a>`;
+                }
+            }
+            if (!links) { failed += 1; continue; }
+
+            const text =
+                `<b>🔧 Мы обновили домен маскировки MTProto</b>\n\n` +
+                `Переподключи прокси — займёт 30 секунд:\n` +
+                `1️⃣ Удали старое подключение MTProto в настройках Telegram\n` +
+                `2️⃣ Нажми на свою ссылку ниже — Telegram предложит заменить\n` +
+                `${links}\n\n` +
+                `🌐 Web Proxy не затронут — продолжает работать как раньше.`;
+
+            try {
+                await bot.sendMessageTo(tgId, text);
+                sent += 1;
+            } catch (e) {
+                failed += 1;
+                logger.warn('Переподключение MTProto: не доставлено', { tgId, error: e.message });
+            }
+            await new Promise((r) => setTimeout(r, 60)); // лимиты Telegram
+        }
+
+        logger.info('Рассылка переподключения MTProto завершена', {
+            sent, failed, total: owners.length, by: req.admin?.login,
+        });
+        res.json({ ok: true, sent, failed, total: owners.length });
+    } catch (err) {
+        next(err);
+    } finally {
+        mtprotoReconnectInFlight = false;
+    }
+});
+
 // --- Список клиентов с поиском и фильтрами ---
 router.get('/', (req, res) => {
     const { search, status, page = '1', limit = '50' } = req.query;
