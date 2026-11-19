@@ -789,6 +789,12 @@ curl -X POST -H "Authorization: Bearer tgk_your_key" \\
         bcCancelled: 'Broadcast cancelled',
         bcCancelConfirm: 'Cancel this broadcast?',
     },
+    ads: {
+        sponsored: 'Ad',
+        placeholderTitle: '💼 Your banner could be here',
+        placeholderText: 'Seen by admins of every TGGATE installation. Details and placement — via Telegram',
+    },
+
     updates: {
         title: 'System updates',
         subtitle: 'Panel, Telemt and SSL certificate versions',

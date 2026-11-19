@@ -789,6 +789,12 @@ curl -X POST -H "Authorization: Bearer tgk_ваш_ключ" \\
         bcCancelled: 'Рассылка отменена',
         bcCancelConfirm: 'Отменить эту рассылку?',
     },
+    ads: {
+        sponsored: 'Реклама',
+        placeholderTitle: '💼 Это место для вашей рекламы',
+        placeholderText: 'Баннер увидят администраторы всех установок TGGATE. Подробности и размещение — в Telegram',
+    },
+
     updates: {
         title: 'Обновления системы',
         subtitle: 'Версии панели, Telemt и SSL-сертификат',

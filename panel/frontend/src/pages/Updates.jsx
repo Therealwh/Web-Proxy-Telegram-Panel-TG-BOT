@@ -5,6 +5,7 @@ import { get, post, put } from '../api';
 import { toast, useLangStore } from '../store';
 import { useT } from '../i18n';
 import { Card, Field, Skeleton, formatDate, PageHeader } from '../components/ui';
+import AdStrip from '../components/AdStrip';
 
 /** Живой статус-бар обновления (данные из /updates/progress) */
 function ProgressCard({ progress, seenRunning }) {
@@ -219,6 +220,7 @@ export default function Updates() {
                             </button>
                         } />
 
+            <AdStrip slot="updates" />
             <ProgressCard progress={progress} seenRunning={sawRunning} />
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">

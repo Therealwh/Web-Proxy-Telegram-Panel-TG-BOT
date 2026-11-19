@@ -16,6 +16,7 @@ import {
     Card, StatusDot, ProgressBar, Skeleton, ProtoBadge, formatBytes, chartTheme,
 } from '../components/ui';
 import OnboardingCard from '../components/OnboardingCard';
+import AdStrip from '../components/AdStrip';
 
 /** Спарклайн без осей (для KPI-карточек) */
 function Spark({ data, dataKey = 'v', color = '#0088cc' }) {
@@ -339,6 +340,7 @@ export default function Dashboard() {
             </div>
 
             {/* 2. KPI-карточки со спарклайнами */}
+            <AdStrip slot="dashboard" />
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
                 <Kpi label={t('dashboard.kpiConn')}
                      value={active?.active_total ?? '—'}

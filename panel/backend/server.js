@@ -142,6 +142,9 @@ app.use('/api/internal', internalRouter);
 const backupRouter = require('./routes/backup');
 app.use('/api/backup', backupRouter);
 
+// Рекламные кампании в админ-панели (показы/клики/заглушка)
+app.use('/api/ads', requireAuth, require('./routes/ads'));
+
 // Аутентификация: /api/auth/*
 app.use('/api/auth', csrfProtection, authRouter);
 
