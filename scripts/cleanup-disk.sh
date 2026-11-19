@@ -35,8 +35,8 @@ if command -v sqlite3 >/dev/null && [[ -f "$DB" ]]; then
     sqlite3 "$DB" "DELETE FROM dc_checks WHERE created_at < datetime('now','-30 days'); SELECT changes()"
     sqlite3 "$DB" "DELETE FROM uptime_checks WHERE created_at < datetime('now','-30 days'); SELECT changes()"
 
-    echo "== VACUUM (может занять до минуты) =="
-    sqlite3 "$DB" "PRAGMA wal_checkpoint(TRUNCATE); VACUUM;" && echo "ok"
+    echo "== VACUUM убран из root-CLI (кросс-процессный чекпоинт/VACUUM"
+    echo "==    поверх живой БД = механизм порчи БД, см. инциденты 14.11/18.11/19.11) =="
 else
     echo "== sqlite3 или БД недоступны, пропускаю чистку БД =="
 fi

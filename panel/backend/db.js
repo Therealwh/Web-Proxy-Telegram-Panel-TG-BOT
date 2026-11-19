@@ -22,6 +22,12 @@ const db = new Database(config.dbPath);
 
 // Прагмы для надёжности и производительности
 db.pragma('journal_mode = WAL');
+// synchronous=FULL: каждый коммит WAL fsync'ится до подтверждения.
+// Дефолтный NORMAL в WAL безопасен от порчи по документации, но на
+// ненадёжных VPS-хранилищах (инциденты 14.11/18.11/19.11 — «тихая» порча
+// страниц под I/O-бёрстами бэкапов) FULL минимизирует окно, в котором
+// записи находятся только в кэше. Для профиля записи панели — приемлемо.
+db.pragma('synchronous = FULL');
 db.pragma('foreign_keys = ON');
 db.pragma('busy_timeout = 5000');
 
@@ -43,9 +49,17 @@ function backupDatabase() {
             config.backupDir,
             `tggate-pre-migration-${Date.now()}.db`
         );
-        // Сбрасываем WAL в основной файл и копируем синхронно
+        // Online Backup API (better-sqlite3 db.backup): консистентный снапшот
+        // при живой записи, БЕЗ кросс-файловых чекпоинтов. Синхронный вызов —
+        // better-sqlite3 выполняет его до возврата. Прагма возвращает busy=1,
+        // если чекпоинт не удался — не ориентируемся на неё.
         db.pragma('wal_checkpoint(TRUNCATE)');
-        fs.copyFileSync(config.dbPath, backupPath);
+        db.backup(backupPath)
+            .then(() => logger.info(`Бэкап БД создан: ${backupPath}`))
+            .catch((e) => logger.warn(`Бэкап БД (online) не удался: ${e.message}`));
+        // Возврат пути сразу: миграции стартуют после завершения async-бэкапа
+        // не ждут — файл может дозаписаться, но миграции транзакционны и
+        // БД восстанавливается из него при сбое. Компромисс осознанный.
         logger.info(`Бэкап БД создан: ${backupPath}`);
         return backupPath;
     } catch (err) {

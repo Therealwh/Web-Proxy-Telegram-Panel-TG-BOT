@@ -66,12 +66,16 @@ fail_missing_tag() {
 }
 
 # Запись в историю обновлений (sqlite3 из состава Ubuntu).
-# ВАЖНО: sqlite3 от root создаёт root-owned WAL-файлы — после записи
+# ВАЖНО 1: sqlite3 от root создаёт root-owned WAL-файлы — после записи
 # обязательно возвращаем владение пользователю панели tggate!
+# ВАЖНО 2: .timeout 10000 и bind-параметры (без конкатенации) — это
+# кросс-процессный writer в живую БД панели; без таймаута CLI при BUSY
+# мгновенно падает, а INSERT без bind — вектор SQL-инъекций из лога.
 log_history() {
     local component="$1" status="$2" log="$3"
-    sqlite3 "${DB_PATH}" \
-        "INSERT INTO updates_log (component, from_version, to_version, status, log) VALUES ('${component}', NULL, NULL, '${status}', '${log//\'/\'\'}');" \
+    sqlite3 -cmd ".timeout 10000" "${DB_PATH}" \
+        "INSERT INTO updates_log (component, from_version, to_version, status, log) VALUES (?1, NULL, NULL, ?2, ?3);" \
+        "${component}" "${status}" "${log//\'/\'\'}" \
         2>/dev/null || true
     chown tggate:tggate "${DB_PATH}" 2>/dev/null || true
     chown tggate:tggate "${DB_PATH}-wal" "${DB_PATH}-shm" 2>/dev/null || true
@@ -86,12 +90,19 @@ rollback() {
     # Откат: возвращаем ДЕРЕВО на тег версии, что работала до обновления
     # (cp из бэкапа оставлял бы старые файлы поверх новых — «отравление» дерева)
     git -C "${INSTALL_DIR}" checkout -f "v${PANEL_VERSION}" 2>/dev/null || true
+    # КРИТИЧНО: остановить панель ДО замены файла БД и удалить stale WAL/SHM.
+    # Замена файла БД под живым процессом + WAL-replay старых фреймов на
+    # восстановленный файл — механизм порчи (инцидент 19.11: short read,
+    # never used pages). Секрет хелпера/бота — в БД, рестарт безопасен.
+    systemctl stop tggate-panel 2>/dev/null || true
     cp -a "${BACKUP_PATH}/tggate.db" "${DATA_DIR}/tggate.db" 2>/dev/null || true
+    rm -f "${DATA_DIR}/tggate.db-wal" "${DATA_DIR}/tggate.db-shm" 2>/dev/null || true
     cp -a "${BACKUP_PATH}/etc-tggate/." "${CONFIG_DIR}/" 2>/dev/null || true
     [[ -f "${BACKUP_PATH}/VERSION" ]] && cp -a "${BACKUP_PATH}/VERSION" "${INSTALL_DIR}/VERSION"
+    chown -R tggate:tggate "${DATA_DIR}" 2>/dev/null || true
     log_history "panel" "failed" "упала команда: ${failed_cmd} (бэкап: ${BACKUP_PATH})"
     set_status 0 6 "Ошибка: выполнен откат из бэкапа" failed
-    systemctl restart tggate-panel 2>/dev/null || true
+    systemctl start tggate-panel 2>/dev/null || true
     echo "[update] Откат выполнен, панель перезапущена." >&2
     exit 1
 }
@@ -122,7 +133,14 @@ tar -C "${INSTALL_DIR}" \
 cp -a "${INSTALL_DIR}/VERSION" "${BACKUP_PATH}/VERSION" 2>/dev/null || true
 cp -a "${CONFIG_DIR}" "${BACKUP_PATH}/etc-tggate"
 cp -a "${DATA_DIR}/website" "${BACKUP_PATH}/website" 2>/dev/null || true
-cp -a "${DB_PATH}" "${BACKUP_PATH}/tggate.db" 2>/dev/null || true
+# БД: снапшот через sqlite3 .backup (консистентен при живой записи —
+# cp -a живого файла давал рваную копию без свежих WAL-фреймов)
+if command -v sqlite3 >/dev/null 2>&1; then
+    sqlite3 -cmd ".timeout 10000" "${DB_PATH}" ".backup '${BACKUP_PATH}/tggate.db'" 2>/dev/null \
+        || cp -a "${DB_PATH}" "${BACKUP_PATH}/tggate.db" 2>/dev/null || true
+else
+    cp -a "${DB_PATH}" "${BACKUP_PATH}/tggate.db" 2>/dev/null || true
+fi
 
 # ---------------------------------------------------------------------------
 # 2. Получаем новую версию кода
