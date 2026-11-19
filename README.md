@@ -15,6 +15,7 @@
     <a href="https://github.com/Therealwh/Web-Proxy-Telegram-Panel-TG-BOT/network/members"><img src="https://img.shields.io/github/forks/Therealwh/Web-Proxy-Telegram-Panel-TG-BOT?style=flat-square&color=4c9ffe" alt="Forks"></a>
     <a href="https://github.com/Therealwh/Web-Proxy-Telegram-Panel-TG-BOT/issues"><img src="https://img.shields.io/github/issues/Therealwh/Web-Proxy-Telegram-Panel-TG-BOT?style=flat-square&color=fe7d37" alt="Issues"></a>
     <a href="https://github.com/Therealwh/Web-Proxy-Telegram-Panel-TG-BOT/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/Therealwh/Web-Proxy-Telegram-Panel-TG-BOT/ci.yml?style=flat-square&label=CI" alt="CI"></a>
+    <a href="https://web.vpstg.run/install-count.json"><img src="https://img.shields.io/endpoint?url=https%3A%2F%2Fweb.vpstg.run%2Finstall-count.json&style=flat-square&label=%D1%83%D1%81%D1%82%D0%B0%D0%BD%D0%BE%D0%B2%D0%BA%D0%B8&color=0969da" alt="Установки"></a>
   </p>
   <p align="center">
     <img src="https://img.shields.io/badge/node-%E2%89%A520-339933?style=flat-square&logo=node.js&logoColor=white" alt="Node ≥ 20">

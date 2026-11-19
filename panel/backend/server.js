@@ -142,6 +142,40 @@ app.use('/api/internal', internalRouter);
 const backupRouter = require('./routes/backup');
 app.use('/api/backup', backupRouter);
 
+// Анонимный счётчик установок: install.sh пингует при завершении установки.
+// Никаких персональных данных — только версия панели и ОС; IP и так виден
+// в журнале любого веб-сервера. Счётчик используется для бейджа «установки».
+const INSTALL_STATS_KEY = 'install_stats';
+app.get('/install-beacon', (req, res) => {
+    try {
+        const ver = String(req.query.ver || '').slice(0, 16);
+        const os = String(req.query.os || '').slice(0, 24);
+        const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(INSTALL_STATS_KEY);
+        const st = row ? JSON.parse(row.value) : { total: 0, byOs: {} };
+        st.total = (st.total || 0) + 1;
+        const k = os || 'other';
+        st.byOs[k] = (st.byOs[k] || 0) + 1;
+        db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value')
+            .run(INSTALL_STATS_KEY, JSON.stringify(st));
+        logger.info('Новая установка TGGATE', { ver, os });
+    } catch (e) {
+        logger.warn('install-beacon failed', { error: e.message });
+    }
+    res.type('text').send('ok');
+});
+
+// JSON для бейджа «установки» в README (shields.io endpoint)
+app.get('/install-count.json', (req, res) => {
+    let total = 0;
+    try {
+        const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(INSTALL_STATS_KEY);
+        const st = row ? JSON.parse(row.value) : {};
+        total = st.total || 0;
+    } catch { /* счётчик недоступен — отдаём 0 */ }
+    res.set('Cache-Control', 'no-cache');
+    res.json({ schemaVersion: 1, label: 'installations', message: String(total), color: 'blue' });
+});
+
 // Рекламные кампании в админ-панели (показы/клики/заглушка)
 app.use('/api/ads', requireAuth, require('./routes/ads'));
 

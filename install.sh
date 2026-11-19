@@ -208,6 +208,14 @@ tr() {
         en:step_cron) echo "Configuring update auto-check" ;;
         ru:ok_cron) echo "Cron-задача добавлена" ;;
         en:ok_cron) echo "Cron job added" ;;
+        ru:step_beacon) echo "Счётчик установок" ;;
+        en:step_beacon) echo "Installation counter" ;;
+        ru:ok_beacon) echo "Анонимный счётчик установки отправлен (только версия и ОС)" ;;
+        en:ok_beacon) echo "Anonymous install counter sent (version and OS only)" ;;
+        ru:warn_beacon_off) echo "Счётчик установок отключён (INSTALL_NO_BEACON=1)" ;;
+        en:warn_beacon_off) echo "Installation counter disabled (INSTALL_NO_BEACON=1)" ;;
+        ru:warn_beacon_fail) echo "Счётчик установок не отправлен — не критично" ;;
+        en:warn_beacon_fail) echo "Installation counter not sent — not critical" ;;
         # --- итог ---
         ru:sum_title) echo "TGGATE успешно установлен!" ;;
         en:sum_title) echo "TGGATE installed successfully!" ;;
@@ -633,6 +641,21 @@ install_cron() {
 }
 
 # ---------------------------------------------------------------------------
+# Анонимный счётчик установок: beacon на счётчик проекта. Отправляются
+# ТОЛЬКО версия панели и ID ОС, никаких персональных данных (IP и так
+# виден в журнале любого веб-сервера). Отключить: INSTALL_NO_BEACON=1.
+# URL центрального счётчика меняется в константе BEACON_URL.
+# ---------------------------------------------------------------------------
+install_beacon() {
+    step "$(tr step_beacon)"
+    [[ "${INSTALL_NO_BEACON:-0}" = "1" ]] && { ok "$(tr warn_beacon_off)"; return; }
+    local beacon_url="https://web.vpstg.run/install-beacon?ver=${PANEL_VERSION}&os=ubuntu${VERSION_ID:-}"
+    curl -fsS --max-time 5 "${beacon_url}" >/dev/null 2>&1 \
+        && ok "$(tr ok_beacon)" \
+        || warn "$(tr warn_beacon_fail)"
+}
+
+# ---------------------------------------------------------------------------
 # Итоговая информация для пользователя
 # ---------------------------------------------------------------------------
 print_summary() {
@@ -696,6 +719,7 @@ main() {
     create_admin
     install_cli
     install_cron
+    install_beacon
 
     print_summary
 }
