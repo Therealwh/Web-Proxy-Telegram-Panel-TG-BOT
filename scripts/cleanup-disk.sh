@@ -5,10 +5,13 @@
 #
 # Что чистит:
 #   1. systemd journal — до 200 МБ
-#   2. Логи подключений в БД старше 14 дней, проверки старше 30 дней
-#   3. WAL-чекпоинт + VACUUM — сжимает файл БД
-#   4. Бэкапы панели — оставляет 5 свежих
-#   5. Кеш apt
+#   2. Бэкапы панели — оставляет 5 свежих
+#   3. Кеш apt
+#
+# БД из-под root НЕ трогаем: ретеншены логов делает сама панель
+# (logCollector/dcMonitor/scheduler), а любая запись или чекпоинт из
+# root-CLI против живого писателя — механизм порчи WAL (14.11/18.11/
+# 19.11/21.11).
 #
 # Запуск: ТОЛЬКО через root-хелпер (scripts/helper.js, ключ cleanup).
 # Безопасно: таблицы клиентов, платежей и тарифов не трогаются.
@@ -26,19 +29,14 @@ df -h / | tail -1
 echo "== journal =="
 journalctl --vacuum-size=200M 2>&1 | tail -1 || true
 
-# 2-3. БД: логи и вакуум
-if command -v sqlite3 >/dev/null && [[ -f "$DB" ]]; then
-    echo "== логи подключений старше 14 дней =="
-    sqlite3 "$DB" "DELETE FROM connection_logs WHERE created_at < datetime('now','-14 days'); SELECT changes()"
-
-    echo "== проверки старше 30 дней =="
-    sqlite3 "$DB" "DELETE FROM dc_checks WHERE created_at < datetime('now','-30 days'); SELECT changes()"
-    sqlite3 "$DB" "DELETE FROM uptime_checks WHERE created_at < datetime('now','-30 days'); SELECT changes()"
-
-    echo "== VACUUM убран из root-CLI (кросс-процессный чекпоинт/VACUUM"
-    echo "==    поверх живой БД = механизм порчи БД, см. инциденты 14.11/18.11/19.11) =="
-else
-    echo "== sqlite3 или БД недоступны, пропускаю чистку БД =="
+# 2. БД: ничего не трогаем из-под root! Ретеншены делает сама панель
+#    (logCollector — connection_logs по настройке, dcMonitor — dc_checks,
+#    scheduler — uptime_checks). Раньше здесь были DELETE из root-CLI:
+#    каждая кросс-процессная запись CLI (и неявный авто-чекпоинт в конце её
+#    транзакции) от sqlite3 < 3.51.3 против живого писателя панели —
+#    вектор WAL-reset порчи БД (инциденты 14.11/18.11/19.11/21.11).
+if [[ -f "$DB" ]]; then
+    echo "== БД: ретеншены выполняет панель, root-CLI в базу не пишет =="
 fi
 
 # 4. Бэкапы панели: оставляем KEEP_BACKUPS свежих

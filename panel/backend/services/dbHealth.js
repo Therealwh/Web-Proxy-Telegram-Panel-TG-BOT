@@ -168,8 +168,37 @@ function eventAlert(text) {
 // были известны только с точностью до суток). Читатель WAL не блокирует запись.
 let canaryTimer = null;
 let canaryAlerted = false; // алерт — один раз на эпизод порчи, не спамим
+let walHealAt = 0;         // момент последнего самолёчения (cooldown — раз в час)
+let walHealedThisBoot = 0; // не более 3 самолёчений за жизнь процесса
 
 function canaryTick() {
+    // Самолечение: WAL-файл исчез с диска при живой панели — его удалил
+    // сторонний процесс (инцидент 21.11). Панель при этом продолжает
+    // писать в «удалённый» inode: все НОВЫЕ соединения (канарка, бэкапы,
+    // CLI) видят только главный файл, а readonly-соединение не умеет
+    // делать recovery и не может создать WAL — каждая проверка падает
+    // с disk I/O error, бэкапы снимают несогласованную копию.
+    // Лечение — перезапуск панели: при закрытии соединения SQLite
+    // чекпоинтит данные из WAL в главный файл, новый процесс создаёт
+    // WAL/SHM заново. Если файлы пропадают снова — на сервере работает
+    // удаляющий процесс: ausearch -k tggate-db -i (auditd).
+    if (!fs.existsSync(config.dbPath + '-wal')) {
+        const now = Date.now();
+        if (walHealedThisBoot >= 3 || (walHealAt && now - walHealAt < 60 * 60 * 1000)) {
+            logger.error('Канарка: WAL-файл БД отсутствует на диске; авто-перезапуски приостановлены — ищите удаляющий процесс: ausearch -k tggate-db -i');
+        } else {
+            walHealAt = now;
+            walHealedThisBoot += 1;
+            const at = new Date().toISOString();
+            logger.error('Канарка: WAL-файл БД исчез с диска при живой панели — перезапускаю панель (данные WAL уйдут в базу при закрытии соединения)', { at });
+            eventAlert(`🚨 <b>Канарка: WAL-файл БД исчез с диска!</b>\n\n` +
+                `Момент: <code>${escapeHtml(at)}</code>\n` +
+                `Панель перезапускается автоматически — данные из WAL будут перенесены в базу.\n` +
+                `Если это повторится — сторонний процесс удаляет файлы БД. Проверка: <code>ausearch -k tggate-db -i</code>.`);
+            try { process.kill(process.pid, 'SIGTERM'); } catch { /* не критично */ }
+        }
+        return;
+    }
     try {
         const ro = new Database(config.dbPath, { readonly: true, fileMustExist: true });
         const issues = ro.pragma('quick_check').map((r) => String(Object.values(r)[0]));

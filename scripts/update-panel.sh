@@ -177,6 +177,18 @@ fi
 chown -R tggate:tggate "${INSTALL_DIR}/panel" 2>/dev/null || true
 chown tggate:tggate "${INSTALL_DIR}/VERSION" 2>/dev/null || true
 
+# Синхронизация скриптов обслуживания в /usr/local/bin: исправленные версии
+# должны попадать на серверы вместе с релизом. Раньше обновлялся только код
+# панели, а старые скрипты (например tggate-cleanup.sh с кросс-процессным
+# wal_checkpoint(TRUNCATE) из CLI sqlite3 3.45) жили в /usr/local/bin годами
+# и продолжили портить БД (инцидент 21.11).
+if [[ -d "${INSTALL_DIR}/scripts" ]]; then
+    info "Синхронизирую скрипты обслуживания в /usr/local/bin..."
+    for f in "${INSTALL_DIR}"/scripts/*.sh; do
+        install -m 0755 "$f" "/usr/local/bin/$(basename "$f")" 2>/dev/null || true
+    done
+fi
+
 NEW_VERSION="$(cat VERSION 2>/dev/null || echo 'unknown')"
 info "Новая версия: ${NEW_VERSION}"
 

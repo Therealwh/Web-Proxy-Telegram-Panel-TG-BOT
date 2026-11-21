@@ -313,6 +313,10 @@ async function shutdown(signal) {
     logger.info(`Получен ${signal}, завершаю работу...`);
     try { wsHub.closeAll(); } catch { /* ignore */ }
     try { server.closeAllConnections?.(); } catch { /* старые версии Node */ }
+    // Штатное закрытие БД: SQLite при закрытии последнего соединения
+    // чекпоинтит WAL в главный файл и убирает WAL/SHM — рестарт без
+    // «хвоста» записей в WAL и без невалидных побочных файлов (21.11).
+    try { db.close(); } catch { /* БД могла быть уже закрыта/повреждена */ }
     server.close(() => process.exit(0));
     setTimeout(() => process.exit(0), 3000).unref();
 }

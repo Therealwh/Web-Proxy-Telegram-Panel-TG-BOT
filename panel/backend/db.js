@@ -50,10 +50,9 @@ function backupDatabase() {
             `tggate-pre-migration-${Date.now()}.db`
         );
         // Online Backup API (better-sqlite3 db.backup): консистентный снапшот
-        // при живой записи, БЕЗ кросс-файловых чекпоинтов. Синхронный вызов —
-        // better-sqlite3 выполняет его до возврата. Прагма возвращает busy=1,
-        // если чекпоинт не удался — не ориентируемся на неё.
-        db.pragma('wal_checkpoint(TRUNCATE)');
+        // при живой записи, БЕЗ чекпоинтов. wal_checkpoint(TRUNCATE) здесь
+        // удалён (21.11): API сам делает согласованный снапшот, а каждый
+        // чекпоинт — лишняя гонка вокруг WAL-файла.
         db.backup(backupPath)
             .then(() => logger.info(`Бэкап БД создан: ${backupPath}`))
             .catch((e) => logger.warn(`Бэкап БД (online) не удался: ${e.message}`));
