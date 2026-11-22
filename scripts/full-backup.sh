@@ -97,11 +97,15 @@ done < "${LIST}"
 # (инциденты 14.11/18.11/19.11). Снапшот .backup корректен и без чекпоинта.
 
 # --- Снапшот БД через sqlite3 .backup: корректен при живой записи -----------
+# mode=ro ОБЯЗАТЕЛЕН: закрытие read-write соединения CLI (sqlite3 3.45) на
+# живой БД удалило WAL+SHM работающей панели — sqlite посчитал себя «последним
+# соединением» (инцидент 22.11 05:10, поймано auditd). Readonly-соединение
+# файлы живой БД не трогает никогда.
 SNAP_DIR="$(mktemp -d)"
 DB_SNAP="${SNAP_DIR}/tggate.db"
 SNAP_OK=0
 for attempt in 1 2 3; do
-    if sqlite3 "${DB_SRC}" ".timeout 10000" ".backup '${DB_SNAP}'" 2>/dev/null && [ -s "${DB_SNAP}" ]; then
+    if sqlite3 "file:${DB_SRC}?mode=ro" ".timeout 10000" ".backup '${DB_SNAP}'" 2>/dev/null && [ -s "${DB_SNAP}" ]; then
         SNAP_OK=1
         break
     fi

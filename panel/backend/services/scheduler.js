@@ -202,6 +202,18 @@ async function cleanupTestClients() {
     ).all();
     const telemt = require('./telemtApi');
     const { syncWebProfiles } = require('./webProfiles');
+    // FK-дети клиента без ON DELETE CASCADE: платежи, тикеты (+их сообщения)
+    // и QR-сканы. Без их удаления DELETE FROM clients падает с
+    // FOREIGN KEY constraint failed (test-клиент мог создать платёж в боте).
+    const deleteClientCascade = db.transaction((id) => {
+        db.prepare('DELETE FROM payments WHERE client_id = ?').run(id);
+        db.prepare(
+            'DELETE FROM ticket_messages WHERE ticket_id IN (SELECT id FROM tickets WHERE client_id = ?)'
+        ).run(id);
+        db.prepare('DELETE FROM tickets WHERE client_id = ?').run(id);
+        db.prepare('DELETE FROM qr_scans WHERE client_id = ?').run(id);
+        db.prepare('DELETE FROM clients WHERE id = ?').run(id);
+    });
     for (const client of rows) {
         try {
             // 1. Убираем WEB-профиль ДО удаления пользователя в Telemt,
@@ -215,15 +227,15 @@ async function cleanupTestClients() {
                 await nodes.getApiForClient(client).enableUser(client.username).catch(() => {});
                 return nodes.getApiForClient(client).deleteUser(client.username);
             });
-            // 3. Удаляем из БД панели
-            db.prepare('DELETE FROM clients WHERE id = ?').run(client.id);
+            // 3. Удаляем из БД панели (вместе с FK-детьми)
+            deleteClientCascade(client.id);
             logger.info('Тестовый клиент удалён', { username: client.username });
         } catch (err) {
             // Telemt недоступен/упёрлось — повторим в следующий час;
             // старше 7 дней — удаляем из базы принудительно (в Telemt срок всё равно истёк)
             const ageDays = (Date.now() - new Date(client.expires_at).getTime()) / 86400000;
             if (ageDays > 7) {
-                db.prepare('DELETE FROM clients WHERE id = ?').run(client.id);
+                deleteClientCascade(client.id);
                 logger.warn('Тестовый клиент удалён из базы принудительно', { username: client.username, error: err.message });
             } else {
                 logger.warn('Не удалось удалить тестового клиента — повторю через час', { username: client.username, error: err.message });

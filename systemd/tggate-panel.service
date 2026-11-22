@@ -14,8 +14,11 @@ Group=tggate
 WorkingDirectory=/opt/tggate/panel/backend
 ExecStart=/usr/bin/node server.js
 
-# Перезапуск при падении
-Restart=on-failure
+# Перезапуск при падении И при чистом выходе: canary self-heal завершает
+# процесс штатно (SIGTERM, exit 0) — systemd обязан поднять его обратно
+# (инцидент 22.11: с Restart=on-failure чистый выход оставил панель мёртвой
+# на 6 часов). systemctl stop по-прежнему останавливает без перезапуска.
+Restart=always
 RestartSec=5s
 
 # Окружение загружается из .env внутри приложения (dotenv)

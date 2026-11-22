@@ -134,9 +134,11 @@ cp -a "${INSTALL_DIR}/VERSION" "${BACKUP_PATH}/VERSION" 2>/dev/null || true
 cp -a "${CONFIG_DIR}" "${BACKUP_PATH}/etc-tggate"
 cp -a "${DATA_DIR}/website" "${BACKUP_PATH}/website" 2>/dev/null || true
 # БД: снапшот через sqlite3 .backup (консистентен при живой записи —
-# cp -a живого файла давал рваную копию без свежих WAL-фреймов)
+# cp -a живого файла давал рваную копию без свежих WAL-фреймов).
+# mode=ro обязателен: rw-соединение CLI при закрытии могло удалить
+# WAL живой панели (инцидент 22.11 05:10, auditd).
 if command -v sqlite3 >/dev/null 2>&1; then
-    sqlite3 -cmd ".timeout 10000" "${DB_PATH}" ".backup '${BACKUP_PATH}/tggate.db'" 2>/dev/null \
+    sqlite3 -cmd ".timeout 10000" "file:${DB_PATH}?mode=ro" ".backup '${BACKUP_PATH}/tggate.db'" 2>/dev/null \
         || cp -a "${DB_PATH}" "${BACKUP_PATH}/tggate.db" 2>/dev/null || true
 else
     cp -a "${DB_PATH}" "${BACKUP_PATH}/tggate.db" 2>/dev/null || true
@@ -187,6 +189,16 @@ if [[ -d "${INSTALL_DIR}/scripts" ]]; then
     for f in "${INSTALL_DIR}"/scripts/*.sh; do
         install -m 0755 "$f" "/usr/local/bin/$(basename "$f")" 2>/dev/null || true
     done
+fi
+
+# Юниты systemd: правки политики перезапуска (Restart=always, инцидент 22.11 —
+# canary self-heal завершал процесс штатно, а systemd чистый exit 0 не
+# перезапускал) должны доезжать до серверов вместе с релизом.
+if [[ -d "${INSTALL_DIR}/systemd" ]]; then
+    for u in "${INSTALL_DIR}"/systemd/*.service; do
+        install -m 0644 "$u" "/etc/systemd/system/$(basename "$u")" 2>/dev/null || true
+    done
+    systemctl daemon-reload 2>/dev/null || true
 fi
 
 NEW_VERSION="$(cat VERSION 2>/dev/null || echo 'unknown')"
