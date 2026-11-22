@@ -143,26 +143,31 @@ router.post('/restore', requireAuth, (req, res, next) => {
         const data = body.data;
 
         db.pragma('foreign_keys = OFF');
-        db.transaction(() => {
-            // Очищаем в порядке зависимостей (дети → родители)
-            for (const table of [...TABLES].reverse()) {
-                db.prepare(`DELETE FROM ${table}`).run();
-            }
-            // Вставляем данные
-            for (const table of TABLES) {
-                const rows = data[table];
-                if (!Array.isArray(rows) || rows.length === 0) continue;
-                const cols = Object.keys(rows[0]);
-                const placeholders = cols.map(() => '?').join(', ');
-                const insert = db.prepare(
-                    `INSERT INTO ${table} (${cols.join(', ')}) VALUES (${placeholders})`
-                );
-                for (const row of rows) {
-                    insert.run(...cols.map((c) => row[c] ?? null));
+        try {
+            db.transaction(() => {
+                // Очищаем в порядке зависимостей (дети → родители)
+                for (const table of [...TABLES].reverse()) {
+                    db.prepare(`DELETE FROM ${table}`).run();
                 }
-            }
-        })();
-        db.pragma('foreign_keys = ON');
+                // Вставляем данные
+                for (const table of TABLES) {
+                    const rows = data[table];
+                    if (!Array.isArray(rows) || rows.length === 0) continue;
+                    const cols = Object.keys(rows[0]);
+                    const placeholders = cols.map(() => '?').join(', ');
+                    const insert = db.prepare(
+                        `INSERT INTO ${table} (${cols.join(', ')}) VALUES (${placeholders})`
+                    );
+                    for (const row of rows) {
+                        insert.run(...cols.map((c) => row[c] ?? null));
+                    }
+                }
+            })();
+        } finally {
+            // FK возвращаем ВСЕГДА: после сбоя restore соединение иначе
+            // навсегда остаётся с foreign_keys=OFF и молча пишет сирот
+            db.pragma('foreign_keys = ON');
+        }
 
         logger.info('Бэкап восстановлен', { by: req.admin?.login, tables: TABLES.length });
         res.json({ ok: true, message: 'Данные восстановлены. Обновите страницу (F5).' });

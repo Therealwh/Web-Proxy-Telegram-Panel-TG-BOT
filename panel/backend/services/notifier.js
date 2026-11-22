@@ -158,7 +158,9 @@ async function notifyAdmin(settings, text) {
 async function sendQrToClient(client, maskDomain) {
     const db = require('../db');
     const row = db.prepare('SELECT value FROM settings WHERE key = ?').get('tg_bot_token');
-    const token = row ? JSON.parse(row.value) : null;
+    // JSON.parse в try: битое значение настройки раньше роняло вызывателя
+    let token = null;
+    try { token = row ? JSON.parse(row.value) : null; } catch { token = row?.value || null; }
     if (!token) throw new Error('Не настроен токен Telegram-бота (Настройки → Уведомления)');
 
     const links = clientLinks(client);

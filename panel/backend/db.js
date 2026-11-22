@@ -49,16 +49,12 @@ function backupDatabase() {
             config.backupDir,
             `tggate-pre-migration-${Date.now()}.db`
         );
-        // Online Backup API (better-sqlite3 db.backup): консистентный снапшот
-        // при живой записи, БЕЗ чекпоинтов. wal_checkpoint(TRUNCATE) здесь
-        // удалён (21.11): API сам делает согласованный снапшот, а каждый
-        // чекпоинт — лишняя гонка вокруг WAL-файла.
-        db.backup(backupPath)
-            .then(() => logger.info(`Бэкап БД создан: ${backupPath}`))
-            .catch((e) => logger.warn(`Бэкап БД (online) не удался: ${e.message}`));
-        // Возврат пути сразу: миграции стартуют после завершения async-бэкапа
-        // не ждут — файл может дозаписаться, но миграции транзакционны и
-        // БД восстанавливается из него при сбое. Компромисс осознанный.
+        // Синхронный консистентный снапшот через VACUUM INTO. Раньше тут был
+        // async db.backup() без await: путь бэкапа возвращался до завершения
+        // копирования, и restore-путь миграций мог восстановить НЕДОПИСАННЫЙ
+        // файл (аудит 22.11). VACUUM INTO даёт завершённый снапшот ДО старта
+        // миграций; блокировка event loop на ~1-2 с при старте — приемлемо.
+        db.exec(`VACUUM INTO '${backupPath.replace(/'/g, "''")}'`);
         logger.info(`Бэкап БД создан: ${backupPath}`);
         return backupPath;
     } catch (err) {

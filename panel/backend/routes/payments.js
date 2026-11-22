@@ -25,11 +25,12 @@ const router = express.Router();
  * @param {number} paymentId - id платежа в БД
  */
 async function completePayment(paymentId) {
-    // Атомарный захват: pending/issuing → issuing. Двойная выдача исключена,
-    // а сбой выдачи возвращает платёж в 'pending' — вебхук/админ могут
-    // повторить попытку (самовосстановление вместо «деньги есть, доступа нет»).
+    // Атомарный захват: ТОЛЬКО pending → issuing. Захват вместе с 'issuing'
+    // (был раньше) пропускал второй параллельный вызов в окне выдачи —
+    // двойные прокси и двойная рефералка за один платёж (аудит 22.11).
+    // Сбой выдачи возвращает платёж в 'pending' — вебхук/админ повторят.
     const claim = db.prepare(
-        "UPDATE payments SET status = 'issuing' WHERE id = ? AND status IN ('pending', 'issuing')"
+        "UPDATE payments SET status = 'issuing' WHERE id = ? AND status = 'pending'"
     ).run(paymentId);
     if (claim.changes === 0) {
         const existing = db.prepare('SELECT * FROM payments WHERE id = ?').get(paymentId);

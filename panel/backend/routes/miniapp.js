@@ -299,7 +299,7 @@ router.post('/paid', async (req, res, next) => {
         const payment = db.prepare("SELECT * FROM payments WHERE id = ? AND status = 'pending'").get(paymentId);
         if (!payment || payment.telegram_id !== req.tgId) throw httpError(404, 'Счёт не найден');
         require('../services/notifier').notifyAdmin(getAll(),
-            `🧾 <b>Клиент говорит, что оплатил</b>\n🧾 Счёт #${paymentId} — ${payment.amount} ${payment.currency}\n👤 tg${payment.tgId}\n\nПодтвердить: раздел «Продажи» → «Платежи к подтверждению»`
+            `🧾 <b>Клиент говорит, что оплатил</b>\n🧾 Счёт #${paymentId} — ${payment.amount} ${payment.currency}\n👤 tg${payment.telegram_id}\n\nПодтвердить: раздел «Продажи» → «Платежи к подтверждению»`
         ).catch(() => {});
         res.json({ ok: true });
     } catch (err) { next(err); }

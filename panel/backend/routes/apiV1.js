@@ -164,10 +164,17 @@ router.delete('/clients/:id', requireApiKey('write'), async (req, res, next) => 
     try {
         const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(req.params.id);
         if (!client) throw httpError(404, 'Клиент не найден');
-        // Порядок: профиль → пользователь → запись
+        // Порядок: профиль → пользователь → запись. FK-дети (платежи, тикеты,
+        // QR-сканы) без CASCADE — чистим явно, иначе Foreign Key рвал удаление
         await syncWebProfiles(client.username);
         await telemt.deleteUser(client.username);
-        db.prepare('DELETE FROM clients WHERE id = ?').run(client.id);
+        db.transaction((id) => {
+            db.prepare('DELETE FROM payments WHERE client_id = ?').run(id);
+            db.prepare('DELETE FROM ticket_messages WHERE ticket_id IN (SELECT id FROM tickets WHERE client_id = ?)').run(id);
+            db.prepare('DELETE FROM tickets WHERE client_id = ?').run(id);
+            db.prepare('DELETE FROM qr_scans WHERE client_id = ?').run(id);
+            db.prepare('DELETE FROM clients WHERE id = ?').run(id);
+        })(client.id);
         res.json({ ok: true });
     } catch (err) { next(err); }
 });

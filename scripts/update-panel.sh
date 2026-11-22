@@ -65,20 +65,18 @@ fail_missing_tag() {
     exit 1
 }
 
-# Запись в историю обновлений (sqlite3 из состава Ubuntu).
-# ВАЖНО 1: sqlite3 от root создаёт root-owned WAL-файлы — после записи
-# обязательно возвращаем владение пользователю панели tggate!
-# ВАЖНО 2: .timeout 10000 и bind-параметры (без конкатенации) — это
-# кросс-процессный writer в живую БД панели; без таймаута CLI при BUSY
-# мгновенно падает, а INSERT без bind — вектор SQL-инъекций из лога.
+# Запись в историю обновлений — через spool-файл, БЕЗ записи в БД.
+# Аудит 22.11: rw-соединение CLI при закрытии удаляло WAL живой панели
+# (update-panel.sh был последним таким writer'ом). Панель сама переносит
+# строки spool → updates_log (scheduler.drainUpdateSpool, раз в 10 минут).
 log_history() {
     local component="$1" status="$2" log="$3"
-    sqlite3 -cmd ".timeout 10000" "${DB_PATH}" \
-        "INSERT INTO updates_log (component, from_version, to_version, status, log) VALUES (?1, NULL, NULL, ?2, ?3);" \
-        "${component}" "${status}" "${log//\'/\'\'}" \
-        2>/dev/null || true
-    chown tggate:tggate "${DB_PATH}" 2>/dev/null || true
-    chown tggate:tggate "${DB_PATH}-wal" "${DB_PATH}-shm" 2>/dev/null || true
+    local safe_log="${log//\\/\\\\}"      # \ → \\
+    safe_log="${safe_log//\"/\\\"}"       # " → \"
+    safe_log="${safe_log//$'\n'/ }"       # переводы строк → пробелы
+    printf '{"component":"%s","status":"%s","log":"%s","at":"%s"}\n' \
+        "${component//\"/\\\"}" "${status//\"/\\\"}" "${safe_log}" \
+        "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "${DATA_DIR}/update-history-spool.jsonl" 2>/dev/null || true
 }
 
 # ---------------------------------------------------------------------------
@@ -139,8 +137,12 @@ cp -a "${DATA_DIR}/website" "${BACKUP_PATH}/website" 2>/dev/null || true
 # WAL живой панели (инцидент 22.11 05:10, auditd).
 if command -v sqlite3 >/dev/null 2>&1; then
     sqlite3 -cmd ".timeout 10000" "file:${DB_PATH}?mode=ro" ".backup '${BACKUP_PATH}/tggate.db'" 2>/dev/null \
-        || cp -a "${DB_PATH}" "${BACKUP_PATH}/tggate.db" 2>/dev/null || true
+        || { # fallback: рваный cp живого файла недопустим — панель останавливается
+             systemctl stop tggate-panel 2>/dev/null || true
+             cp -a "${DB_PATH}" "${BACKUP_PATH}/tggate.db" 2>/dev/null || true; }
 else
+    # sqlite3 недоступен: копируем файл ТОЛЬКО при остановленной панели
+    systemctl stop tggate-panel 2>/dev/null || true
     cp -a "${DB_PATH}" "${BACKUP_PATH}/tggate.db" 2>/dev/null || true
 fi
 

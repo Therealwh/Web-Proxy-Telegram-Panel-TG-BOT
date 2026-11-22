@@ -2889,7 +2889,7 @@ bot.on('message:text', async (ctx, next) => {
         return next();
     });
 
-    bot.catch((err) => logger.error('Ошибка TG-бота', { error: err.message }));
+    bot.catch((err) => logger.error('Ошибка TG-бота', { error: err.message, stack: err.stack }));
 
     // Бэкфилл юзернеймов: тихо, в фоне, только для тех, кто известен боту
     (async () => {
@@ -2922,7 +2922,12 @@ bot.on('message:text', async (ctx, next) => {
     // Чеки, дождавшиеся удаления во время простоя, удаляются сейчас
     restoreReceiptDeletions();
 
-    bot.start({ drop_pending_updates: true }).catch((err) => {
+    // drop_pending_updates=false: обновления, накопившиеся при простое панели,
+    // ДОЛЖНЫ быть обработаны — среди них бывают successful_payment (Stars),
+    // которые приходят ТОЛЬКО через polling (аудит 22.11: при true они
+    // выбрасывались навсегда — деньги списаны, доступ не выдан). Выдача
+    // идемпотентна (claim pending→issuing), очередь безопасна.
+    bot.start({ drop_pending_updates: false }).catch((err) => {
         logger.error('TG-бот упал', { error: err.message });
     });
 

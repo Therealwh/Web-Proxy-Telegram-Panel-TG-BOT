@@ -405,8 +405,15 @@ router.delete('/:id', async (req, res, next) => {
         // 2. Удаляем в Telemt
         await nodes.getApiForClient(row).deleteUser(row.username);
 
-        // 3. Удаляем из БД панели
-        db.prepare('DELETE FROM clients WHERE id = ?').run(row.id);
+        // 3. Удаляем из БД панели — вместе с FK-детьми (аудит 22.11: платежи,
+        //    тикеты и QR-сканы ссылаются на клиента без ON DELETE CASCADE)
+        db.transaction((id) => {
+            db.prepare('DELETE FROM payments WHERE client_id = ?').run(id);
+            db.prepare('DELETE FROM ticket_messages WHERE ticket_id IN (SELECT id FROM tickets WHERE client_id = ?)').run(id);
+            db.prepare('DELETE FROM tickets WHERE client_id = ?').run(id);
+            db.prepare('DELETE FROM qr_scans WHERE client_id = ?').run(id);
+            db.prepare('DELETE FROM clients WHERE id = ?').run(id);
+        })(row.id);
 
         logger.info('Клиент удалён', { username: row.username });
         fireWebhook('client.deleted', clientPayload(row)).catch(() => {});

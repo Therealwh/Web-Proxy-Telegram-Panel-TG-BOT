@@ -146,8 +146,15 @@ app.use('/api/backup', backupRouter);
 // Никаких персональных данных — только версия панели и ОС; IP и так виден
 // в журнале любого веб-сервера. Счётчик используется для бейджа «установки».
 const INSTALL_STATS_KEY = 'install_stats';
+const beaconHits = new Map(); // ip → ts последнего бикона (анти-спам записи в БД)
 app.get('/install-beacon', (req, res) => {
     try {
+        // Публичный эндпоинт без лимита можно дёргать бесконечно и раздуть БД
+        // (аудит 22.11) — не чаще одной записи в минуту с IP
+        const now = Date.now();
+        if (now - (beaconHits.get(req.ip) || 0) < 60 * 1000) return res.type('text').send('ok');
+        if (beaconHits.size > 10000) beaconHits.clear();
+        beaconHits.set(req.ip, now);
         const ver = String(req.query.ver || '').slice(0, 16);
         const os = String(req.query.os || '').slice(0, 24);
         const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(INSTALL_STATS_KEY);
@@ -313,6 +320,9 @@ async function shutdown(signal) {
     logger.info(`Получен ${signal}, завершаю работу...`);
     try { wsHub.closeAll(); } catch { /* ignore */ }
     try { server.closeAllConnections?.(); } catch { /* старые версии Node */ }
+    // Останавливаем polling бота ДО закрытия БД — иначе его хендлеры ещё
+    // до 3 с стучатся в закрытое соединение (аудит 22.11)
+    try { require('./services/bot').stop(); } catch { /* бот мог не стартовать */ }
     // Штатное закрытие БД: SQLite при закрытии последнего соединения
     // чекпоинтит WAL в главный файл и убирает WAL/SHM — рестарт без
     // «хвоста» записей в WAL и без невалидных побочных файлов (21.11).

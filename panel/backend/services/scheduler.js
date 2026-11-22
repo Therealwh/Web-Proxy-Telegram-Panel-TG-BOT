@@ -244,8 +244,48 @@ async function cleanupTestClients() {
     }
 }
 
+/**
+ * Переносит записи об обновлениях из spool-файла (JSONL, пишет его
+ * update-panel.sh от root) в таблицу updates_log. Root-CLI больше не имеет
+ * права открывать живую БД на запись — при закрытии rw-соединения CLI
+ * удалял WAL живой панели (аудит 22.11, инцидент с простоем 6 часов).
+ */
+function drainUpdateSpool() {
+    const spool = path.join(config.dataDir, 'update-history-spool.jsonl');
+    let raw = '';
+    try { raw = fs.readFileSync(spool, 'utf8'); } catch { return; }
+    const lines = raw.split('\n').filter((l) => l.trim());
+    if (lines.length === 0) return;
+    const pending = [];
+    let applied = 0;
+    for (const line of lines) {
+        try {
+            const r = JSON.parse(line);
+            if (!r.component || !r.status) throw new Error('bad record');
+            db.prepare(
+                'INSERT INTO updates_log (component, from_version, to_version, status, log) VALUES (?, NULL, NULL, ?, ?)'
+            ).run(String(r.component).slice(0, 32), String(r.status).slice(0, 32), String(r.log || '').slice(0, 2000));
+            applied += 1;
+        } catch { pending.push(line); } // битая строка — оставим в spool
+    }
+    if (applied > 0) logger.info(`История обновлений: перенесено ${applied} записей из spool`);
+    if (pending.length === 0) fs.rmSync(spool, { force: true });
+    else fs.writeFileSync(spool, pending.join('\n') + '\n');
+}
+
 /** Автопродление с баланса: клиент включил в боте, до конца ≤3 дней, баланс хватает. */
+let autoRenewRunning = false; // guard перекрытия тиков планировщика (аудит 22.11)
 async function autoRenew() {
+    if (autoRenewRunning) return;
+    autoRenewRunning = true;
+    try {
+        await autoRenewInner();
+    } finally {
+        autoRenewRunning = false;
+    }
+}
+
+async function autoRenewInner() {
     const settings = getAll();
     if (!settings.auto_renew_enabled) return;
     const rows = db.prepare(
@@ -288,19 +328,29 @@ async function autoRenew() {
                 continue;
             }
 
+            const base = client.expires_at && new Date(client.expires_at) > new Date()
+                ? new Date(client.expires_at) : new Date();
+            const newExpiry = new Date(base.getTime() + tariff.days * 86400000).toISOString();
+            // Сначала движок, потом деньги (аудит 22.11: был .catch(()=>{}) —
+            // деньги списывались даже при недоступном узле: «деньги есть,
+            // доступа нет»). Узел не принял срок — списания нет, повторим тиком.
+            try {
+                await nodes.getApiForClient(client).patchUser(client.username, { expiration_rfc3339: newExpiry });
+            } catch (e) {
+                logger.warn('Автопродление: узел не принял срок — списание отложено', { username: client.username, error: e.message });
+                continue;
+            }
             const deduct = balanceUtil.deductBalanceSpread(client.telegram_id, tariff.price);
             if (!deduct.ok) {
-                // гонка: баланс ушёл между проверкой и списанием
+                // гонка: баланс ушёл между проверкой и списанием — откатываем срок
+                await nodes.getApiForClient(client)
+                    .patchUser(client.username, { expiration_rfc3339: client.expires_at }).catch(() => {});
                 notifier.notifyAdmin(getAll(),
                     `Пополните счёт в личном кабинете — продлим автоматически.`).catch(() => {});
                 db.prepare("INSERT INTO audit_log (admin, action, details) VALUES ('system', 'notify.autorenew.fail', ?)")
                     .run(`Недостаточно баланса для автопродления (гонка): ${client.username}`);
                 continue;
             }
-            const base = client.expires_at && new Date(client.expires_at) > new Date()
-                ? new Date(client.expires_at) : new Date();
-            const newExpiry = new Date(base.getTime() + tariff.days * 86400000).toISOString();
-            await nodes.getApiForClient(client).patchUser(client.username, { expiration_rfc3339: newExpiry }).catch(() => {});
             db.prepare("UPDATE clients SET expires_at = ?, status = 'active' WHERE id = ?").run(newExpiry, client.id);
 
             if (token) {
@@ -566,6 +616,10 @@ function start() {
     setInterval(() => { try { eventLog.cleanupOld(); } catch (e) { logger.warn(e.message); } }, 60 * 60 * 1000).unref();
     eventLog.cleanupOld();
     setInterval(() => { autoCleanup.checkAndCleanup().catch((e) => logger.warn(e.message)); }, 10 * 60 * 1000).unref();
+
+    // История обновлений: root-скрипт пишет в spool-файл, панель переносит в БД
+    drainUpdateSpool();
+    setInterval(() => { try { drainUpdateSpool(); } catch (e) { logger.warn(e.message); } }, 10 * 60 * 1000).unref();
     checkProxies().catch(() => {});
 
     // DC-монитор: состояние дата-центров Telegram каждые 2 минуты
